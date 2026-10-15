@@ -124,9 +124,9 @@ class RoomAudioTransport(
         )
     }
 
-    /** True only when the caller supplied a real media-plane implementation. */
+    /** True only when the caller supplied an initialized media-plane implementation. */
     fun hasMediaBackend(): Boolean = synchronized(lock) {
-        framePublisher !is UnavailablePcm16FramePublisher
+        !closed && framePublisher.isAvailable()
     }
 
     override fun close() {

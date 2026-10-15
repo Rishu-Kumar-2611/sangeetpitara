@@ -232,6 +232,8 @@ public class WebRtcPcmPublisher(
         return true
     }
 
+    override fun isAvailable(): Boolean = synchronized(stateLock) { !closed && backendReady }
+
     override fun publish(frame: Pcm16Frame): Pcm16PublishResult {
         synchronized(stateLock) {
             if (closed || !sourceStarted || activeSourceEpoch == null) {

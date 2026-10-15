@@ -42,9 +42,9 @@ never mistaken for a working WebRTC publisher.
   an empty endpoint so they do not accidentally try to connect to the
   emulator-only address.
 - The activity binds `RoomAudioTransport` to the capture service when the
-  service is available. Because the default publisher is intentionally
-  unavailable, source start/request buttons remain disabled and the UI says
-  why; the separate capture-probe button can still validate Android capture.
+  service is available. Source controls remain disabled if native WebRTC
+  initialization fails, instead of allowing a capture session that can only
+  drop its PCM frames; the transport status explains the failure.
 
 The WebSocket client is control/signaling only. Its `rtc` events carry the
 same JSON signaling envelopes used by the web prototype; they do not carry

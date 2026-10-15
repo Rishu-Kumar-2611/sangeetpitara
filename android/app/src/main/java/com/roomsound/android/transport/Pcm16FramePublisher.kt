@@ -48,6 +48,9 @@ enum class Pcm16PublishResult {
  * microphone fallback or generated audio is part of this interface.
  */
 interface Pcm16FramePublisher {
+    /** Whether the media backend initialized and can accept a source lease. */
+    fun isAvailable(): Boolean = true
+
     fun start(format: Pcm16AudioFormat, sourceEpoch: Long): Boolean
 
     fun publish(frame: Pcm16Frame): Pcm16PublishResult
@@ -64,6 +67,8 @@ interface Pcm16FramePublisher {
 class UnavailablePcm16FramePublisher(
     val reason: String = DEFAULT_REASON,
 ) : Pcm16FramePublisher {
+    override fun isAvailable(): Boolean = false
+
     override fun start(format: Pcm16AudioFormat, sourceEpoch: Long): Boolean = false
 
     override fun publish(frame: Pcm16Frame): Pcm16PublishResult = Pcm16PublishResult.BACKEND_UNAVAILABLE
