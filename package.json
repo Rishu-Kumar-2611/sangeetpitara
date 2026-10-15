@@ -1,0 +1,16 @@
+{
+  "name": "roomsound-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RoomSound private real-time audio room prototype",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check server.mjs && node --check app.js",
+    "test": "node --test",
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

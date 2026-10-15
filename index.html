@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1020" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-ancestors 'none'" />
+    <title>RoomSound — listen together</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <main id="app" class="shell">
+      <section id="landing-view" class="landing-view">
+        <div class="landing-copy">
+          <div class="brand-mark"><span class="brand-dot"></span> RoomSound</div>
+          <div class="eyebrow">PRIVATE LIVE AUDIO ROOMS</div>
+          <h1>Make the room hear what you hear.</h1>
+          <p class="hero-text">Share supported device or browser audio with friends in real time. One source at a time, with clear host control and no account required.</p>
+          <div class="hero-pills">
+            <span><i class="pill-dot green"></i> Up to 10 people</span>
+            <span><i class="pill-dot blue"></i> Private by default</span>
+            <span><i class="pill-dot orange"></i> WebRTC audio</span>
+          </div>
+          <div class="reality-note">
+            <div class="note-icon">i</div>
+            <div><strong>Capture is platform-dependent.</strong><br />Android and browsers only share audio when the operating system and source app allow it.</div>
+          </div>
+        </div>
+
+        <div class="entry-card">
+          <div class="card-heading">
+            <div>
+              <div class="eyebrow">GET STARTED</div>
+              <h2>Enter the listening room</h2>
+            </div>
+            <span class="live-badge"><span></span> LIVE</span>
+          </div>
+          <label class="field-label" for="display-name">Your display name</label>
+          <input id="display-name" class="text-input" maxlength="40" placeholder="e.g. Alex" autocomplete="nickname" />
+          <div class="entry-tabs" role="tablist">
+            <button class="entry-tab active" data-entry-tab="create" type="button">Create a room</button>
+            <button class="entry-tab" data-entry-tab="join" type="button">Join a room</button>
+          </div>
+          <div id="create-panel" class="entry-panel active-panel">
+            <label class="field-label" for="room-name">Room name</label>
+            <input id="room-name" class="text-input" maxlength="60" value="Late-night listening" placeholder="e.g. Movie Night" />
+            <button id="create-room" class="primary-button full-button" type="button"><span>＋</span> Create private room</button>
+          </div>
+          <div id="join-panel" class="entry-panel">
+            <label class="field-label" for="room-code">Room code</label>
+            <input id="room-code" class="text-input code-input" maxlength="6" placeholder="ABC123" autocomplete="one-time-code" />
+            <button id="join-room" class="primary-button full-button" type="button"><span>→</span> Join room</button>
+          </div>
+          <p class="entry-footnote">No signup. Your guest identity is remembered on this device.</p>
+          <div id="entry-error" class="inline-error hidden"></div>
+        </div>
+      </section>
+
+      <section id="room-view" class="room-view hidden">
+        <header class="topbar">
+          <div class="brand-mark"><span class="brand-dot"></span> RoomSound</div>
+          <div class="room-crumb"><span class="crumb-room-name" id="top-room-name">Listening room</span><span class="crumb-separator">/</span><span class="room-code-small" id="top-room-code">------</span></div>
+          <div class="topbar-actions">
+            <span class="connection-chip" id="connection-chip"><span class="connection-dot"></span><span id="connection-label">Connecting</span></span>
+            <button id="share-room" class="ghost-button" type="button">↗ Share invite</button>
+            <button id="leave-room" class="icon-button" type="button" aria-label="Leave room">×</button>
+          </div>
+        </header>
+
+        <div id="room-banner" class="room-banner hidden"></div>
+
+        <div class="room-layout">
+          <section class="room-main">
+            <div class="room-heading-row">
+              <div>
+                <div class="eyebrow">PRIVATE ROOM</div>
+                <h1 id="room-title">Late-night listening</h1>
+              </div>
+              <div class="room-code-display"><span>ROOM CODE</span><strong id="room-code-display">------</strong></div>
+            </div>
+
+            <div class="source-card" id="source-card">
+              <div class="source-orb" id="source-orb"><span class="orb-wave"></span><span class="orb-wave orb-wave-two"></span><span class="orb-center">◒</span></div>
+              <div class="source-card-copy">
+                <div class="source-kicker" id="source-kicker">NO ACTIVE SOURCE</div>
+                <h2 id="source-title">The room is quiet</h2>
+                <p id="source-detail">Choose an audio source to start sharing with the room.</p>
+              </div>
+              <div class="source-status" id="source-status"><span class="status-pulse"></span><span id="source-status-label">Waiting</span></div>
+            </div>
+
+            <div class="control-row" id="host-controls">
+              <button id="share-audio" class="primary-button" type="button"><span class="button-icon">◉</span> Share audio</button>
+              <button id="takeover-audio" class="secondary-button hidden" type="button">Take control back</button>
+              <button id="stop-audio" class="secondary-button hidden" type="button">Stop sharing</button>
+              <button id="enable-audio" class="secondary-button hidden" type="button">Enable room audio</button>
+            </div>
+            <div class="control-row" id="participant-controls">
+              <button id="request-audio" class="primary-button" type="button"><span>↗</span> Request to play</button>
+              <button id="cancel-request" class="secondary-button hidden" type="button">Cancel request</button>
+              <button id="ask-takeover" class="secondary-button hidden" type="button">Ask host to take control</button>
+              <button id="enable-audio-participant" class="secondary-button hidden" type="button">Enable room audio</button>
+            </div>
+
+            <div class="audio-controls-panel">
+              <div class="audio-control-title"><span class="speaker-icon">◖</span> Your listening controls</div>
+              <button id="local-mute" class="mute-button" type="button"><span id="mute-icon">◒</span><span id="mute-label">Mute</span></button>
+              <input id="local-volume" class="volume-slider" type="range" min="0" max="1" step="0.01" value="0.9" aria-label="Your room volume" />
+              <span id="volume-label" class="volume-label">90%</span>
+              <span class="no-monitor-note">Your own shared audio is not played back to you.</span>
+            </div>
+
+            <div class="lower-grid">
+              <section class="panel activity-panel">
+                <div class="panel-heading"><div><span class="section-label">ROOM ACTIVITY</span><h3>What is happening</h3></div><span class="live-mini"><span></span> LIVE</span></div>
+                <div id="activity-feed" class="activity-feed"></div>
+              </section>
+              <section class="panel chat-panel">
+                <div class="panel-heading"><div><span class="section-label">ROOM CHAT</span><h3>Say something</h3></div><span class="chat-count" id="chat-count">0</span></div>
+                <div id="chat-feed" class="chat-feed"></div>
+                <form id="chat-form" class="chat-form">
+                  <input id="chat-input" class="chat-input" maxlength="280" placeholder="Message the room…" autocomplete="off" />
+                  <button class="send-button" type="submit" aria-label="Send message">↑</button>
+                </form>
+              </section>
+            </div>
+          </section>
+
+          <aside class="room-sidebar">
+            <section class="panel roster-panel">
+              <div class="panel-heading"><div><span class="section-label">IN THE ROOM</span><h3>Listeners <span id="member-count">0</span></h3></div><button id="settings-button" class="more-button" type="button">•••</button></div>
+              <div id="member-list" class="member-list"></div>
+            </section>
+
+            <section class="panel request-panel" id="request-panel">
+              <div class="panel-heading"><div><span class="section-label">CONTROL QUEUE</span><h3>Requests</h3></div><span class="request-count" id="request-count">0</span></div>
+              <div id="request-list" class="request-list"></div>
+            </section>
+
+            <section class="panel safety-panel">
+              <div class="safety-icon">⌁</div>
+              <div><strong>Private room</strong><p>Only people with your invite can try to join. Audio is not recorded.</p></div>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast-stack" class="toast-stack"></div>
+    <div id="modal-root"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
