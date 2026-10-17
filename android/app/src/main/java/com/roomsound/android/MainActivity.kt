@@ -29,6 +29,8 @@ import com.roomsound.android.capture.RoomSessionCoordinator
 import com.roomsound.android.room.RoomConnectionState
 import com.roomsound.android.room.RoomSoundEvent
 import com.roomsound.android.room.RoomState
+import java.io.PrintWriter
+import java.io.StringWriter
 import java.util.ArrayDeque
 import java.util.Locale
 import java.util.UUID
@@ -44,7 +46,15 @@ class MainActivity : Activity() {
         private const val GUEST_ID_KEY = "guest_id"
         private const val ENDPOINT_KEY = "room_endpoint"
         private const val DISPLAY_NAME_KEY = "display_name"
+        private const val LAST_CRASH_DIAGNOSTIC_KEY = "last_uncaught_exception"
+        private const val MAX_CRASH_DIAGNOSTIC_CHARS = 8192
+        private const val MAX_CRASH_SUMMARY_CHARS = 180
         private const val DEFAULT_EMULATOR_ENDPOINT = "ws://10.0.2.2:4173"
+        private val SENSITIVE_URL_PATTERN = Regex("""(?i)\b(?:https?|wss?)://[^\s]+""")
+        private val SENSITIVE_VALUE_PATTERN = Regex(
+            """(?i)\b(?:api[_-]?key|authorization|bearer|password|passwd|secret|token|room[_-]?code|roomcode)\b\s*(?:[:=]\s*)?(?:bearer\s+)?[^\s,;]+""",
+        )
+        private var crashHandlerInstalled = false
     }
 
     private lateinit var capabilityText: TextView
@@ -84,6 +94,7 @@ class MainActivity : Activity() {
     private var projectionConsentInFlight = false
     private var captureService: PlaybackCaptureService? = null
     private var serviceBound = false
+    private var serviceBindingInFlight = false
     private var latestCapability: CaptureCapabilityReport? = null
     private var roomSession: RoomSessionCoordinator? = null
     private var latestRoomState: RoomState? = null
@@ -132,22 +143,17 @@ class MainActivity : Activity() {
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            val localBinder = binder as? PlaybackCaptureService.LocalBinder ?: return
-            captureService = localBinder.service()
-            serviceBound = true
-            roomSession = captureService?.roomSession()
-            roomSession?.addListener(roomListener)
-            captureService?.addListener(serviceListener)
-            renderSnapshot(captureService?.snapshot() ?: CaptureSnapshot(CaptureStatus.IDLE))
-            renderRoomConnection(roomSession?.connectionState() ?: RoomConnectionState.IDLE)
-            renderRoomState(roomSession?.currentRoomState())
+            serviceBindingInFlight = false
+            val localBinder = binder as? PlaybackCaptureService.LocalBinder ?: run {
+                serviceBound = false
+                return
+            }
+            attachToService(localBinder.service())
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            roomSession?.removeListener(roomListener)
-            captureService?.removeListener(serviceListener)
-            roomSession = null
-            captureService = null
+            serviceBindingInFlight = false
+            detachFromService()
             serviceBound = false
             renderSnapshot(CaptureSnapshot(CaptureStatus.STOPPED, message = "Capture service disconnected."))
             renderRoomState(null)
@@ -155,18 +161,20 @@ class MainActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Prevent native/WebRTC/AudioRecord errors from force-closing the app without a log.
-        val prevHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            try { android.util.Log.e("RoomSound", "Uncaught on "+thread.name, throwable) } catch (_: Throwable) {}
-            try { prevHandler?.uncaughtException(thread, throwable) } catch (_: Throwable) { try { android.util.Log.e("RoomSound", "prevHandler crashed", throwable) } catch (_: Throwable) {} }
-        }
+        installUncaughtExceptionHandler()
         super.onCreate(savedInstanceState)
         pendingCaptureId = savedInstanceState?.getString(STATE_PENDING_CAPTURE_ID)
         projectionConsentInFlight = savedInstanceState?.getBoolean(STATE_PROJECTION_IN_FLIGHT, false) == true
         setContentView(buildContentView())
+        showPreviousCrashNotice()
         refreshCapability()
         ensureCaptureService()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        ensureCaptureService()
+        if (serviceBound) renderAttachedServiceState()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -176,22 +184,121 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        roomSession?.removeListener(roomListener)
-        captureService?.removeListener(serviceListener)
-        if (serviceBound) {
-            unbindService(serviceConnection)
+        detachFromService()
+        if (serviceBound || serviceBindingInFlight) {
+            runCatching { unbindService(serviceConnection) }
             serviceBound = false
+            serviceBindingInFlight = false
         }
         // Do not close the started service: the room and foreground capture are
         // deliberately independent from this Activity's view lifecycle.
         super.onDestroy()
     }
 
+    private fun installUncaughtExceptionHandler() {
+        if (crashHandlerInstalled) return
+        crashHandlerInstalled = true
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        val crashPreferences = applicationContext.getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE)
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            val diagnostic = buildCrashDiagnostic(thread, throwable)
+            try {
+                val persisted = crashPreferences.edit()
+                    .putString(LAST_CRASH_DIAGNOSTIC_KEY, diagnostic)
+                    .commit()
+                if (!persisted) android.util.Log.e("RoomSound", "Could not persist uncaught exception diagnostic")
+            } catch (persistenceError: Throwable) {
+                try {
+                    android.util.Log.e(
+                        "RoomSound",
+                        "Could not persist uncaught exception diagnostic (${persistenceError.javaClass.simpleName})",
+                    )
+                } catch (_: Throwable) {}
+            }
+            try { android.util.Log.e("RoomSound", diagnostic) } catch (_: Throwable) {}
+            try {
+                previousHandler?.uncaughtException(thread, throwable)
+            } catch (handlerError: Throwable) {
+                try {
+                    android.util.Log.e(
+                        "RoomSound",
+                        "Previous uncaught exception handler failed (${handlerError.javaClass.simpleName})",
+                    )
+                } catch (_: Throwable) {}
+            }
+        }
+    }
+
+    private fun buildCrashDiagnostic(thread: Thread, throwable: Throwable): String {
+        val stackTrace = StringWriter()
+        runCatching { PrintWriter(stackTrace).use { throwable.printStackTrace(it) } }
+        val stackTraceText = stackTrace.toString()
+        val raw = buildString {
+            append("Uncaught exception on ")
+            append(thread.name)
+            append(": ")
+            append(throwable.javaClass.name)
+            append(": ")
+            append(throwable.message ?: "no message")
+            if (stackTraceText.isNotEmpty()) {
+                append('\n')
+                append(stackTraceText)
+            }
+        }
+        return raw
+            .replace(SENSITIVE_URL_PATTERN, "<url redacted>")
+            .replace(SENSITIVE_VALUE_PATTERN, "<secret redacted>")
+            .take(MAX_CRASH_DIAGNOSTIC_CHARS)
+    }
+
+    private fun showPreviousCrashNotice() {
+        val diagnostic = preferences.getString(LAST_CRASH_DIAGNOSTIC_KEY, null)?.takeIf { it.isNotBlank() } ?: return
+        runCatching { preferences.edit().remove(LAST_CRASH_DIAGNOSTIC_KEY).commit() }
+        val summary = diagnostic.substringBefore('\n').trim().take(MAX_CRASH_SUMMARY_CHARS)
+        appendRoomEvent("Previous launch ended unexpectedly: ${summary.ifBlank { "uncaught exception recorded" }}")
+    }
+
     private fun ensureCaptureService() {
         val intent = Intent(this, PlaybackCaptureService::class.java)
+        if (serviceBound || serviceBindingInFlight) return
         runCatching { startService(intent) }
             .onFailure { appendRoomEvent("Room service could not start: ${it.message}") }
-        if (!serviceBound) bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        serviceBindingInFlight = true
+        val requested = runCatching { bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE) }
+            .onFailure { appendRoomEvent("Room service could not bind: ${it.message}") }
+            .getOrDefault(false)
+        if (!requested) serviceBindingInFlight = false
+    }
+
+    private fun attachToService(service: PlaybackCaptureService) {
+        val session = service.roomSession()
+        if (captureService === service && roomSession === session) {
+            serviceBound = true
+            renderAttachedServiceState()
+            return
+        }
+        detachFromService()
+        captureService = service
+        roomSession = session
+        serviceBound = true
+        session.addListener(roomListener)
+        service.addListener(serviceListener)
+        renderAttachedServiceState()
+    }
+
+    private fun detachFromService() {
+        roomSession?.removeListener(roomListener)
+        captureService?.removeListener(serviceListener)
+        roomSession = null
+        captureService = null
+    }
+
+    private fun renderAttachedServiceState() {
+        val service = captureService
+        val session = roomSession
+        renderSnapshot(service?.snapshot() ?: CaptureSnapshot(CaptureStatus.IDLE))
+        renderRoomConnection(session?.connectionState() ?: RoomConnectionState.IDLE)
+        renderRoomState(session?.currentRoomState())
     }
 
     private fun buildContentView(): View {
