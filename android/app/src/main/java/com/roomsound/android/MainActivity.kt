@@ -633,6 +633,7 @@ class MainActivity : Activity() {
             append(" · dropped not-live=${snapshot.droppedNotLiveFrames}")
             append(" · dropped stale=${snapshot.droppedStaleEpochFrames}")
             if (snapshot.authorization?.canPublishFrames == true) append("\nServer reports this phone as LIVE source.")
+            snapshot.publisherDiagnostics?.takeIf { it.isNotBlank() }?.let { append("\n").append(it) }
         }
     }
 

@@ -178,7 +178,7 @@ public class WebRtcPcmPublisher(
      * Diagnostic counters describe PCM enqueued/injected into WebRTC. They do
      * not claim that queued samples were confirmed delivered over the network.
      */
-    public fun diagnostics(): String {
+    override fun diagnostics(): String {
         val (started, epoch, ready, error, roomEpoch) = synchronized(stateLock) {
             Tuple5(
                 sourceStarted,
@@ -299,7 +299,10 @@ public class WebRtcPcmPublisher(
                 .setUseStereoOutput(false)
                 .setUseHardwareAcousticEchoCanceler(false)
                 .setUseHardwareNoiseSuppressor(false)
-                .setUseLowLatency(true)
+                // Prefer the broadly supported AudioTrack path while bringing
+                // up custom PCM injection. Low-latency mode is device-specific
+                // and can fail without a useful Java exception.
+                .setUseLowLatency(false)
                 .setEnableVolumeLogger(false)
                 .setAudioAttributes(
                     AudioAttributes.Builder()
@@ -307,9 +310,57 @@ public class WebRtcPcmPublisher(
                         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                         .build(),
                 )
-                .setAudioBufferCallback(JavaAudioDeviceModule.AudioBufferCallback { buffer, _, _, _, _, _ ->
-                    try { pcmQueue.fillAudioBuffer(buffer) } catch (t: Throwable) { android.util.Log.e("RoomSound", "ADM fillAudioBuffer failed", t); try { buffer.clear(); while (buffer.hasRemaining()) buffer.put(0); buffer.clear() } catch (_: Throwable) {} }
-                    0L
+                .setAudioTrackErrorCallback(object : JavaAudioDeviceModule.AudioTrackErrorCallback {
+                    override fun onWebRtcAudioTrackInitError(error: String) {
+                        reportStatus("Native audio output init failed: $error")
+                    }
+
+                    override fun onWebRtcAudioTrackStartError(
+                        errorCode: JavaAudioDeviceModule.AudioTrackStartErrorCode,
+                        errorMessage: String,
+                    ) {
+                        reportStatus("Native audio output start failed ($errorCode): $errorMessage")
+                    }
+
+                    override fun onWebRtcAudioTrackError(error: String) {
+                        reportStatus("Native audio output failed: $error")
+                    }
+                })
+                .setAudioTrackStateCallback(object : JavaAudioDeviceModule.AudioTrackStateCallback {
+                    override fun onWebRtcAudioTrackStart() {
+                        reportStatus("Native audio output started.")
+                    }
+
+                    override fun onWebRtcAudioTrackStop() {
+                        reportStatus("Native audio output stopped.")
+                    }
+                })
+                .setAudioRecordErrorCallback(object : JavaAudioDeviceModule.AudioRecordErrorCallback {
+                    override fun onWebRtcAudioRecordInitError(error: String) {
+                        reportStatus("Unexpected native recording init: $error")
+                    }
+
+                    override fun onWebRtcAudioRecordStartError(
+                        errorCode: JavaAudioDeviceModule.AudioRecordStartErrorCode,
+                        errorMessage: String,
+                    ) {
+                        reportStatus("Unexpected native recording start ($errorCode): $errorMessage")
+                    }
+
+                    override fun onWebRtcAudioRecordError(error: String) {
+                        reportStatus("Unexpected native recording error: $error")
+                    }
+                })
+                .setAudioBufferCallback(JavaAudioDeviceModule.AudioBufferCallback { buffer, _, _, _, _, timestampNs ->
+                    try {
+                        pcmQueue.fillAudioBuffer(buffer)
+                    } catch (t: Throwable) {
+                        android.util.Log.e("RoomSound", "ADM fillAudioBuffer failed", t)
+                        try { buffer.clear(); while (buffer.hasRemaining()) buffer.put(0); buffer.clear() } catch (_: Throwable) {}
+                    }
+                    // The fork forwards this value as native capture timing;
+                    // zero is not a documented "timestamp unavailable" value.
+                    if (timestampNs > 0L) timestampNs else System.nanoTime()
                 })
                 .createAudioDeviceModule()
 
@@ -469,6 +520,13 @@ public class WebRtcPcmPublisher(
         val epoch = state.room.sourceEpoch
         val existing = peers[from]
         if (existing != null) {
+            // ICE candidates can arrive before the browser's offer. Reuse the
+            // receiver that queued them; disposing it here would silently
+            // discard the only candidates that can make the peer connect.
+            if (existing.role == PeerRole.RECEIVER && !existing.remoteDescriptionSet && existing.sourceEpoch == epoch) {
+                setRemoteDescriptionAndMaybeAnswer(existing, description)
+                return
+            }
             // One offer is expected per source/listener epoch. Do not let a
             // delayed duplicate replace a live peer and revive stale media.
             if (existing.role == PeerRole.RECEIVER && existing.remoteDescriptionSet) return
@@ -706,6 +764,7 @@ public class WebRtcPcmPublisher(
     private fun handleRemoteTrack(session: PeerSession, track: MediaStreamTrack?) {
         val audio = track as? AudioTrack ?: return
         if (!session.remoteAudioTracks.contains(audio)) session.remoteAudioTracks += audio
+        runCatching { audio.setEnabled(true) }
         runCatching { audio.setVolume(playbackVolume) }
     }
 

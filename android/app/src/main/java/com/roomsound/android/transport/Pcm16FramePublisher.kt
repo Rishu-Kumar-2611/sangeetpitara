@@ -40,11 +40,11 @@ enum class Pcm16PublishResult {
 }
 
 /**
- * Media-plane seam for a future native audio backend.
+ * Media-plane seam for the native audio backend.
  *
  * Implementations must bind to exactly one RoomSound source epoch at a time.
- * A future WebRTC/native implementation can create or replace its audio track
- * in [start], accept frames in [publish], and tear it down in [stop]. No
+ * A WebRTC/native implementation creates or replaces its audio track in
+ * [start], accepts frames in [publish], and tears it down in [stop]. No
  * microphone fallback or generated audio is part of this interface.
  */
 interface Pcm16FramePublisher {
@@ -57,12 +57,14 @@ interface Pcm16FramePublisher {
 
     fun stop(sourceEpoch: Long)
 
+    /** Optional diagnostics for the native media boundary. */
+    fun diagnostics(): String? = null
+
     fun close() = Unit
 }
 
 /**
- * Explicit current implementation boundary: OkHttp signaling is available,
- * but arbitrary PCM injection into a WebRTC audio sender is not implemented.
+ * Explicit fallback when the native media backend could not be initialized.
  */
 class UnavailablePcm16FramePublisher(
     val reason: String = DEFAULT_REASON,

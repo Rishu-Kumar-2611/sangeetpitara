@@ -20,6 +20,7 @@ data class RoomAudioTransportSnapshot(
     val droppedStaleEpochFrames: Long,
     val droppedUnavailableFrames: Long,
     val lastResult: Pcm16PublishResult?,
+    val publisherDiagnostics: String?,
 )
 
 /**
@@ -121,6 +122,7 @@ class RoomAudioTransport(
             droppedStaleEpochFrames = droppedStaleEpochFrames,
             droppedUnavailableFrames = droppedUnavailableFrames,
             lastResult = lastResult,
+            publisherDiagnostics = framePublisher.diagnostics(),
         )
     }
 
