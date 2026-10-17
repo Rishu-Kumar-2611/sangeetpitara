@@ -10,7 +10,10 @@ import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -50,6 +53,7 @@ class MainActivity : Activity() {
         private const val MAX_CRASH_DIAGNOSTIC_CHARS = 8192
         private const val MAX_CRASH_SUMMARY_CHARS = 180
         private const val DEFAULT_EMULATOR_ENDPOINT = "ws://10.0.2.2:4173"
+        private const val TRANSPORT_RENDER_INTERVAL_MS = 500L
         private val SENSITIVE_URL_PATTERN = Regex("""(?i)\b(?:https?|wss?)://[^\s]+""")
         private val SENSITIVE_VALUE_PATTERN = Regex(
             """(?i)\b(?:api[_-]?key|authorization|bearer|password|passwd|secret|token|room[_-]?code|roomcode)\b\s*(?:[:=]\s*)?(?:bearer\s+)?[^\s,;]+""",
@@ -101,6 +105,14 @@ class MainActivity : Activity() {
     private var latestSnapshot = CaptureSnapshot(CaptureStatus.IDLE)
     private var muted = false
     private val roomEvents = ArrayDeque<String>()
+    private val transportRenderHandler = Handler(Looper.getMainLooper())
+    private var transportRenderPosted = false
+    private var lastTransportRenderAt = 0L
+    private val transportRenderRunnable = Runnable {
+        transportRenderPosted = false
+        lastTransportRenderAt = SystemClock.uptimeMillis()
+        renderTransport()
+    }
     private val preferences by lazy { getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE) }
     private val guestId: String by lazy {
         preferences.getString(GUEST_ID_KEY, null)?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString().also {
@@ -129,14 +141,14 @@ class MainActivity : Activity() {
         override fun onPublisherStatus(message: String) {
             runOnUiThread {
                 if (message.isNotBlank()) appendRoomEvent(message)
-                renderTransport()
+                requestTransportRender()
             }
         }
 
         override fun onSessionChanged() {
             runOnUiThread {
                 renderRoomState(roomSession?.currentRoomState())
-                renderTransport()
+                requestTransportRender()
             }
         }
     }
@@ -157,6 +169,7 @@ class MainActivity : Activity() {
             serviceBound = false
             renderSnapshot(CaptureSnapshot(CaptureStatus.STOPPED, message = "Capture service disconnected."))
             renderRoomState(null)
+            renderTransportNow()
         }
     }
 
@@ -184,6 +197,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        transportRenderHandler.removeCallbacks(transportRenderRunnable)
+        transportRenderPosted = false
         detachFromService()
         if (serviceBound || serviceBindingInFlight) {
             runCatching { unbindService(serviceConnection) }
@@ -299,6 +314,7 @@ class MainActivity : Activity() {
         renderSnapshot(service?.snapshot() ?: CaptureSnapshot(CaptureStatus.IDLE))
         renderRoomConnection(session?.connectionState() ?: RoomConnectionState.IDLE)
         renderRoomState(session?.currentRoomState())
+        renderTransportNow()
     }
 
     private fun buildContentView(): View {
@@ -435,7 +451,7 @@ class MainActivity : Activity() {
         }, matchWrap())
 
         renderRoomState(null)
-        renderTransport()
+        renderTransportNow()
         updateMuteButton()
         return ScrollView(this).apply { addView(content) }
     }
@@ -573,11 +589,11 @@ class MainActivity : Activity() {
                 )
                 is RoomSoundEvent.Unknown -> appendRoomEvent("Ignored unknown room event '${event.type}'.")
             }
-            renderTransport()
+            requestTransportRender()
         } catch (t: Throwable) {
             android.util.Log.e("RoomSound", "handleRoomEvent crashed for $event", t)
             appendRoomEvent("Room event handling hit an internal error (${t.javaClass.simpleName}); state refresh may be needed.")
-            runCatching { renderTransport() }
+            runCatching { requestTransportRender() }
         }
     }
 
@@ -599,11 +615,10 @@ class MainActivity : Activity() {
     private fun renderRoomState(state: RoomState?) {
         try {
         latestRoomState = state
+        renderCaptureControls(state)
         if (state == null) {
             roomStateText.text = "No room state. Create or join a room to continue."
             roomMembersText.text = "Members: —"
-            sourceButton.text = "Share device audio"
-            sourceButton.isEnabled = false
             takeoverButton.isEnabled = false
             requestAudioButton.text = "Request to share device audio"
             requestAudioButton.isEnabled = false
@@ -619,14 +634,6 @@ class MainActivity : Activity() {
         val self = state.self
         val isHost = self != null && self.id == room.hostId
         val isModerator = self != null && (isHost || self.id == room.cohostId)
-        val isSelfSource = self != null && self.id == room.activeSourceId
-        val captureActive = latestSnapshot.status in setOf(
-            CaptureStatus.STARTING,
-            CaptureStatus.READY,
-            CaptureStatus.CAPTURING,
-            CaptureStatus.NO_ACTIVE_PLAYBACK,
-        )
-        val consentPending = projectionConsentInFlight || pendingCaptureStart
         val sourceMember = state.members.firstOrNull { it.id == room.activeSourceId }
         roomStateText.text = buildString {
             append("Room ${room.code} · ${room.status}\n")
@@ -640,28 +647,6 @@ class MainActivity : Activity() {
             }.ifEmpty { "—" })
         }
 
-        if (isSelfSource) {
-            sourceButton.text = when {
-                consentPending -> "Awaiting Android consent…"
-                captureActive && room.sourceStatus.equals("STARTING", ignoreCase = true) -> "Preparing device audio…"
-                captureActive -> "Stop sharing device audio"
-                room.sourceStatus.equals("STARTING", ignoreCase = true) -> "Share approved device audio"
-                else -> "Resume device audio"
-            }
-            sourceButton.isEnabled = !consentPending && (!captureActive || room.sourceStatus.equals("LIVE", ignoreCase = true) ||
-                room.sourceStatus.equals("STARTING", ignoreCase = true)
-            )
-        } else if (isModerator && room.activeSourceId == null) {
-            sourceButton.text = when {
-                consentPending -> "Awaiting Android consent…"
-                captureActive -> "Preparing device audio…"
-                else -> "Share device audio"
-            }
-            sourceButton.isEnabled = !consentPending && !captureActive
-        } else {
-            sourceButton.text = "Wait for source control"
-            sourceButton.isEnabled = false
-        }
         val ownPendingRequest = self != null && state.requests.any {
             it.requesterId == self.id && it.status.equals("PENDING", ignoreCase = true)
         }
@@ -669,7 +654,7 @@ class MainActivity : Activity() {
             room.activeSourceId == room.hostId || room.activeSourceId == room.cohostId
         requestAudioButton.text = if (ownPendingRequest) "Audio request pending" else "Request to share device audio"
         requestAudioButton.isEnabled = self != null && !isModerator && sourceIsModerator && !ownPendingRequest
-        takeoverButton.isEnabled = isModerator && room.activeSourceId != null && !isSelfSource
+        takeoverButton.isEnabled = isModerator && room.activeSourceId != null && self?.id != room.activeSourceId
         leaveRoomButton.isEnabled = true
         endRoomButton.isEnabled = isHost
         runCatching { renderApprovalControls(state, isModerator) }
@@ -742,6 +727,84 @@ class MainActivity : Activity() {
             if (snapshot.authorization?.canPublishFrames == true) append("\nServer reports this phone as LIVE source.")
             snapshot.publisherDiagnostics?.takeIf { it.isNotBlank() }?.let { append("\n").append(it) }
         }
+    }
+
+    /** Capture snapshots arrive frequently; only update the controls that depend on them. */
+    private fun renderCaptureControls(state: RoomState?) {
+        if (!::startButton.isInitialized || !::stopButton.isInitialized) return
+        val active = latestSnapshot.status in setOf(
+            CaptureStatus.STARTING,
+            CaptureStatus.READY,
+            CaptureStatus.CAPTURING,
+            CaptureStatus.NO_ACTIVE_PLAYBACK,
+        )
+        startButton.isEnabled = !active && !projectionConsentInFlight
+        stopButton.isEnabled = active || projectionConsentInFlight || pendingCaptureStart
+        renderSourceControl(state)
+    }
+
+    private fun renderSourceControl(state: RoomState?) {
+        if (!::sourceButton.isInitialized) return
+        if (state == null) {
+            sourceButton.text = "Share device audio"
+            sourceButton.isEnabled = false
+            return
+        }
+        val room = state.room
+        val self = state.self
+        val isHost = self != null && self.id == room.hostId
+        val isModerator = self != null && (isHost || self.id == room.cohostId)
+        val isSelfSource = self != null && self.id == room.activeSourceId
+        val captureActive = latestSnapshot.status in setOf(
+            CaptureStatus.STARTING,
+            CaptureStatus.READY,
+            CaptureStatus.CAPTURING,
+            CaptureStatus.NO_ACTIVE_PLAYBACK,
+        )
+        val consentPending = projectionConsentInFlight || pendingCaptureStart
+        if (isSelfSource) {
+            sourceButton.text = when {
+                consentPending -> "Awaiting Android consent…"
+                captureActive && room.sourceStatus.equals("STARTING", ignoreCase = true) -> "Preparing device audio…"
+                captureActive -> "Stop sharing device audio"
+                room.sourceStatus.equals("STARTING", ignoreCase = true) -> "Share approved device audio"
+                else -> "Resume device audio"
+            }
+            sourceButton.isEnabled = !consentPending && (!captureActive || room.sourceStatus.equals("LIVE", ignoreCase = true) ||
+                room.sourceStatus.equals("STARTING", ignoreCase = true)
+            )
+        } else if (isModerator && room.activeSourceId == null) {
+            sourceButton.text = when {
+                consentPending -> "Awaiting Android consent…"
+                captureActive -> "Preparing device audio…"
+                else -> "Share device audio"
+            }
+            sourceButton.isEnabled = !consentPending && !captureActive
+        } else {
+            sourceButton.text = "Wait for source control"
+            sourceButton.isEnabled = false
+        }
+    }
+
+    private fun requestTransportRender() {
+        if (!::transportText.isInitialized || transportRenderPosted) return
+        val now = SystemClock.uptimeMillis()
+        val elapsed = now - lastTransportRenderAt
+        val delay = if (lastTransportRenderAt == 0L || elapsed >= TRANSPORT_RENDER_INTERVAL_MS) {
+            0L
+        } else {
+            TRANSPORT_RENDER_INTERVAL_MS - elapsed
+        }
+        transportRenderPosted = true
+        transportRenderHandler.postDelayed(transportRenderRunnable, delay)
+    }
+
+    private fun renderTransportNow() {
+        if (!::transportText.isInitialized) return
+        transportRenderHandler.removeCallbacks(transportRenderRunnable)
+        transportRenderPosted = false
+        lastTransportRenderAt = SystemClock.uptimeMillis()
+        renderTransport()
     }
 
     private fun handleSourceAction() {
@@ -860,7 +923,7 @@ class MainActivity : Activity() {
         roomSession?.leaveRoom()
         latestRoomState = null
         renderRoomState(null)
-        renderTransport()
+        renderTransportNow()
         appendRoomEvent("Left the room.")
     }
 
@@ -1017,16 +1080,8 @@ class MainActivity : Activity() {
             append("Sample frames read: ${snapshot.framesCaptured} · non-silent sample frames: ${snapshot.nonSilentFrames}")
             if (!snapshot.message.isNullOrBlank()) append("\n${snapshot.message}")
         }
-        val active = snapshot.status in setOf(
-            CaptureStatus.STARTING,
-            CaptureStatus.READY,
-            CaptureStatus.CAPTURING,
-            CaptureStatus.NO_ACTIVE_PLAYBACK,
-        )
-        startButton.isEnabled = !active && !projectionConsentInFlight
-        stopButton.isEnabled = active || projectionConsentInFlight || pendingCaptureStart
-        renderRoomState(roomSession?.currentRoomState() ?: latestRoomState)
-        renderTransport()
+        renderCaptureControls(latestRoomState ?: roomSession?.currentRoomState())
+        requestTransportRender()
     }
 
     private fun applyPlaybackVolume() {
