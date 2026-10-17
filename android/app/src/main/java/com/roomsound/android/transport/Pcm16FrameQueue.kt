@@ -84,11 +84,13 @@ private class Pcm16SignalAccumulator {
  * The capture callback and WebRTC's audio callback run on different threads.
  * The critical sections only copy the small 10 ms buffers, and the queue
  * drops the oldest samples when it is full so a stalled producer cannot grow
- * latency without bound.
+ * latency without bound. ADM callback completion is paced by
+ * [Pcm16FramePacer] outside the queue lock.
  */
 internal class Pcm16FrameQueue(
     private val capacitySamples: Int = DEFAULT_CAPACITY_SAMPLES,
     private val expectedFormat: Pcm16AudioFormat = Pcm16AudioFormat(48_000, 1),
+    private val framePacer: Pcm16FramePacer = Pcm16FramePacer(),
 ) {
     data class EnqueueResult(
         val acceptedSamples: Int,
@@ -159,46 +161,62 @@ internal class Pcm16FrameQueue(
         audioFormat: Int? = null,
         channels: Int? = null,
         sampleRate: Int? = null,
-    ): Int = try { synchronized(lock) {
-        callbackCount += 1
-        lastAdmReportedBytes = reportedBytes
-        lastAdmBufferBytes = buffer.capacity()
-        lastAdmAudioFormat = audioFormat
-        lastAdmChannels = channels
-        lastAdmSampleRate = sampleRate
-        buffer.clear()
-        while (buffer.hasRemaining()) buffer.put(0)
-        buffer.clear()
-
+    ): Int = try {
         val requestedSamples = buffer.capacity() / BYTES_PER_SAMPLE
-        if (activeEpoch == null || requestedSamples == 0) {
-            underrunSamples += requestedSamples.toLong()
+        val shouldPace = synchronized(lock) {
+            callbackCount += 1
+            lastAdmReportedBytes = reportedBytes
+            lastAdmBufferBytes = buffer.capacity()
+            lastAdmAudioFormat = audioFormat
+            lastAdmChannels = channels
+            lastAdmSampleRate = sampleRate
+            requestedSamples > 0
+        }
+
+        // The recordingless ADM callback forwards the complete buffer to
+        // native immediately after this method returns. Pace that return
+        // outside the queue lock so native receives one 10 ms buffer at a
+        // time without blocking offer/bind/revoke operations.
+        if (shouldPace) framePacer.awaitNextBuffer()
+
+        synchronized(lock) {
+            buffer.clear()
+            while (buffer.hasRemaining()) buffer.put(0)
+            buffer.clear()
+
+            if (activeEpoch == null || requestedSamples == 0) {
+                underrunSamples += requestedSamples.toLong()
+                buffer.position(0)
+                lastAdmBufferAccumulator.reset()
+                lastAdmBufferAccumulator.addPcm16Le(buffer, requestedSamples)
+                admBufferSignal.addPcm16Le(buffer, requestedSamples)
+                return@synchronized 0
+            }
+
+            val copied = minOf(size, requestedSamples)
+            repeat(copied) { index ->
+                val sample = samples[(readIndex + index) % capacitySamples]
+                val byteOffset = index * BYTES_PER_SAMPLE
+                // Write explicitly as little endian; ADM supplies PCM16LE to the
+                // native audio sender regardless of the JVM's default byte order.
+                buffer.put(byteOffset, (sample.toInt() and 0xff).toByte())
+                buffer.put(byteOffset + 1, (sample.toInt() ushr 8 and 0xff).toByte())
+            }
+            readIndex = (readIndex + copied) % capacitySamples
+            size -= copied
+            drainedSamples += copied.toLong()
+            if (copied < requestedSamples) underrunSamples += (requestedSamples - copied).toLong()
             buffer.position(0)
             lastAdmBufferAccumulator.reset()
             lastAdmBufferAccumulator.addPcm16Le(buffer, requestedSamples)
             admBufferSignal.addPcm16Le(buffer, requestedSamples)
-            return@synchronized 0
+            copied
         }
-
-        val copied = minOf(size, requestedSamples)
-        repeat(copied) { index ->
-            val sample = samples[(readIndex + index) % capacitySamples]
-            val byteOffset = index * BYTES_PER_SAMPLE
-            // Write explicitly as little endian; ADM supplies PCM16LE to the
-            // native audio sender regardless of the JVM's default byte order.
-            buffer.put(byteOffset, (sample.toInt() and 0xff).toByte())
-            buffer.put(byteOffset + 1, (sample.toInt() ushr 8 and 0xff).toByte())
-        }
-        readIndex = (readIndex + copied) % capacitySamples
-        size -= copied
-        drainedSamples += copied.toLong()
-        if (copied < requestedSamples) underrunSamples += (requestedSamples - copied).toLong()
-        buffer.position(0)
-        lastAdmBufferAccumulator.reset()
-        lastAdmBufferAccumulator.addPcm16Le(buffer, requestedSamples)
-        admBufferSignal.addPcm16Le(buffer, requestedSamples)
-        copied
-    } } catch (t: Throwable) { android.util.Log.e("RoomSound", "fillAudioBuffer failed", t); try { buffer.clear(); while (buffer.hasRemaining()) buffer.put(0); buffer.clear(); buffer.position(0) } catch (_: Throwable) {}; 0 }
+    } catch (t: Throwable) {
+        android.util.Log.e("RoomSound", "fillAudioBuffer failed", t)
+        try { buffer.clear(); while (buffer.hasRemaining()) buffer.put(0); buffer.clear(); buffer.position(0) } catch (_: Throwable) {}
+        0
+    }
 
     fun queuedSamples(): Int = synchronized(lock) { size }
 
@@ -262,6 +280,7 @@ internal class Pcm16FrameQueue(
     private fun clearLocked() {
         readIndex = 0
         size = 0
+        framePacer.reset()
     }
 
     companion object {

@@ -8,7 +8,8 @@ import org.junit.Test
 class Pcm16FrameQueueTest {
     @Test
     fun recordsSignalBeforeAndAfterAdmBufferFill() {
-        val queue = Pcm16FrameQueue(capacitySamples = 8)
+        val pacing = DeterministicPacing()
+        val queue = Pcm16FrameQueue(capacitySamples = 8, framePacer = pacing.pacer)
         queue.bind(sourceEpoch = 7L)
         val input = shortArrayOf(-1_000, 0, 1_000, 2_000)
 
@@ -53,7 +54,8 @@ class Pcm16FrameQueueTest {
 
     @Test
     fun recordsZeroPcmWhenAdmCallbackUnderruns() {
-        val queue = Pcm16FrameQueue(capacitySamples = 4)
+        val pacing = DeterministicPacing()
+        val queue = Pcm16FrameQueue(capacitySamples = 4, framePacer = pacing.pacer)
         queue.bind(sourceEpoch = 11L)
         queue.offer(
             Pcm16Frame(
@@ -75,5 +77,38 @@ class Pcm16FrameQueueTest {
         assertEquals(0, diagnostics.lastAdmBuffer.minSample)
         assertEquals(0, diagnostics.lastAdmBuffer.maxSample)
         assertEquals(0.0, diagnostics.lastAdmBuffer.rms ?: -1.0, 0.0)
+    }
+
+    @Test
+    fun resetsPacingOnBindAndRevoke() {
+        val pacing = DeterministicPacing()
+        val queue = Pcm16FrameQueue(capacitySamples = 4, framePacer = pacing.pacer)
+        val buffer = ByteBuffer.allocateDirect(8)
+
+        queue.bind(sourceEpoch = 1L)
+        queue.fillAudioBuffer(buffer)
+        queue.fillAudioBuffer(buffer)
+        assertEquals(listOf(10L), pacing.waits)
+
+        queue.revoke(sourceEpoch = 1L)
+        queue.fillAudioBuffer(buffer)
+        assertEquals(listOf(10L), pacing.waits)
+
+        queue.bind(sourceEpoch = 2L)
+        queue.fillAudioBuffer(buffer)
+        assertEquals(listOf(10L), pacing.waits)
+    }
+
+    private class DeterministicPacing {
+        var nowNanos = 0L
+        val waits = mutableListOf<Long>()
+        val pacer = Pcm16FramePacer(
+            intervalNanos = 10L,
+            clock = Pcm16MonotonicClock { nowNanos },
+            waiter = Pcm16PacingWaiter { nanos ->
+                waits += nanos
+                nowNanos += nanos
+            },
+        )
     }
 }
