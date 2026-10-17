@@ -46,7 +46,7 @@ data class WebRtcRtpStatsSnapshot(
     val error: String? = null,
 )
 
-/** A serialized diagnostic snapshot for one active native peer. */
+/** A serialized diagnostic snapshot for one native peer, active or terminal. */
 data class WebRtcPeerDiagnostics(
     val role: String,
     val memberId: String,
@@ -56,6 +56,8 @@ data class WebRtcPeerDiagnostics(
     val peerConnectionState: String,
     val remoteTrackPresent: Boolean,
     val rtpStats: WebRtcRtpStatsSnapshot,
+    val isTerminal: Boolean = false,
+    val terminalReason: String? = null,
 ) {
     fun asDiagnosticLine(): String = buildString {
         append("peer role=").append(role)
@@ -73,6 +75,8 @@ data class WebRtcPeerDiagnostics(
         append(" audioLevel=").append(rtpStats.audioLevel ?: "n/a")
         rtpStats.audioLevelSource?.let { append(" audioLevelSource=").append(it) }
         rtpStats.error?.let { append(" statsError=").append(it) }
+        if (isTerminal) append(" terminal=true")
+        terminalReason?.let { append(" terminalReason=").append(it) }
     }
 }
 
@@ -144,6 +148,8 @@ public class WebRtcPcmPublisher(
     private val peers = mutableMapOf<String, PeerSession>()
     @Volatile
     private var peerDiagnosticsSnapshot: List<WebRtcPeerDiagnostics> = emptyList()
+    @Volatile
+    private var lastTerminalPeerDiagnostics: WebRtcPeerDiagnostics? = null
     @Volatile
     private var statsPollFuture: ScheduledFuture<*>? = null
 
@@ -270,6 +276,9 @@ public class WebRtcPcmPublisher(
             peerDiagnosticsSnapshot.forEach { peer ->
                 append("\n").append(peer.asDiagnosticLine())
             }
+            lastTerminalPeerDiagnostics?.let { peer ->
+                append("\nlastTerminalPeer ").append(peer.asDiagnosticLine())
+            }
         }
     }
 
@@ -279,6 +288,9 @@ public class WebRtcPcmPublisher(
      * never touches a live PeerConnection or performs a native WebRTC call.
      */
     public fun peerDiagnostics(): List<WebRtcPeerDiagnostics> = peerDiagnosticsSnapshot.toList()
+
+    /** Returns the last disposed native peer, including its terminal reason and RTP stats. */
+    public fun lastTerminalPeerDiagnostics(): WebRtcPeerDiagnostics? = lastTerminalPeerDiagnostics
 
     override fun start(format: Pcm16AudioFormat, sourceEpoch: Long): Boolean {
         if (format != Pcm16AudioFormat(CAPTURE_SAMPLE_RATE, CAPTURE_CHANNELS)) {
@@ -564,7 +576,7 @@ public class WebRtcPcmPublisher(
                     state.room.activeSourceId == session.memberId &&
                     session.sourceEpoch == epoch && !state.room.sourceStatus.equals("NONE", true)
             }
-            if (!keep) disposePeer(session)
+            if (!keep) disposePeer(session, "Peer removed during room reconciliation")
         }
 
         if (shouldSend) {
@@ -607,7 +619,7 @@ public class WebRtcPcmPublisher(
             // One offer is expected per source/listener epoch. Do not let a
             // delayed duplicate replace a live peer and revive stale media.
             if (existing.role == PeerRole.RECEIVER && existing.remoteDescriptionSet) return
-            disposePeer(existing)
+            disposePeer(existing, "Peer replaced by a new receiver negotiation")
         }
         val session = createReceiverPeer(from, epoch) ?: return
         setRemoteDescriptionAndMaybeAnswer(session, description)
@@ -652,8 +664,7 @@ public class WebRtcPcmPublisher(
             factory.createPeerConnection(rtcConfiguration(sourceEpoch), observer)
         }.getOrNull()
         if (connection == null) {
-            peers.remove(memberId)
-            refreshPeerDiagnostics()
+            disposePeer(session, "PeerConnection creation failed")
             reportStatus("Could not create native sender peer for $memberId.")
             return null
         }
@@ -670,7 +681,7 @@ public class WebRtcPcmPublisher(
             preferOpus(transceiver)
             connection.createOffer(createOfferObserver(session), MediaConstraints())
         } catch (error: Throwable) {
-            disposePeer(session)
+            disposePeer(session, "Sender peer setup failed: ${error.message ?: error.javaClass.simpleName}")
             reportStatus("Could not negotiate native sender peer for $memberId: ${error.message}")
         }
         return session
@@ -685,8 +696,7 @@ public class WebRtcPcmPublisher(
             factory.createPeerConnection(rtcConfiguration(sourceEpoch), observer)
         }.getOrNull()
         if (connection == null) {
-            peers.remove(memberId)
-            refreshPeerDiagnostics()
+            disposePeer(session, "PeerConnection creation failed")
             reportStatus("Could not create native receiver peer for $memberId.")
             return null
         }
@@ -714,7 +724,7 @@ public class WebRtcPcmPublisher(
         override fun onCreateFailure(error: String) {
             postToSignaling {
                 if (isCurrentSession(session)) {
-                    disposePeer(session)
+                    disposePeer(session, "Sender offer failed: $error")
                     reportStatus("Native sender offer failed for ${session.memberId}: $error")
                 }
             }
@@ -742,7 +752,7 @@ public class WebRtcPcmPublisher(
             override fun onSetFailure(error: String) {
                 postToSignaling {
                     if (isCurrentSession(session)) {
-                        disposePeer(session)
+                        disposePeer(session, "Local description failed: $error")
                         reportStatus("Native local description failed for ${session.memberId}: $error")
                     }
                 }
@@ -772,7 +782,7 @@ public class WebRtcPcmPublisher(
             override fun onSetFailure(error: String) {
                 postToSignaling {
                     if (isCurrentSession(session)) {
-                        disposePeer(session)
+                        disposePeer(session, "Remote description failed: $error")
                         reportStatus("Native remote description failed for ${session.memberId}: $error")
                     }
                 }
@@ -795,7 +805,7 @@ public class WebRtcPcmPublisher(
                 override fun onCreateFailure(error: String) {
                     postToSignaling {
                         if (isCurrentSession(session)) {
-                            disposePeer(session)
+                            disposePeer(session, "Receiver answer failed: $error")
                             reportStatus("Native receiver answer failed for ${session.memberId}: $error")
                         }
                     }
@@ -804,7 +814,7 @@ public class WebRtcPcmPublisher(
                 override fun onSetFailure(error: String) = Unit
             }, MediaConstraints())
         } catch (error: Throwable) {
-            disposePeer(session)
+            disposePeer(session, "Receiver answer creation failed: ${error.message ?: error.javaClass.simpleName}")
             reportStatus("Could not create native receiver answer for ${session.memberId}: ${error.message}")
         }
     }
@@ -846,12 +856,18 @@ public class WebRtcPcmPublisher(
 
     private fun handleRemoteTrack(session: PeerSession, track: MediaStreamTrack?) {
         val remote = track ?: return
-        session.remoteTracks += remote
+        val newlyReceived = session.remoteTracks.add(remote)
         val audio = remote as? AudioTrack
         if (audio != null) {
             if (!session.remoteAudioTracks.contains(audio)) session.remoteAudioTracks += audio
             runCatching { audio.setEnabled(true) }
             runCatching { audio.setVolume(playbackVolume) }
+        }
+        if (newlyReceived) {
+            reportStatus(
+                "Native remote ${if (audio != null) "audio" else "media"} track received for " +
+                    "${session.memberId}.",
+            )
         }
         refreshPeerDiagnostics()
     }
@@ -873,22 +889,28 @@ public class WebRtcPcmPublisher(
             .getOrDefault(session.peerConnectionState)
     }
 
+    private fun peerDiagnostics(
+        session: PeerSession,
+        isTerminal: Boolean = false,
+        terminalReason: String? = null,
+    ): WebRtcPeerDiagnostics = WebRtcPeerDiagnostics(
+        role = session.role.name,
+        memberId = session.memberId,
+        sourceEpoch = session.sourceEpoch,
+        signalingState = session.signalingState,
+        iceConnectionState = session.iceConnectionState,
+        peerConnectionState = session.peerConnectionState,
+        remoteTrackPresent = session.remoteTracks.isNotEmpty(),
+        rtpStats = session.rtpStats,
+        isTerminal = isTerminal,
+        terminalReason = terminalReason,
+    )
+
     private fun refreshPeerDiagnostics() {
         peerDiagnosticsSnapshot = peers.values
             .asSequence()
             .filterNot { it.closed }
-            .map { session ->
-                WebRtcPeerDiagnostics(
-                    role = session.role.name,
-                    memberId = session.memberId,
-                    sourceEpoch = session.sourceEpoch,
-                    signalingState = session.signalingState,
-                    iceConnectionState = session.iceConnectionState,
-                    peerConnectionState = session.peerConnectionState,
-                    remoteTrackPresent = session.remoteTracks.isNotEmpty(),
-                    rtpStats = session.rtpStats,
-                )
-            }
+            .map { session -> peerDiagnostics(session) }
             .sortedWith(compareBy<WebRtcPeerDiagnostics> { it.memberId }.thenBy { it.role })
             .toList()
         runCatching { onDiagnosticsChanged() }
@@ -1007,15 +1029,30 @@ public class WebRtcPcmPublisher(
     private fun disposePeersForEpoch(sourceEpoch: Long?) {
         peers.values.toList()
             .filter { sourceEpoch == null || it.sourceEpoch == sourceEpoch }
-            .forEach(::disposePeer)
+            .forEach { session ->
+                disposePeer(
+                    session,
+                    if (sourceEpoch == null) {
+                        "Peer disposed for inactive source"
+                    } else {
+                        "Peer disposed for source epoch $sourceEpoch"
+                    },
+                )
+            }
     }
 
     private fun disposeAllPeers() {
         peers.values.toList().forEach(::disposePeer)
     }
 
-    private fun disposePeer(session: PeerSession) {
+    private fun disposePeer(session: PeerSession, reason: String = "Peer disposed") {
         if (session.closed) return
+        refreshPeerConnectionStates(session)
+        lastTerminalPeerDiagnostics = peerDiagnostics(
+            session,
+            isTerminal = true,
+            terminalReason = reason,
+        )
         if (peers[session.memberId] === session) peers.remove(session.memberId)
         session.closed = true
         session.pendingRemoteCandidates.clear()
@@ -1162,7 +1199,8 @@ public class WebRtcPcmPublisher(
                 if (newState == PeerConnection.IceConnectionState.FAILED ||
                     newState == PeerConnection.IceConnectionState.CLOSED
                 ) {
-                    disposePeer(session)
+                    reportStatus("Native ICE connection ${newState.name} for ${session.memberId}.")
+                    disposePeer(session, "ICE connection state ${newState.name}")
                 }
             }
         }
@@ -1225,7 +1263,8 @@ public class WebRtcPcmPublisher(
                 if (newState == PeerConnection.PeerConnectionState.FAILED ||
                     newState == PeerConnection.PeerConnectionState.CLOSED
                 ) {
-                    disposePeer(session)
+                    reportStatus("Native PeerConnection ${newState.name} for ${session.memberId}.")
+                    disposePeer(session, "PeerConnection state ${newState.name}")
                 }
             }
         }
