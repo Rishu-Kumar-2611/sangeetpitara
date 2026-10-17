@@ -1,6 +1,82 @@
 package com.roomsound.android.transport
 
 import java.nio.ByteBuffer
+import kotlin.math.sqrt
+
+/** PCM signal measurements collected without changing the samples being sent. */
+internal data class Pcm16SignalStats(
+    val samples: Long = 0,
+    val nonZeroSamples: Long = 0,
+    val minSample: Int? = null,
+    val maxSample: Int? = null,
+    val rms: Double? = null,
+)
+
+/** Measurements on both sides of the JavaAudioDeviceModule callback boundary. */
+internal data class Pcm16BoundaryDiagnostics(
+    val offered: Pcm16SignalStats,
+    val admBuffer: Pcm16SignalStats,
+    val lastOffered: Pcm16SignalStats,
+    val lastAdmBuffer: Pcm16SignalStats,
+    val lastAdmReportedBytes: Int? = null,
+    val lastAdmBufferBytes: Int? = null,
+    val lastAdmAudioFormat: Int? = null,
+    val lastAdmChannels: Int? = null,
+    val lastAdmSampleRate: Int? = null,
+)
+
+private class Pcm16SignalAccumulator {
+    private var samples = 0L
+    private var nonZeroSamples = 0L
+    private var minSample = Int.MAX_VALUE
+    private var maxSample = Int.MIN_VALUE
+    private var sumSquares = 0.0
+
+    fun reset() {
+        samples = 0L
+        nonZeroSamples = 0L
+        minSample = Int.MAX_VALUE
+        maxSample = Int.MIN_VALUE
+        sumSquares = 0.0
+    }
+
+    fun add(input: ShortArray, offset: Int, count: Int) {
+        repeat(count) { index -> addSample(input[offset + index].toInt()) }
+    }
+
+    fun addPcm16Le(buffer: ByteBuffer, sampleCount: Int) {
+        repeat(sampleCount) { index ->
+            val byteOffset = index * BYTES_PER_SAMPLE
+            val sample = (buffer.get(byteOffset + 1).toInt() shl 8) or
+                (buffer.get(byteOffset).toInt() and 0xff)
+            addSample(sample)
+        }
+    }
+
+    private fun addSample(sample: Int) {
+        samples += 1
+        if (sample != 0) nonZeroSamples += 1
+        minSample = minOf(minSample, sample)
+        maxSample = maxOf(maxSample, sample)
+        sumSquares += sample.toDouble() * sample.toDouble()
+    }
+
+    fun snapshot(): Pcm16SignalStats = if (samples == 0L) {
+        Pcm16SignalStats()
+    } else {
+        Pcm16SignalStats(
+            samples = samples,
+            nonZeroSamples = nonZeroSamples,
+            minSample = minSample,
+            maxSample = maxSample,
+            rms = sqrt(sumSquares / samples.toDouble()),
+        )
+    }
+
+    companion object {
+        private const val BYTES_PER_SAMPLE = 2
+    }
+}
 
 /**
  * A bounded PCM16 sample FIFO used at the JavaAudioDeviceModule boundary.
@@ -32,6 +108,15 @@ internal class Pcm16FrameQueue(
     private var drainedSamples = 0L
     private var callbackCount = 0L
     private var revocationCount = 0L
+    private val offeredSignal = Pcm16SignalAccumulator()
+    private val admBufferSignal = Pcm16SignalAccumulator()
+    private var lastAdmReportedBytes: Int? = null
+    private var lastAdmBufferBytes: Int? = null
+    private var lastAdmAudioFormat: Int? = null
+    private var lastAdmChannels: Int? = null
+    private var lastAdmSampleRate: Int? = null
+    private val lastOfferedAccumulator = Pcm16SignalAccumulator()
+    private val lastAdmBufferAccumulator = Pcm16SignalAccumulator()
 
     /** Binds the FIFO to a fresh source epoch and removes all previous audio. */
     fun bind(sourceEpoch: Long) = synchronized(lock) {
@@ -54,6 +139,9 @@ internal class Pcm16FrameQueue(
             frame.format != expectedFormat || frame.sampleCount !in 1..frame.samples.size ->
                 Pcm16PublishResult.INVALID_FORMAT
             else -> {
+                offeredSignal.add(frame.samples, 0, frame.sampleCount)
+                lastOfferedAccumulator.reset()
+                lastOfferedAccumulator.add(frame.samples, 0, frame.sampleCount)
                 offerLocked(frame.samples, frame.sampleCount)
                 Pcm16PublishResult.PUBLISHED
             }
@@ -65,8 +153,19 @@ internal class Pcm16FrameQueue(
      * including the entire buffer after revoke or before the first frame.
      * Returns the number of queued samples copied into the buffer.
      */
-    fun fillAudioBuffer(buffer: ByteBuffer): Int = try { synchronized(lock) {
+    fun fillAudioBuffer(
+        buffer: ByteBuffer,
+        reportedBytes: Int? = null,
+        audioFormat: Int? = null,
+        channels: Int? = null,
+        sampleRate: Int? = null,
+    ): Int = try { synchronized(lock) {
         callbackCount += 1
+        lastAdmReportedBytes = reportedBytes
+        lastAdmBufferBytes = buffer.capacity()
+        lastAdmAudioFormat = audioFormat
+        lastAdmChannels = channels
+        lastAdmSampleRate = sampleRate
         buffer.clear()
         while (buffer.hasRemaining()) buffer.put(0)
         buffer.clear()
@@ -75,6 +174,9 @@ internal class Pcm16FrameQueue(
         if (activeEpoch == null || requestedSamples == 0) {
             underrunSamples += requestedSamples.toLong()
             buffer.position(0)
+            lastAdmBufferAccumulator.reset()
+            lastAdmBufferAccumulator.addPcm16Le(buffer, requestedSamples)
+            admBufferSignal.addPcm16Le(buffer, requestedSamples)
             return@synchronized 0
         }
 
@@ -92,6 +194,9 @@ internal class Pcm16FrameQueue(
         drainedSamples += copied.toLong()
         if (copied < requestedSamples) underrunSamples += (requestedSamples - copied).toLong()
         buffer.position(0)
+        lastAdmBufferAccumulator.reset()
+        lastAdmBufferAccumulator.addPcm16Le(buffer, requestedSamples)
+        admBufferSignal.addPcm16Le(buffer, requestedSamples)
         copied
     } } catch (t: Throwable) { android.util.Log.e("RoomSound", "fillAudioBuffer failed", t); try { buffer.clear(); while (buffer.hasRemaining()) buffer.put(0); buffer.clear(); buffer.position(0) } catch (_: Throwable) {}; 0 }
 
@@ -110,6 +215,21 @@ internal class Pcm16FrameQueue(
     fun revocationCount(): Long = synchronized(lock) { revocationCount }
 
     fun currentEpoch(): Long? = synchronized(lock) { activeEpoch }
+
+    /** Returns a coherent snapshot of PCM values observed before and at the ADM callback. */
+    fun pcmDiagnostics(): Pcm16BoundaryDiagnostics = synchronized(lock) {
+        Pcm16BoundaryDiagnostics(
+            offered = offeredSignal.snapshot(),
+            admBuffer = admBufferSignal.snapshot(),
+            lastOffered = lastOfferedAccumulator.snapshot(),
+            lastAdmBuffer = lastAdmBufferAccumulator.snapshot(),
+            lastAdmReportedBytes = lastAdmReportedBytes,
+            lastAdmBufferBytes = lastAdmBufferBytes,
+            lastAdmAudioFormat = lastAdmAudioFormat,
+            lastAdmChannels = lastAdmChannels,
+            lastAdmSampleRate = lastAdmSampleRate,
+        )
+    }
 
     private fun offerLocked(input: ShortArray, inputCount: Int) {
         var sourceOffset = 0

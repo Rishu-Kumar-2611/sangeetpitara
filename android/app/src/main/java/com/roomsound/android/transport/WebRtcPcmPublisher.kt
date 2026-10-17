@@ -272,6 +272,7 @@ public class WebRtcPcmPublisher(
             )
         }
         return buildString {
+            val pcm = pcmQueue.pcmDiagnostics()
             append("backend=")
             append(if (ready) "ready" else "unavailable")
             if (error != null) append(" error=").append(error)
@@ -284,6 +285,23 @@ public class WebRtcPcmPublisher(
             append(" droppedSamples=").append(pcmQueue.droppedSamples())
             append(" underrunSamples=").append(pcmQueue.underrunSamples())
             append(" admCallbacks=").append(pcmQueue.callbackCount())
+            append(" pcmOfferedSamples=").append(pcm.offered.samples)
+            append(" pcmOfferedNonZero=").append(pcm.offered.nonZeroSamples)
+            append(" pcmOfferedMin=").append(pcm.offered.minSample ?: "n/a")
+            append(" pcmOfferedMax=").append(pcm.offered.maxSample ?: "n/a")
+            append(" pcmOfferedRms=").append(pcm.offered.rms ?: "n/a")
+            append(" pcmOfferedLastNonZero=").append(pcm.lastOffered.nonZeroSamples)
+            append(" pcmAdmSamples=").append(pcm.admBuffer.samples)
+            append(" pcmAdmNonZero=").append(pcm.admBuffer.nonZeroSamples)
+            append(" pcmAdmMin=").append(pcm.admBuffer.minSample ?: "n/a")
+            append(" pcmAdmMax=").append(pcm.admBuffer.maxSample ?: "n/a")
+            append(" pcmAdmRms=").append(pcm.admBuffer.rms ?: "n/a")
+            append(" pcmAdmLastNonZero=").append(pcm.lastAdmBuffer.nonZeroSamples)
+            pcm.lastAdmReportedBytes?.let { append(" admReportedBytes=").append(it) }
+            pcm.lastAdmBufferBytes?.let { append(" admBufferBytes=").append(it) }
+            pcm.lastAdmAudioFormat?.let { append(" admAudioFormat=").append(it) }
+            pcm.lastAdmChannels?.let { append(" admChannels=").append(it) }
+            pcm.lastAdmSampleRate?.let { append(" admSampleRate=").append(it) }
             append(" peers=").append(peerDiagnosticsSnapshot.size)
             peerDiagnosticsSnapshot.forEach { peer ->
                 append("\n").append(peer.asDiagnosticLine())
@@ -452,9 +470,18 @@ public class WebRtcPcmPublisher(
                         reportStatus("Unexpected native recording error: $error")
                     }
                 })
-                .setAudioBufferCallback(JavaAudioDeviceModule.AudioBufferCallback { buffer, _, _, _, _, timestampNs ->
+                .setAudioBufferCallback(JavaAudioDeviceModule.AudioBufferCallback { buffer, audioFormat, channelCount, sampleRate, bytesRead, timestampNs ->
+                    // Keep the pinned fork's callback metadata and inspect the
+                    // actual PCM bytes after the queue has filled the direct
+                    // buffer. The native path itself remains unchanged.
                     try {
-                        pcmQueue.fillAudioBuffer(buffer)
+                        pcmQueue.fillAudioBuffer(
+                            buffer = buffer,
+                            reportedBytes = bytesRead,
+                            audioFormat = audioFormat,
+                            channels = channelCount,
+                            sampleRate = sampleRate,
+                        )
                     } catch (t: Throwable) {
                         android.util.Log.e("RoomSound", "ADM fillAudioBuffer failed", t)
                         try { buffer.clear(); while (buffer.hasRemaining()) buffer.put(0); buffer.clear() } catch (_: Throwable) {}
