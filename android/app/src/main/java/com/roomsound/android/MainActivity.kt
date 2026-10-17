@@ -558,8 +558,10 @@ class MainActivity : Activity() {
         val ownPendingRequest = self != null && state.requests.any {
             it.requesterId == self.id && it.status.equals("PENDING", ignoreCase = true)
         }
+        val sourceIsModerator = room.activeSourceId == null ||
+            room.activeSourceId == room.hostId || room.activeSourceId == room.cohostId
         requestAudioButton.text = if (ownPendingRequest) "Audio request pending" else "Request to share device audio"
-        requestAudioButton.isEnabled = self != null && !isModerator && room.activeSourceId == null && !ownPendingRequest
+        requestAudioButton.isEnabled = self != null && !isModerator && sourceIsModerator && !ownPendingRequest
         takeoverButton.isEnabled = isModerator && room.activeSourceId != null && !isSelfSource
         leaveRoomButton.isEnabled = true
         endRoomButton.isEnabled = isHost
@@ -659,8 +661,10 @@ class MainActivity : Activity() {
         val session = roomSession ?: return
         val state = session.currentRoomState()
         val self = state?.self
-        if (state == null || self == null || self.id == state.room.hostId || self.id == state.room.cohostId || state.room.activeSourceId != null) {
-            appendRoomEvent("A request is available only to a participant while no source is active.")
+        val sourceIsParticipant = state?.room?.activeSourceId != null &&
+            state.room.activeSourceId !in setOf(state.room.hostId, state.room.cohostId)
+        if (state == null || self == null || self.id == state.room.hostId || self.id == state.room.cohostId || sourceIsParticipant) {
+            appendRoomEvent("A request is available to a participant while the room is idle or the host/co-host is sharing.")
             return
         }
         if (session.requestControl("ANDROID_DEVICE_AUDIO", "I want to share Android playback audio.")) {

@@ -851,8 +851,7 @@ public class WebRtcPcmPublisher(
         override fun onSignalingChange(newState: PeerConnection.SignalingState) = Unit
 
         override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState) {
-            if (newState == PeerConnection.IceConnectionState.DISCONNECTED ||
-                newState == PeerConnection.IceConnectionState.FAILED ||
+            if (newState == PeerConnection.IceConnectionState.FAILED ||
                 newState == PeerConnection.IceConnectionState.CLOSED
             ) {
                 postToSignaling {
@@ -896,8 +895,7 @@ public class WebRtcPcmPublisher(
         }
 
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
-            if (newState == PeerConnection.PeerConnectionState.DISCONNECTED ||
-                newState == PeerConnection.PeerConnectionState.FAILED ||
+            if (newState == PeerConnection.PeerConnectionState.FAILED ||
                 newState == PeerConnection.PeerConnectionState.CLOSED
             ) {
                 postToSignaling {
