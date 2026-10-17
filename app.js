@@ -40,12 +40,17 @@ const state = {
   lastRoomCode: null,
   lastDisplayName: null,
   captureNonce: 0,
+  telemetry: new Map(),
+  telemetryTimer: null,
+  telemetryGeneration: 0,
+  telemetryPollPromise: null,
 };
 
 let rtcConfig = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 };
 let iceConfigLoaded = false;
+const telemetryPollMs = 1000;
 
 async function loadIceConfig() {
   if (iceConfigLoaded) return;
@@ -353,6 +358,7 @@ function handleServerMessage(message) {
 
 function applyRoomState(next) {
   const previousSource = state.room?.activeSourceId;
+  const previousSourceEpoch = state.room?.sourceEpoch;
   const previousSelfId = state.self?.id;
   const prevMembers = state.members.slice();
   const wasSelfSource = Boolean(previousSource && previousSource === previousSelfId);
@@ -362,7 +368,11 @@ function applyRoomState(next) {
   state.requests = next.requests || [];
   addMessages(next.messages || []);
 
-  if (previousSource && previousSource !== state.room.activeSourceId) closePeerConnections();
+  const sourceChanged = previousSource && previousSource !== state.room.activeSourceId;
+  const sourceEpochChanged = Number.isInteger(previousSourceEpoch)
+    && Number.isInteger(state.room?.sourceEpoch)
+    && previousSourceEpoch !== state.room.sourceEpoch;
+  if (sourceChanged || sourceEpochChanged) closePeerConnections();
   // Keep the host's capture alive while a participant temporarily broadcasts so
   // the server can return control without asking the host to grant capture again.
   // A participant/co-host source is released when control moves away from it.
@@ -374,15 +384,13 @@ function applyRoomState(next) {
     for (const pm of prevMembers) {
       if (pm.online && !onlineNow.has(pm.id) && state.peers.has(pm.id)) {
         const entry = state.peers.get(pm.id);
-        try { entry.pc.close(); } catch {}
-        state.peers.delete(pm.id);
+        removePeerConnection(pm.id, entry);
       }
     }
     // If active source went offline, drop it too
     if (previousSource && !onlineNow.has(previousSource) && state.peers.has(previousSource)) {
       const entry = state.peers.get(previousSource);
-      try { entry.pc.close(); } catch {}
-      state.peers.delete(previousSource);
+      removePeerConnection(previousSource, entry);
     }
   }
   renderAll();
@@ -404,6 +412,7 @@ function renderAll() {
   $('#member-count').textContent = state.members.length;
   renderSource();
   renderControls();
+  renderTelemetry();
   renderMembers();
   renderRequests();
   renderChat();
@@ -491,6 +500,265 @@ function renderActivity() {
   const systemMessages = state.messages.filter((message) => message.kind === 'system').map((message) => ({ id: message.id, text: message.text, createdAt: message.createdAt }));
   const items = [...systemMessages, ...state.activity].sort((a, b) => b.createdAt - a.createdAt).slice(0, 12);
   $('#activity-feed').innerHTML = items.length ? items.map((item) => `<div class="activity-item"><span class="activity-time">${timeLabel(item.createdAt)}</span><span class="activity-text">${escapeHtml(item.text)}</span></div>`).join('') : '<div class="request-empty">Room events will appear here.</div>';
+}
+
+function finiteNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function formatTelemetryBytes(value) {
+  const bytes = finiteNumber(value);
+  if (bytes === null) return '—';
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let amount = bytes;
+  let unit = 'B';
+  for (const candidate of units) {
+    amount /= 1024;
+    unit = candidate;
+    if (amount < 1024 || candidate === units[units.length - 1]) break;
+  }
+  const rounded = amount >= 100 ? Math.round(amount) : Number(amount.toFixed(1));
+  return `${rounded} ${unit}`;
+}
+
+function formatTelemetryCount(value) {
+  const count = finiteNumber(value);
+  return count === null ? '—' : Math.round(count).toLocaleString();
+}
+
+function formatAudioLevel(value) {
+  const level = finiteNumber(value);
+  if (level === null) return '—';
+  return `${Math.round(Math.min(1, Math.max(0, level)) * 100)}%`;
+}
+
+function telemetryStateClass(value) {
+  const normalized = String(value || 'new').toLowerCase();
+  if (['connected', 'completed'].includes(normalized)) return 'good';
+  if (['failed', 'closed', 'disconnected'].includes(normalized)) return 'bad';
+  return 'pending';
+}
+
+function isAudioStat(stat) {
+  const kind = stat?.kind || stat?.mediaType;
+  return kind === 'audio';
+}
+
+function addTelemetryTotal(target, key, value) {
+  const number = finiteNumber(value);
+  if (number === null) return;
+  target[key] = (target[key] ?? 0) + number;
+}
+
+function collectTelemetryStats(report) {
+  const result = {
+    bytesSent: null,
+    bytesReceived: null,
+    packetsSent: null,
+    packetsReceived: null,
+    packetsLost: null,
+    audioLevel: null,
+    hasRtpStats: false,
+  };
+  const stats = report && typeof report.values === 'function'
+    ? [...report.values()]
+    : report && typeof report[Symbol.iterator] === 'function'
+      ? [...report]
+      : [];
+
+  for (const stat of stats) {
+    if (!isAudioStat(stat)) continue;
+    if (stat.type === 'outbound-rtp' && !stat.isRemote) {
+      result.hasRtpStats = true;
+      addTelemetryTotal(result, 'bytesSent', stat.bytesSent);
+      addTelemetryTotal(result, 'packetsSent', stat.packetsSent);
+      if (result.audioLevel === null) result.audioLevel = finiteNumber(stat.audioLevel);
+    } else if (stat.type === 'inbound-rtp' && !stat.isRemote) {
+      result.hasRtpStats = true;
+      addTelemetryTotal(result, 'bytesReceived', stat.bytesReceived);
+      addTelemetryTotal(result, 'packetsReceived', stat.packetsReceived);
+      addTelemetryTotal(result, 'packetsLost', stat.packetsLost);
+      if (result.audioLevel === null) result.audioLevel = finiteNumber(stat.audioLevel);
+    } else if (['media-source', 'track'].includes(stat.type) && result.audioLevel === null) {
+      result.audioLevel = finiteNumber(stat.audioLevel);
+    }
+  }
+  return result;
+}
+
+function isCurrentPeerEntry(peerId, entry) {
+  if (!entry?.pc || state.peers.get(peerId) !== entry || !state.room?.activeSourceId) return false;
+  if (entry.sourceEpoch !== undefined && entry.sourceEpoch !== state.room.sourceEpoch) return false;
+  if (entry.role === 'publisher') return isSelfSource() && state.captureStream === entry.captureStream && peerId !== state.self?.id;
+  return state.room.activeSourceId === peerId && state.room.activeSourceId !== state.self?.id;
+}
+
+function updatePeerTelemetryState(peerId, entry) {
+  const telemetry = state.telemetry.get(peerId);
+  if (!telemetry || telemetry.entry !== entry) return;
+  telemetry.connectionState = entry.pc?.connectionState || 'new';
+  telemetry.iceConnectionState = entry.pc?.iceConnectionState || 'new';
+  telemetry.iceGatheringState = entry.pc?.iceGatheringState || 'new';
+}
+
+function ensureTelemetryPolling() {
+  if (state.telemetryTimer) return;
+  state.telemetryTimer = setInterval(() => { void pollPeerTelemetry(); }, telemetryPollMs);
+  void pollPeerTelemetry();
+}
+
+function stopTelemetryPolling() {
+  if (state.telemetryTimer) clearInterval(state.telemetryTimer);
+  state.telemetryTimer = null;
+  state.telemetryGeneration += 1;
+}
+
+function registerPeerTelemetry(peerId, entry) {
+  const previous = state.telemetry.get(peerId);
+  if (!previous || previous.entry !== entry) {
+    state.telemetry.set(peerId, {
+      peerId,
+      entry,
+      role: entry.role,
+      sourceEpoch: entry.sourceEpoch,
+      connectionState: entry.pc?.connectionState || 'new',
+      iceConnectionState: entry.pc?.iceConnectionState || 'new',
+      iceGatheringState: entry.pc?.iceGatheringState || 'new',
+      bytesSent: null,
+      bytesReceived: null,
+      packetsSent: null,
+      packetsReceived: null,
+      packetsLost: null,
+      audioLevel: null,
+      hasRtpStats: false,
+      updatedAt: null,
+      error: null,
+    });
+  }
+  updatePeerTelemetryState(peerId, entry);
+  ensureTelemetryPolling();
+  renderTelemetry();
+}
+
+function removePeerTelemetry(peerId, entry) {
+  const telemetry = state.telemetry.get(peerId);
+  if (telemetry && (!entry || telemetry.entry === entry)) state.telemetry.delete(peerId);
+  const hasRtcPeer = [...state.peers.values()].some((candidate) => candidate?.pc);
+  if (!hasRtcPeer) stopTelemetryPolling();
+}
+
+function renderTelemetry() {
+  const panel = $('#telemetry-panel');
+  if (!panel) return;
+  if (!state.room) {
+    panel.classList.add('hidden');
+    return;
+  }
+  panel.classList.remove('hidden');
+
+  const sourceId = state.room.activeSourceId;
+  const sourceMember = state.members.find((member) => member.id === sourceId);
+  const sourceName = sourceMember?.name || 'Unknown source';
+  const epoch = Number.isInteger(state.room.sourceEpoch) ? state.room.sourceEpoch : '—';
+  const telemetryEntries = [];
+  for (const [peerId, telemetry] of state.telemetry) {
+    const entry = telemetry.entry;
+    if (!isCurrentPeerEntry(peerId, entry)) continue;
+    updatePeerTelemetryState(peerId, entry);
+    telemetryEntries.push(telemetry);
+  }
+
+  const summary = $('#telemetry-summary');
+  const status = $('#telemetry-state');
+  const list = $('#telemetry-list');
+  if (!sourceId || state.room.sourceStatus === 'NONE') {
+    summary.textContent = 'No active source · diagnostics will appear when audio starts.';
+    status.textContent = 'Waiting';
+    status.className = 'telemetry-state pending';
+    list.innerHTML = '<div class="telemetry-empty">Start playback sharing to inspect the current source and listeners.</div>';
+    return;
+  }
+
+  const listenerCount = telemetryEntries.length;
+  summary.textContent = `${sourceName} · epoch ${epoch} · ${listenerCount} peer${listenerCount === 1 ? '' : 's'}`;
+  const hasFreshStats = telemetryEntries.some((telemetry) => telemetry.updatedAt);
+  status.textContent = hasFreshStats ? 'Live' : 'Connecting';
+  status.className = `telemetry-state ${hasFreshStats ? 'good' : 'pending'}`;
+
+  if (!telemetryEntries.length) {
+    list.innerHTML = '<div class="telemetry-empty">Waiting for the current source/listener peer connection…</div>';
+    return;
+  }
+
+  list.innerHTML = telemetryEntries.map((telemetry) => {
+    const entry = telemetry.entry;
+    const peerMember = entry.role === 'publisher'
+      ? state.members.find((member) => member.id === telemetry.peerId)
+      : sourceMember;
+    const relationship = entry.role === 'publisher'
+      ? `${sourceName} → ${peerMember?.name || 'listener'}`
+      : `${sourceName} → ${state.self?.name || 'you'}`;
+    const statsLabel = telemetry.error
+      ? 'RTP stats unavailable'
+      : telemetry.hasRtpStats
+        ? 'RTP audio'
+        : 'Waiting for RTP';
+    const connectionState = String(telemetry.connectionState || 'new');
+    const iceConnectionState = String(telemetry.iceConnectionState || 'new');
+    const iceGatheringState = String(telemetry.iceGatheringState || 'new');
+    const packetLoss = telemetry.packetsLost === null ? '' : ` · ${formatTelemetryCount(telemetry.packetsLost)} lost`;
+    return `<article class="telemetry-peer">
+      <div class="telemetry-peer-heading">
+        <div><span class="telemetry-direction">${entry.role === 'publisher' ? 'TO LISTENER' : 'FROM SOURCE'}</span><strong>${escapeHtml(relationship)}</strong></div>
+        <span class="telemetry-connection ${telemetryStateClass(connectionState)}"><i></i>${escapeHtml(connectionState)}</span>
+      </div>
+      <div class="telemetry-peer-states"><span>ICE <strong class="${telemetryStateClass(iceConnectionState)}">${escapeHtml(iceConnectionState)}</strong></span><span>Gather <strong>${escapeHtml(iceGatheringState)}</strong></span><span>Epoch <strong>${escapeHtml(telemetry.sourceEpoch ?? '—')}</strong></span></div>
+      <div class="telemetry-stats"><span><small>Sent</small><strong>${formatTelemetryBytes(telemetry.bytesSent)}</strong><em>${formatTelemetryCount(telemetry.packetsSent)} pkts</em></span><span><small>Received</small><strong>${formatTelemetryBytes(telemetry.bytesReceived)}</strong><em>${formatTelemetryCount(telemetry.packetsReceived)} pkts${packetLoss}</em></span><span><small>Audio level</small><strong>${formatAudioLevel(telemetry.audioLevel)}</strong><em>${statsLabel}</em></span></div>
+    </article>`;
+  }).join('');
+}
+
+function pollPeerTelemetry() {
+  if (state.telemetryPollPromise) return state.telemetryPollPromise;
+  const generation = state.telemetryGeneration;
+  const peers = [...state.peers.entries()].filter(([peerId, entry]) => isCurrentPeerEntry(peerId, entry));
+  if (!peers.length) {
+    if (state.telemetryTimer) stopTelemetryPolling();
+    renderTelemetry();
+    return Promise.resolve();
+  }
+
+  const task = Promise.all(peers.map(async ([peerId, entry]) => {
+    if (typeof entry.pc?.getStats !== 'function') return;
+    try {
+      const report = await entry.pc.getStats();
+      if (generation !== state.telemetryGeneration || !isCurrentPeerEntry(peerId, entry)) return;
+      const telemetry = state.telemetry.get(peerId);
+      if (!telemetry || telemetry.entry !== entry) return;
+      const stats = collectTelemetryStats(report);
+      Object.assign(telemetry, stats, {
+        updatedAt: Date.now(),
+        error: null,
+      });
+      updatePeerTelemetryState(peerId, entry);
+    } catch (error) {
+      if (generation !== state.telemetryGeneration || !isCurrentPeerEntry(peerId, entry)) return;
+      const telemetry = state.telemetry.get(peerId);
+      if (!telemetry || telemetry.entry !== entry) return;
+      telemetry.updatedAt = Date.now();
+      telemetry.error = error?.name || 'unavailable';
+      updatePeerTelemetryState(peerId, entry);
+    }
+  })).then(() => {
+    if (generation === state.telemetryGeneration) renderTelemetry();
+  });
+  state.telemetryPollPromise = task;
+  task.then(
+    () => { if (state.telemetryPollPromise === task) state.telemetryPollPromise = null; },
+    () => { if (state.telemetryPollPromise === task) state.telemetryPollPromise = null; },
+  );
+  return task;
 }
 
 function openSourceModal(intent) {
@@ -589,6 +857,7 @@ async function startLocalCapture(sourceType, intent = 'host') {
 
 function stopLocalCapture(stopServer = true) {
   state.captureNonce += 1;
+  if (state.peers.size) closePeerConnections();
   if (state.captureStream) state.captureStream.getTracks().forEach((track) => track.stop());
   state.captureStream = null;
   state.captureType = null;
@@ -604,11 +873,25 @@ function stopLocalCapture(stopServer = true) {
   if (stopServer) send({ type: 'stop-source' });
 }
 
+function removePeerConnection(peerId, expectedEntry = null) {
+  const entry = state.peers.get(peerId);
+  if (!entry || (expectedEntry && entry !== expectedEntry)) return false;
+  state.peers.delete(peerId);
+  removePeerTelemetry(peerId, entry);
+  try { entry.pc?.close(); } catch {}
+  renderTelemetry();
+  return true;
+}
+
 function closePeerConnections() {
-  for (const entry of state.peers.values()) {
+  const entries = [...state.peers.values()];
+  state.peers.clear();
+  stopTelemetryPolling();
+  state.telemetry.clear();
+  for (const entry of entries) {
     try { entry.pc?.close(); } catch {}
   }
-  state.peers.clear();
+  renderTelemetry();
   if (state.audioElement) {
     try { state.audioElement.pause(); } catch {}
     state.audioElement.srcObject = null;
@@ -646,82 +929,122 @@ function ensurePublisherConnections() {
 }
 
 async function createPublisherPeer(targetId) {
-  if (!state.captureStream || state.peers.has(targetId)) return;
-  const audioTracks = liveAudioTracks(state.captureStream);
+  if (!state.captureStream || state.peers.has(targetId) || !isSelfSource()) return;
+  const captureStream = state.captureStream;
+  const sourceEpoch = state.room?.sourceEpoch;
+  const audioTracks = liveAudioTracks(captureStream);
   if (!audioTracks.length) { console.warn("[RoomSound] no live tracks for "+targetId); return; }
   await loadIceConfig();
+  if (state.captureStream !== captureStream || !isSelfSource() || state.room?.sourceEpoch !== sourceEpoch || state.peers.has(targetId)) return;
   const pc = new RTCPeerConnection(rtcConfig);
-  const entry = { pc, role: 'publisher', pendingCandidates: [], remoteDescSet: false };
+  const entry = { pc, role: 'publisher', sourceEpoch, captureStream, pendingCandidates: [], remoteDescSet: false };
   state.peers.set(targetId, entry);
   // Display capture uses a live video track to keep Chrome's audio session
   // alive, but the room protocol is audio-only. Never send an ended/disabled
   // display video track to native listeners.
-  audioTracks.forEach((track) => pc.addTrack(track, state.captureStream));
-  pc.onicecandidate = (event) => { if (event.candidate) send({ type: 'rtc', to: targetId, signal: { type: 'candidate', candidate: event.candidate }, sourceEpoch: state.room?.sourceEpoch }); };
-  pc.onicegatheringstatechange = () => console.log("[RoomSound][pub->"+targetId+"] gathering="+pc.iceGatheringState);
+  audioTracks.forEach((track) => pc.addTrack(track, captureStream));
+  pc.onicecandidate = (event) => {
+    if (event.candidate && isCurrentPeerEntry(targetId, entry)) send({ type: 'rtc', to: targetId, signal: { type: 'candidate', candidate: event.candidate }, sourceEpoch: entry.sourceEpoch });
+  };
+  pc.onicegatheringstatechange = () => {
+    updatePeerTelemetryState(targetId, entry);
+    renderTelemetry();
+    console.log("[RoomSound][pub->"+targetId+"] gathering="+pc.iceGatheringState);
+  };
   pc.oniceconnectionstatechange = () => {
+    updatePeerTelemetryState(targetId, entry);
+    renderTelemetry();
     console.log("[RoomSound][pub->"+targetId+"] iceConn="+pc.iceConnectionState);
     if (pc.iceConnectionState === 'failed') {
       try { pc.restartIce(); } catch {}
       const msg = hasTurnServer(rtcConfig) ? 'Audio relay failed — retrying ICE…' : 'No relay candidate — add TURN for internet/cross-NAT audio.';
       toast(msg, 'error');
       setTimeout(() => {
-        const cur = state.peers.get(targetId);
-        if (isSelfSource() && cur && cur.pc.iceConnectionState === 'failed') {
-          try{cur.pc.close();}catch{} state.peers.delete(targetId);
-          if (state.captureStream) createPublisherPeer(targetId).catch(()=>{});
+        if (isCurrentPeerEntry(targetId, entry) && entry.pc.iceConnectionState === 'failed') {
+          removePeerConnection(targetId, entry);
+          if (state.captureStream === captureStream) createPublisherPeer(targetId).catch(() => {});
         }
       }, 1500);
     }
   };
   pc.onconnectionstatechange = () => {
+    updatePeerTelemetryState(targetId, entry);
+    renderTelemetry();
     console.log("[RoomSound][pub->"+targetId+"] conn="+pc.connectionState+" ice="+pc.iceConnectionState);
     if (pc.connectionState === 'failed') {
       toast('Audio connection failed — trying to reconnect…', 'error');
       try { pc.restartIce(); } catch {}
       setTimeout(() => {
-        const cur = state.peers.get(targetId);
-        if (isSelfSource() && cur && cur.pc.connectionState === 'failed') {
-          try{cur.pc.close();}catch{} state.peers.delete(targetId);
-          if (state.captureStream) createPublisherPeer(targetId).catch(()=>{});
+        if (isCurrentPeerEntry(targetId, entry) && entry.pc.connectionState === 'failed') {
+          removePeerConnection(targetId, entry);
+          if (state.captureStream === captureStream) createPublisherPeer(targetId).catch(() => {});
         }
       }, 1000);
     }
-    if (['closed', 'disconnected'].includes(pc.connectionState)) { try{pc.close();}catch{} state.peers.delete(targetId); }
-    if (pc.connectionState === 'connected') addActivity("Audio peer connected to "+targetId, true);
+    if (['closed', 'disconnected'].includes(pc.connectionState)) removePeerConnection(targetId, entry);
+    if (pc.connectionState === 'connected' && isCurrentPeerEntry(targetId, entry)) addActivity("Audio peer connected to "+targetId, true);
   };
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  send({ type: 'rtc', to: targetId, signal: { type: 'offer', description: pc.localDescription }, sourceEpoch: state.room?.sourceEpoch });
-  console.log("[RoomSound] sent offer to "+targetId+" epoch="+state.room?.sourceEpoch);
+  registerPeerTelemetry(targetId, entry);
+  try {
+    const offer = await pc.createOffer();
+    if (!isCurrentPeerEntry(targetId, entry)) {
+      removePeerConnection(targetId, entry);
+      return;
+    }
+    await pc.setLocalDescription(offer);
+    if (!isCurrentPeerEntry(targetId, entry)) {
+      removePeerConnection(targetId, entry);
+      return;
+    }
+    send({ type: 'rtc', to: targetId, signal: { type: 'offer', description: pc.localDescription }, sourceEpoch: entry.sourceEpoch });
+    console.log("[RoomSound] sent offer to "+targetId+" epoch="+entry.sourceEpoch);
+  } catch (error) {
+    if (state.peers.get(targetId) === entry) removePeerConnection(targetId, entry);
+    console.warn("[RoomSound] createOffer failed", error);
+  }
 }
 
 async function handleRtcSignal(message) {
   const { from, signal } = message;
   if (!signal) return;
+  const sourceEpoch = Number.isInteger(message.sourceEpoch) ? message.sourceEpoch : state.room?.sourceEpoch;
+  if (Number.isInteger(message.sourceEpoch) && Number.isInteger(state.room?.sourceEpoch) && message.sourceEpoch !== state.room.sourceEpoch) {
+    console.warn("[RoomSound] ignored RTC signal for stale source epoch", message.sourceEpoch);
+    return;
+  }
   if (signal.type === 'offer') {
     if (isSelfSource()) return;
     await loadIceConfig();
+    if (!state.room?.activeSourceId || state.room.activeSourceId !== from || state.room.sourceEpoch !== sourceEpoch || isSelfSource()) return;
     const existing = state.peers.get(from);
-    try { existing?.pc.close(); } catch {}
-    if (existing) state.peers.delete(from);
+    if (existing) removePeerConnection(from, existing);
     const pc = new RTCPeerConnection(rtcConfig);
-    const entry = { pc, role: 'listener', pendingCandidates: [], remoteDescSet: false, localDescSet: false };
+    const entry = { pc, role: 'listener', sourceEpoch, pendingCandidates: [], remoteDescSet: false, localDescSet: false };
     state.peers.set(from, entry);
-    pc.onicecandidate = (event) => { if (event.candidate) send({ type: 'rtc', to: from, signal: { type: 'candidate', candidate: event.candidate }, sourceEpoch: state.room?.sourceEpoch }); };
-    pc.onicegatheringstatechange = () => console.log("[RoomSound][lis<-"+from+"] gathering="+pc.iceGatheringState);
+    pc.onicecandidate = (event) => {
+      if (event.candidate && isCurrentPeerEntry(from, entry)) send({ type: 'rtc', to: from, signal: { type: 'candidate', candidate: event.candidate }, sourceEpoch: entry.sourceEpoch });
+    };
+    pc.onicegatheringstatechange = () => {
+      updatePeerTelemetryState(from, entry);
+      renderTelemetry();
+      console.log("[RoomSound][lis<-"+from+"] gathering="+pc.iceGatheringState);
+    };
     pc.oniceconnectionstatechange = () => {
+      updatePeerTelemetryState(from, entry);
+      renderTelemetry();
       console.log("[RoomSound][lis<-"+from+"] iceConn="+pc.iceConnectionState);
       if (pc.iceConnectionState === 'failed') {
         try { pc.restartIce(); } catch {}
         setTimeout(() => {
-          if (pc.iceConnectionState === 'failed') {
+          if (isCurrentPeerEntry(from, entry) && pc.iceConnectionState === 'failed') {
             toast(hasTurnServer(rtcConfig) ? 'Audio relay failed — retrying ICE…' : 'No relay candidate — add TURN for internet/cross-NAT audio.', 'error');
           }
         }, 2000);
       }
     };
     pc.onconnectionstatechange = () => {
+      updatePeerTelemetryState(from, entry);
+      renderTelemetry();
       console.log("[RoomSound][lis<-"+from+"] conn="+pc.connectionState+" ice="+pc.iceConnectionState);
       if (pc.connectionState === 'failed') {
         toast('Audio connection failed. Check network or TURN config.', 'error');
@@ -729,12 +1052,14 @@ async function handleRtcSignal(message) {
         state.audioNeedsGesture = true;
         renderControls();
         setTimeout(() => {
-          if (pc.connectionState === 'failed') console.warn("[RoomSound] listener still failed, waiting for publisher renegotiation");
+          if (isCurrentPeerEntry(from, entry) && pc.connectionState === 'failed') console.warn("[RoomSound] listener still failed, waiting for publisher renegotiation");
         }, 2500);
       }
-      if (pc.connectionState === 'connected') addActivity("Audio connected to "+from, true);
+      if (['closed', 'disconnected'].includes(pc.connectionState)) removePeerConnection(from, entry);
+      if (pc.connectionState === 'connected' && isCurrentPeerEntry(from, entry)) addActivity("Audio connected to "+from, true);
     };
     pc.ontrack = (event) => {
+      if (!isCurrentPeerEntry(from, entry)) return;
       console.log("[RoomSound] ontrack from "+from+" kind="+(event.track?.kind||"audio")+" streams="+(event.streams?.length||0));
       const audio = ensureAudioElement();
       const inbound = event.streams?.[0] || new MediaStream([event.track]);
@@ -742,36 +1067,53 @@ async function handleRtcSignal(message) {
       audio.volume = state.muted ? 0 : state.volume;
       audio.muted = false;
       audio.play().then(() => {
+        if (!isCurrentPeerEntry(from, entry)) return;
         state.audioNeedsGesture = false;
         renderControls();
         console.log("[RoomSound] remote audio playing from "+from);
       }).catch((err) => {
+        if (!isCurrentPeerEntry(from, entry)) return;
         console.warn("[RoomSound] autoplay blocked", err);
         state.audioNeedsGesture = true;
         renderControls();
         toast('Tap “Enable room audio” to start playback.', 'error');
       });
     };
+    registerPeerTelemetry(from, entry);
     try {
       await pc.setRemoteDescription(signal.description);
+      if (!isCurrentPeerEntry(from, entry)) {
+        removePeerConnection(from, entry);
+        return;
+      }
       entry.remoteDescSet = true;
       for (const c of entry.pendingCandidates.splice(0)) { try { await pc.addIceCandidate(c); } catch (e) { console.warn("[RoomSound] late candidate flush failed", e); } }
     } catch (e) {
       console.error("[RoomSound] setRemoteDescription(offer) failed", e);
-      try { pc.close(); } catch {}
-      state.peers.delete(from);
+      removePeerConnection(from, entry);
       return;
     }
     try {
       const answer = await pc.createAnswer();
+      if (!isCurrentPeerEntry(from, entry)) {
+        removePeerConnection(from, entry);
+        return;
+      }
       await pc.setLocalDescription(answer);
+      if (!isCurrentPeerEntry(from, entry)) {
+        removePeerConnection(from, entry);
+        return;
+      }
       entry.localDescSet = true;
-      send({ type: 'rtc', to: from, signal: { type: 'answer', description: pc.localDescription }, sourceEpoch: state.room?.sourceEpoch });
-      console.log("[RoomSound] sent answer to "+from+" epoch="+state.room?.sourceEpoch);
-    } catch (e) { console.error("[RoomSound] createAnswer failed", e); }
+      send({ type: 'rtc', to: from, signal: { type: 'answer', description: pc.localDescription }, sourceEpoch: entry.sourceEpoch });
+      console.log("[RoomSound] sent answer to "+from+" epoch="+entry.sourceEpoch);
+    } catch (e) {
+      if (state.peers.get(from) === entry) removePeerConnection(from, entry);
+      console.error("[RoomSound] createAnswer failed", e);
+    }
     // flush early trickled candidates that arrived before offer was processed
     const pkEarly = "__pending_"+from;
-    if (state.peers.has(pkEarly)) {
+    if (state.peers.has(pkEarly) && isCurrentPeerEntry(from, entry)) {
       const pend = state.peers.get(pkEarly);
       state.peers.delete(pkEarly);
       for (const c of (pend.pendingCandidates||[])) { try { await pc.addIceCandidate(c); } catch {} }
@@ -779,22 +1121,33 @@ async function handleRtcSignal(message) {
     return;
   }
   const peer = state.peers.get(from);
-  if (!peer) {
-    if (signal.type === 'candidate' && signal.candidate && !isSelfSource() && state.room?.activeSourceId === from) {
+  if (!peer?.pc) {
+    if (signal.type === 'candidate' && signal.candidate && !isSelfSource() && state.room?.activeSourceId === from && state.room?.sourceEpoch === sourceEpoch) {
       let pend = state.peers.get("__pending_"+from);
-      if (!pend) { pend = { pendingCandidates: [] }; state.peers.set("__pending_"+from, pend); }
+      if (!pend || pend.sourceEpoch !== sourceEpoch) {
+        pend = { sourceEpoch, pendingCandidates: [] };
+        state.peers.set("__pending_"+from, pend);
+      }
       pend.pendingCandidates.push(signal.candidate);
       console.log("[RoomSound] buffered early candidate from "+from+" before offer");
     }
     return;
   }
+  if (!isCurrentPeerEntry(from, peer)) return;
   if (signal.type === 'answer') {
     try {
       await peer.pc.setRemoteDescription(signal.description);
+      if (!isCurrentPeerEntry(from, peer)) {
+        removePeerConnection(from, peer);
+        return;
+      }
       peer.remoteDescSet = true;
       console.log("[RoomSound][pub->"+from+"] remote answer set");
       for (const c of (peer.pendingCandidates||[]).splice(0)) { try { await peer.pc.addIceCandidate(c); } catch (e) { console.warn("[RoomSound] flush queued candidate failed", e); } }
-    } catch (e) { console.error("[RoomSound] setRemoteDescription(answer) failed", e); }
+    } catch (e) {
+      if (state.peers.get(from) === peer) removePeerConnection(from, peer);
+      console.error("[RoomSound] setRemoteDescription(answer) failed", e);
+    }
   } else if (signal.type === 'candidate') {
     if (!peer.remoteDescSet) {
       peer.pendingCandidates = peer.pendingCandidates || [];
@@ -805,7 +1158,7 @@ async function handleRtcSignal(message) {
     }
   }
   const pk = "__pending_"+from;
-  if (state.peers.has(pk) && peer?.remoteDescSet) {
+  if (state.peers.has(pk) && peer.remoteDescSet && isCurrentPeerEntry(from, peer)) {
     const pend = state.peers.get(pk);
     state.peers.delete(pk);
     for (const c of (pend.pendingCandidates||[])) { try { await peer.pc.addIceCandidate(c); } catch {} }

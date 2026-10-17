@@ -129,6 +129,34 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .volume-slider { width: 115px; accent-color: var(--blue); }
 .volume-label { width: 31px; color: #8c98b4; font-size: 11px; text-align: right; }
 .no-monitor-note { padding-left: 12px; border-left: 1px solid var(--line); color: #6f7b96; font-size: 10px; }
+.telemetry-panel { margin-bottom: 18px; }
+.telemetry-state { display: inline-flex; align-items: center; padding: 5px 8px; border: 1px solid var(--line); border-radius: 99px; color: #9aa6c2; font-size: 9px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.telemetry-state.good { border-color: rgba(99, 223, 173, 0.25); background: rgba(45, 139, 107, 0.12); color: #9de6c3; }
+.telemetry-state.pending { border-color: rgba(255, 184, 107, 0.22); background: rgba(120, 75, 29, 0.12); color: #e7bd8c; }
+.telemetry-summary { padding: 12px 19px 4px; color: #8e9ab7; font-size: 11px; }
+.telemetry-list { display: grid; gap: 8px; padding: 8px 19px 17px; }
+.telemetry-empty { padding: 8px 0 3px; color: #687593; font-size: 11px; line-height: 1.5; }
+.telemetry-peer { padding: 11px 12px; border: 1px solid rgba(148, 163, 209, 0.13); border-radius: 10px; background: rgba(9, 14, 29, 0.42); }
+.telemetry-peer-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.telemetry-peer-heading > div { min-width: 0; }
+.telemetry-direction { display: block; margin-bottom: 4px; color: #7383b5; font-size: 8px; font-weight: 800; letter-spacing: 0.13em; }
+.telemetry-peer-heading strong { display: block; overflow: hidden; color: #d4dcf0; font-size: 11px; font-weight: 730; text-overflow: ellipsis; white-space: nowrap; }
+.telemetry-connection { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 5px; color: #9aa6c2; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.telemetry-connection i { width: 6px; height: 6px; border-radius: 50%; background: #8b96b0; }
+.telemetry-connection.good { color: #9de6c3; }
+.telemetry-connection.good i { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.telemetry-connection.bad { color: #ffadb9; }
+.telemetry-connection.bad i { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.telemetry-peer-states { display: flex; flex-wrap: wrap; gap: 7px 12px; margin-top: 9px; color: #697691; font-size: 9px; }
+.telemetry-peer-states strong { color: #aab5ce; font-weight: 750; }
+.telemetry-peer-states strong.good { color: #91e2bd; }
+.telemetry-peer-states strong.bad { color: #ffacb7; }
+.telemetry-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(148, 163, 209, 0.09); }
+.telemetry-stats > span { min-width: 0; }
+.telemetry-stats small, .telemetry-stats strong, .telemetry-stats em { display: block; }
+.telemetry-stats small { margin-bottom: 4px; color: #687593; font-size: 8px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.telemetry-stats strong { overflow: hidden; color: #cbd5eb; font-size: 11px; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; }
+.telemetry-stats em { margin-top: 3px; overflow: hidden; color: #71809d; font-size: 9px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .lower-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
 .panel { border: 1px solid var(--line); border-radius: 15px; background: var(--panel); box-shadow: 0 14px 30px rgba(4, 8, 21, 0.16); }
 .activity-panel, .chat-panel, .roster-panel, .request-panel { min-height: 290px; }
