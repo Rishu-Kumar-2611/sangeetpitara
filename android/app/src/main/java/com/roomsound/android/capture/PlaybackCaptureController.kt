@@ -65,7 +65,7 @@ class PlaybackCaptureController(
             checkNotNull(manager) { "MediaProjection is unavailable on this device." }
                 .getMediaProjection(resultCode, projectionData)
                 ?: throw IllegalStateException("New system capture consent is required.")
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             onSnapshot(CaptureSnapshot(
                 CaptureStatus.ERROR,
                 message = "Android could not start playback capture: ${error.message}",
@@ -98,7 +98,7 @@ class PlaybackCaptureController(
                 run.thread = reader
                 reader.start()
             }
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             finish(run, CaptureStatus.ERROR, "Playback capture could not initialize: ${error.message}")
         }
     }
@@ -172,7 +172,7 @@ class PlaybackCaptureController(
                 }
                 filled += count
                 if (filled == FRAME_SAMPLES) {
-                    if (!run.stopped.get()) run.sink?.onFrame(frame.copyOf(), FRAME_SAMPLES, SAMPLE_RATE, CHANNELS)
+                    if (!run.stopped.get()) { try { run.sink?.onFrame(frame.copyOf(), FRAME_SAMPLES, SAMPLE_RATE, CHANNELS) } catch (t: Throwable) { android.util.Log.e("RoomSound", "onFrame sink failed", t) } }
                     filled = 0
                 }
                 val status = if (now - lastSignalAt >= SILENCE_TIMEOUT_MS) {
@@ -190,7 +190,7 @@ class PlaybackCaptureController(
                     lastUiAt = now
                 }
             }
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             if (!run.stopped.get()) finish(run, CaptureStatus.ERROR, "Device playback capture failed: ${error.message}")
         } finally {
             // This is idempotent and references only this run, never a shared recorder.

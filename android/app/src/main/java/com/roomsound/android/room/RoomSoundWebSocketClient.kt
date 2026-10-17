@@ -321,7 +321,7 @@ class RoomSoundWebSocketClient(
     private fun openSocket() {
         val request = try {
             Request.Builder().url(endpoint).build()
-        } catch (error: IllegalArgumentException) {
+        } catch (error: Throwable) {
             setConnectionState(RoomConnectionState.FAILED)
             emit(RoomSoundEvent.Error("Invalid RoomSound WebSocket endpoint: ${error.message}"))
             return
@@ -381,19 +381,27 @@ class RoomSoundWebSocketClient(
     private fun handleMessage(text: String) {
         val message = try {
             JSONObject(text)
-        } catch (error: Exception) {
-            emit(RoomSoundEvent.Error("RoomSound sent invalid JSON: ${error.message ?: "parse error"}"))
+        } catch (error: Throwable) {
+            android.util.Log.e("RoomSound", "WebSocket JSON parse failed", error)
+            emit(RoomSoundEvent.Error("RoomSound sent invalid JSON: ${error.message ?: error.javaClass.simpleName}"))
             return
         }
 
-        val type = message.stringOrNull("type")
-        if (type == null) {
+        val type = message.stringOrNull("type") ?: "unknown"
+        // Some servers emit {"state":{...}} without envelope type on join.
+        val resolvedType = when {
+            type != "unknown" -> type
+            message.has("state") -> "state"
+            message.has("room") || message.has("members") -> "state"
+            else -> type
+        }
+        if (resolvedType == "unknown") {
             emit(RoomSoundEvent.Error("RoomSound sent an event without a type."))
             return
         }
 
         try {
-            when (type) {
+            when (resolvedType) {
                 "joined" -> handleRoomState(message, joined = true)
                 "state" -> handleRoomState(message, joined = false)
                 "error" -> {
@@ -443,8 +451,9 @@ class RoomSoundWebSocketClient(
                 )
                 else -> emit(RoomSoundEvent.Unknown(type, message))
             }
-        } catch (error: Exception) {
-            emit(RoomSoundEvent.Error("Invalid RoomSound '$type' event: ${error.message ?: "bad payload"}"))
+        } catch (error: Throwable) {
+            android.util.Log.e("RoomSound", "handleMessage fatal for type '$type': $text", error)
+            emit(RoomSoundEvent.Error("Invalid RoomSound '$type' event: ${error.message ?: error.javaClass.simpleName}"))
         }
     }
 

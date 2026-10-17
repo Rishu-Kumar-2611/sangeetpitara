@@ -47,7 +47,7 @@ internal class Pcm16FrameQueue(
         revocationCount += 1
     }
 
-    fun offer(frame: Pcm16Frame): Pcm16PublishResult = synchronized(lock) {
+    fun offer(frame: Pcm16Frame): Pcm16PublishResult = try { synchronized(lock) {
         when {
             activeEpoch == null -> Pcm16PublishResult.DROPPED_UNAUTHORIZED
             activeEpoch != frame.sourceEpoch -> Pcm16PublishResult.DROPPED_STALE_EPOCH
@@ -58,14 +58,14 @@ internal class Pcm16FrameQueue(
                 Pcm16PublishResult.PUBLISHED
             }
         }
-    }
+    } } catch (t: Throwable) { android.util.Log.e("RoomSound", "offer failed", t); Pcm16PublishResult.BACKEND_UNAVAILABLE }
 
     /**
      * Fully overwrites an ADM callback buffer. Any missing samples remain zero,
      * including the entire buffer after revoke or before the first frame.
      * Returns the number of queued samples copied into the buffer.
      */
-    fun fillAudioBuffer(buffer: ByteBuffer): Int = synchronized(lock) {
+    fun fillAudioBuffer(buffer: ByteBuffer): Int = try { synchronized(lock) {
         callbackCount += 1
         buffer.clear()
         while (buffer.hasRemaining()) buffer.put(0)
@@ -93,7 +93,7 @@ internal class Pcm16FrameQueue(
         if (copied < requestedSamples) underrunSamples += (requestedSamples - copied).toLong()
         buffer.position(0)
         copied
-    }
+    } } catch (t: Throwable) { android.util.Log.e("RoomSound", "fillAudioBuffer failed", t); try { buffer.clear(); while (buffer.hasRemaining()) buffer.put(0); buffer.clear(); buffer.position(0) } catch (_: Throwable) {}; 0 }
 
     fun queuedSamples(): Int = synchronized(lock) { size }
 

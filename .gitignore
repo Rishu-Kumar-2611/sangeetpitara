@@ -11,6 +11,7 @@ android/local.properties
 android/artifacts/
 android/app/*.keystore
 android/app/*.jks
+*.apk
 oracleJdk-*/
 
 .DS_Store

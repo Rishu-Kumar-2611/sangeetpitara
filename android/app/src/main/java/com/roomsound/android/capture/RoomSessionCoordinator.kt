@@ -109,9 +109,11 @@ class RoomSessionCoordinator(
             publisher = nextPublisher
             nextPublisher.setPlaybackVolume(volume)
             transport = RoomAudioTransport(nextClient, nextPublisher)
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             disposeRoom()
-            status("Native audio could not initialize: ${error.message}")
+            val why = error.message ?: error.javaClass.simpleName
+            status("Native audio could not initialize: $why")
+            android.util.Log.e("RoomSound", "configureEndpoint init failed", error)
             return false
         }
         val listener = object : RoomSoundWebSocketClient.Listener {
@@ -143,11 +145,18 @@ class RoomSessionCoordinator(
     }
     private fun selectRoom(action: (RoomSoundWebSocketClient) -> Unit) {
         val active = client ?: return
-        check(!roomSelectionPending && active.currentRoomState() == null) { "Leave the current room before selecting another room." }
+        if (roomSelectionPending || active.currentRoomState() != null) {
+            status("Leave the current room before selecting another room.")
+            return
+        }
         roomSelectionPending = true
-        try { action(active) } catch (error: Exception) {
+        try { action(active) } catch (error: Throwable) {
             roomSelectionPending = false
-            throw error
+            val msg = error.message ?: error.javaClass.simpleName
+            status("Room request failed before WebSocket send: $msg")
+            android.util.Log.e("RoomSound", "selectRoom failed", error)
+            changed()
+            return
         }
         changed()
     }
@@ -377,35 +386,38 @@ class RoomSessionCoordinator(
     }
 
     private fun handleEvent(event: RoomSoundEvent, observedEpoch: Long?) {
-        when (event) {
-            is RoomSoundEvent.Joined, is RoomSoundEvent.State -> {
-                roomSelectionPending = false
-                requestPending = false
-                reconcileRoomState()
+        try {
+            when (event) {
+                is RoomSoundEvent.Joined, is RoomSoundEvent.State -> {
+                    roomSelectionPending = false
+                    requestPending = false
+                    reconcileRoomState()
+                }
+                is RoomSoundEvent.Error, is RoomSoundEvent.LocalError -> {
+                    roomSelectionPending = false
+                    requestPending = false
+                    if (attempt?.phase == ConsentPhase.AWAITING_LIVE) abortAttempt("The server did not authorize device-audio publication.", true)
+                    takeover?.canceled = true
+                    reconcileRoomState()
+                    if (endPending) endPending = false
+                }
+                is RoomSoundEvent.Removed, is RoomSoundEvent.RoomEnded -> {
+                    abortAttempt("The room ended or this phone was removed.", false)
+                    disposeRoom()
+                }
+                is RoomSoundEvent.SourceDisconnected, is RoomSoundEvent.Takeover -> {
+                    val pending = attempt
+                    val currentEpoch = joinedState()?.room?.sourceEpoch
+                    if (pending != null && observedEpoch == currentEpoch) reconcileRoomState()
+                }
+                else -> Unit
             }
-            is RoomSoundEvent.Error, is RoomSoundEvent.LocalError -> {
-                roomSelectionPending = false
-                requestPending = false
-                if (attempt?.phase == ConsentPhase.AWAITING_LIVE) abortAttempt("The server did not authorize device-audio publication.", true)
-                takeover?.canceled = true
-                reconcileRoomState()
-                if (endPending) endPending = false
-            }
-            is RoomSoundEvent.Removed, is RoomSoundEvent.RoomEnded -> {
-                abortAttempt("The room ended or this phone was removed.", false)
-                disposeRoom()
-            }
-            is RoomSoundEvent.SourceDisconnected, is RoomSoundEvent.Takeover -> {
-                // Event callbacks can be queued behind a newer state or new run.
-                // Epoch + current lease are authoritative, not the old event's member id.
-                val pending = attempt
-                val currentEpoch = joinedState()?.room?.sourceEpoch
-                if (pending != null && observedEpoch == currentEpoch) reconcileRoomState()
-            }
-            else -> Unit
+        } catch (t: Throwable) {
+            android.util.Log.e("RoomSound", "handleEvent failed for $event", t)
+            status("Room event handling hit an error: ${t.message}")
         }
-        listeners.forEach { it.onEvent(event) }
-        changed()
+        runCatching { listeners.forEach { it.onEvent(event) } }
+        runCatching { changed() }
     }
 
     private fun reconcileRoomState() {

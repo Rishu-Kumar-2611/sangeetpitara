@@ -157,8 +157,9 @@ public class WebRtcPcmPublisher(
      * deliberately per-track and does not change the phone's global volume.
      */
     public fun setPlaybackVolume(volume: Double) {
-        require(volume.isFinite() && volume in 0.0..1.0) {
-            "Playback volume must be between 0.0 and 1.0."
+        if (!volume.isFinite() || volume !in 0.0..1.0) {
+            android.util.Log.e("RoomSound", "setPlaybackVolume rejected invalid volume: "+volume.toString())
+            return
         }
         synchronized(stateLock) {
             if (closed) return
@@ -235,14 +236,19 @@ public class WebRtcPcmPublisher(
     override fun isAvailable(): Boolean = synchronized(stateLock) { !closed && backendReady }
 
     override fun publish(frame: Pcm16Frame): Pcm16PublishResult {
-        synchronized(stateLock) {
-            if (closed || !sourceStarted || activeSourceEpoch == null) {
-                return Pcm16PublishResult.DROPPED_UNAUTHORIZED
+        return try {
+            synchronized(stateLock) {
+                if (closed || !sourceStarted || activeSourceEpoch == null) {
+                    return Pcm16PublishResult.DROPPED_UNAUTHORIZED
+                }
+                if (activeSourceEpoch != frame.sourceEpoch) {
+                    return Pcm16PublishResult.DROPPED_STALE_EPOCH
+                }
+                pcmQueue.offer(frame)
             }
-            if (activeSourceEpoch != frame.sourceEpoch) {
-                return Pcm16PublishResult.DROPPED_STALE_EPOCH
-            }
-            return pcmQueue.offer(frame)
+        } catch (t: Throwable) {
+            android.util.Log.e("RoomSound", "WebRtc publish failed", t)
+            Pcm16PublishResult.BACKEND_UNAVAILABLE
         }
     }
 
@@ -302,10 +308,7 @@ public class WebRtcPcmPublisher(
                         .build(),
                 )
                 .setAudioBufferCallback(JavaAudioDeviceModule.AudioBufferCallback { buffer, _, _, _, _, _ ->
-                    pcmQueue.fillAudioBuffer(buffer)
-                    // There is no real AudioRecord timestamp for injected
-                    // playback PCM. Returning zero is the documented ADM
-                    // value for an unavailable capture timestamp.
+                    try { pcmQueue.fillAudioBuffer(buffer) } catch (t: Throwable) { android.util.Log.e("RoomSound", "ADM fillAudioBuffer failed", t); try { buffer.clear(); while (buffer.hasRemaining()) buffer.put(0); buffer.clear() } catch (_: Throwable) {} }
                     0L
                 })
                 .createAudioDeviceModule()
@@ -553,7 +556,7 @@ public class WebRtcPcmPublisher(
         // remote offer creates the receive-only audio m-section, so the answer
         // cannot accidentally publish this phone's microphone.
         runCatching { connection.setAudioRecording(false) }
-        connection.setAudioPlayout(true)
+        runCatching { connection.setAudioPlayout(true) }
         return session
     }
 
@@ -766,7 +769,7 @@ public class WebRtcPcmPublisher(
             if (iceServersLoaded || closed) return
             iceServersLoaded = true
         }
-        val configured = roomClient.fetchIceServers()
+        val configured = try { roomClient.fetchIceServers() } catch (t: Throwable) { android.util.Log.e("RoomSound", "fetchIceServers failed", t); emptyList() }
         if (configured.isEmpty()) return
         val converted = configured.mapNotNull { server ->
             runCatching {

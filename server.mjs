@@ -36,6 +36,8 @@ const mimeTypes = {
   '.webp': 'image/webp',
   '.wasm': 'application/wasm',
   '.ico': 'image/x-icon',
+  '.apk': 'application/vnd.android.package-archive',
+  '.txt': 'text/plain; charset=utf-8',
 };
 
 const securityHeaders = {
@@ -44,6 +46,12 @@ const securityHeaders = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(self), display-capture=(self)',
   'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'same-site',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+  'X-DNS-Prefetch-Control': 'off',
+  'X-Permitted-Cross-Domain-Policies': 'none',
+  'Origin-Agent-Cluster': '?1',
 };
 
 const rateLimit = new Map();
@@ -63,9 +71,33 @@ function checkRateLimit(ip) {
   return entry.count <= RATE_LIMIT_MAX;
 }
 
+function isAllowedOrigin(origin, allowedList) {
+  let originUrl;
+  try {
+    originUrl = new URL(origin);
+  } catch {
+    return false;
+  }
+  return allowedList.some((candidate) => {
+    if (origin === candidate) return true;
+    try {
+      const allowedUrl = new URL(candidate);
+      if (originUrl.protocol !== allowedUrl.protocol) return false;
+      if (originUrl.host === allowedUrl.host) return true;
+      if (originUrl.host.endsWith(`.${allowedUrl.host}`)) return true;
+    } catch {
+      return false;
+    }
+    return false;
+  });
+}
+
 function getClientIp(req) {
-  const fwd = req.headers['x-forwarded-for'];
-  if (typeof fwd === 'string') return fwd.split(',')[0].trim();
+  const trustProxy = process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true';
+  if (trustProxy) {
+    const fwd = req.headers['x-forwarded-for'];
+    if (typeof fwd === 'string' && fwd.trim()) return fwd.split(',')[0].trim();
+  }
   return req.socket.remoteAddress || 'unknown';
 }
 
@@ -368,19 +400,35 @@ function handleMessage(ws, message) {
   }
 
   if (type === 'rtc') {
-    if (!message.to || typeof message.to !== 'string') return;
-    if (!message.signal || typeof message.signal !== 'object') return;
-    const target = findMember(room, message.to);
-    if (target?.ws) {
-      const forwarded = { type: 'rtc', from: member.id, signal: message.signal };
-      // Native peers tag signaling with the source epoch so receivers can
-      // discard an offer/candidate that belongs to a previous handoff. Keep
-      // the tag on the server hop; older web clients simply ignore it.
-      if (Number.isInteger(message.sourceEpoch) && message.sourceEpoch >= 0) {
-        forwarded.sourceEpoch = message.sourceEpoch;
-      }
-      send(target.ws, forwarded);
+    if (!message.to || typeof message.to !== 'string') return sendError(ws, 'Invalid RTC target.');
+    if (!message.signal || typeof message.signal !== 'object') return sendError(ws, 'Invalid RTC signal.');
+    if (!room.activeSourceId) return sendError(ws, 'No active source.');
+    if (Number.isInteger(message.sourceEpoch) && message.sourceEpoch !== room.sourceEpoch) {
+      return sendError(ws, 'Stale source epoch.');
     }
+    const target = findMember(room, message.to);
+    if (!target?.ws) return;
+    const signal = message.signal;
+    const sigType = signal.type || signal.description?.type || (signal.candidate ? 'candidate' : '');
+    const isCandidate = !!signal.candidate || sigType === 'candidate';
+    const isOffer = sigType === 'offer';
+    const isAnswer = sigType === 'answer';
+    const fromIsSource = member.id === room.activeSourceId;
+    const toIsSource = target.id === room.activeSourceId;
+    if (isOffer) {
+      if (!fromIsSource) return sendError(ws, 'Not authorized to offer.');
+      if (toIsSource) return sendError(ws, 'Invalid offer target.');
+    } else if (isAnswer) {
+      if (fromIsSource) return sendError(ws, 'Source cannot answer itself.');
+      if (!toIsSource) return sendError(ws, 'Answer must target the active source.');
+    } else if (isCandidate) {
+      if (fromIsSource === toIsSource) return sendError(ws, 'Candidates must be between source and listener.');
+    } else {
+      // Unknown signal types must still be between source and listener
+      if (fromIsSource === toIsSource) return sendError(ws, 'RTC must be between source and listener.');
+    }
+    const forwarded = { type: 'rtc', from: member.id, signal: message.signal, sourceEpoch: room.sourceEpoch };
+    send(target.ws, forwarded);
     return;
   }
 
@@ -582,10 +630,32 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   const fileName = requestPath === '/' ? 'index.html' : requestPath.replace(/^\//, '');
+  let decodedPath = requestPath;
+  try { decodedPath = decodeURIComponent(requestPath); } catch {}
+  if (decodedPath.includes('\0') || decodedPath.split('/').includes('..') || fileName.includes('\0')) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
+    return;
+  }
+  if (
+    fileName.startsWith('.') ||
+    fileName.includes('/.') ||
+    /(^|\/)(server\.mjs|package\.json|package-lock\.json|\.env[^\/]*|Dockerfile|\.git[^\/]*|node_modules)(\/|$)/i.test(fileName)
+  ) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
+    return;
+  }
   const filePath = resolve(rootPath, fileName);
   if (filePath !== rootPath && !filePath.startsWith(`${rootPath}${sep}`)) {
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Forbidden');
+    return;
+  }
+  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.apk']);
+  if (!allowedExts.has(extname(filePath))) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
     return;
   }
   try {
@@ -609,12 +679,15 @@ const server = http.createServer(async (req, res) => {
 
 const wss = new WebSocketServer({
   server,
-  maxPayload: MAX_PAYLOAD_BYTES,
+  // Transport limit is intentionally larger than the 64 KiB application limit
+  // so the handler can send `Message too large` and keep the socket alive
+  // instead of ws closing with 1009 before the handler runs.
+  maxPayload: 512 * 1024,
   verifyClient: (info, cb) => {
     const allowed = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean) : null;
     if (allowed && allowed.length) {
       const origin = info.origin || info.req.headers.origin || '';
-      if (origin && !allowed.some((a) => origin === a || origin.endsWith(a))) {
+      if (origin && !isAllowedOrigin(origin, allowed)) {
         cb(false, 403, 'Origin not allowed');
         return;
       }
@@ -630,7 +703,7 @@ const wss = new WebSocketServer({
 wss.on('connection', (ws, req) => {
   ws._ip = getClientIp(req);
   ws.on('message', (raw) => {
-    if (raw.length > MAX_PAYLOAD_BYTES) return sendError(ws, 'Message too large.');
+    if (Buffer.byteLength(raw) > MAX_PAYLOAD_BYTES) return sendError(ws, 'Message too large.');
     let data;
     try {
       data = JSON.parse(raw.toString());

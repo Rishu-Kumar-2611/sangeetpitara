@@ -155,6 +155,12 @@ class MainActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Prevent native/WebRTC/AudioRecord errors from force-closing the app without a log.
+        val prevHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try { android.util.Log.e("RoomSound", "Uncaught on "+thread.name, throwable) } catch (_: Throwable) {}
+            try { prevHandler?.uncaughtException(thread, throwable) } catch (_: Throwable) { try { android.util.Log.e("RoomSound", "prevHandler crashed", throwable) } catch (_: Throwable) {} }
+        }
         super.onCreate(savedInstanceState)
         pendingCaptureId = savedInstanceState?.getString(STATE_PENDING_CAPTURE_ID)
         projectionConsentInFlight = savedInstanceState?.getBoolean(STATE_PROJECTION_IN_FLIGHT, false) == true
@@ -333,8 +339,12 @@ class MainActivity : Activity() {
         val roomName = roomNameInput.text.toString().trim().ifEmpty { "Listening room" }
         saveRoomInputs(displayName)
         appendRoomEvent("Creating room '$roomName' as $displayName.")
-        runCatching { session.createRoom(roomName, displayName, guestId) }
-            .onFailure { appendRoomEvent(it.message ?: "The room could not be created.") }
+        try {
+            session.createRoom(roomName, displayName, guestId)
+        } catch (t: Throwable) {
+            android.util.Log.e("RoomSound", "createRoom failed", t)
+            appendRoomEvent(t.message ?: "The room could not be created: ${t.javaClass.simpleName}")
+        }
     }
 
     private fun joinRoom() {
@@ -347,8 +357,12 @@ class MainActivity : Activity() {
         }
         saveRoomInputs(displayName)
         appendRoomEvent("Joining room $roomCode as $displayName.")
-        runCatching { session.joinRoom(roomCode, displayName, guestId) }
-            .onFailure { appendRoomEvent(it.message ?: "The room could not be joined.") }
+        try {
+            session.joinRoom(roomCode, displayName, guestId)
+        } catch (t: Throwable) {
+            android.util.Log.e("RoomSound", "joinRoom failed", t)
+            appendRoomEvent(t.message ?: "The room could not be joined: ${t.javaClass.simpleName}")
+        }
     }
 
     private fun testRoomConnection() {
@@ -411,63 +425,72 @@ class MainActivity : Activity() {
     }
 
     private fun handleRoomEvent(event: RoomSoundEvent) {
-        when (event) {
-            is RoomSoundEvent.Joined -> {
-                latestRoomState = event.state
-                appendRoomEvent("Joined room ${event.state.room.code}.")
-                renderRoomState(event.state)
+        try {
+            when (event) {
+                is RoomSoundEvent.Joined -> {
+                    latestRoomState = event.state
+                    appendRoomEvent("Joined room ${event.state.room.code}.")
+                    renderRoomState(event.state)
+                }
+                is RoomSoundEvent.State -> {
+                    latestRoomState = event.state
+                    renderRoomState(event.state)
+                }
+                is RoomSoundEvent.Error -> appendRoomEvent("Server error: ${event.message}")
+                is RoomSoundEvent.LocalError -> appendRoomEvent("Not sent: ${event.message}")
+                is RoomSoundEvent.Chat -> appendRoomEvent("${event.message.senderName ?: "Room"}: ${event.message.text}")
+                is RoomSoundEvent.ControlRequested -> appendRoomEvent(
+                    "${event.request.requesterName} requested ${event.request.sourceType.lowercase(Locale.US)}. Review the approval controls below.",
+                )
+                is RoomSoundEvent.RequestResult -> appendRoomEvent(
+                    "Audio request ${event.status.lowercase(Locale.US)}. ${if (event.status == "APPROVED") "Tap Share approved device audio to grant Android system consent." else ""}",
+                )
+                is RoomSoundEvent.ControlRequestExpired -> appendRoomEvent("Audio request ${event.requestId} expired.")
+                is RoomSoundEvent.SourceDisconnected -> appendRoomEvent("The active source disconnected.")
+                is RoomSoundEvent.HostDisconnected -> appendRoomEvent("The host disconnected.")
+                is RoomSoundEvent.HostPromoted -> appendRoomEvent("A co-host was promoted to host.")
+                is RoomSoundEvent.Takeover -> appendRoomEvent("The room source was taken over immediately.")
+                is RoomSoundEvent.Removed -> {
+                    latestRoomState = null
+                    appendRoomEvent(event.message)
+                    renderRoomState(null)
+                }
+                is RoomSoundEvent.RoomEnded -> {
+                    latestRoomState = null
+                    appendRoomEvent(event.message)
+                    renderRoomState(null)
+                }
+                is RoomSoundEvent.Rtc -> Unit
+                is RoomSoundEvent.StaleStateIgnored -> appendRoomEvent(
+                    "Ignored stale room state epoch ${event.receivedEpoch}; current epoch is ${event.currentEpoch}.",
+                )
+                is RoomSoundEvent.Unknown -> appendRoomEvent("Ignored unknown room event '${event.type}'.")
             }
-            is RoomSoundEvent.State -> {
-                latestRoomState = event.state
-                renderRoomState(event.state)
-            }
-            is RoomSoundEvent.Error -> appendRoomEvent("Server error: ${event.message}")
-            is RoomSoundEvent.LocalError -> appendRoomEvent("Not sent: ${event.message}")
-            is RoomSoundEvent.Chat -> appendRoomEvent("${event.message.senderName ?: "Room"}: ${event.message.text}")
-            is RoomSoundEvent.ControlRequested -> appendRoomEvent(
-                "${event.request.requesterName} requested ${event.request.sourceType.lowercase(Locale.US)}. Review the approval controls below.",
-            )
-            is RoomSoundEvent.RequestResult -> appendRoomEvent(
-                "Audio request ${event.status.lowercase(Locale.US)}. ${if (event.status == "APPROVED") "Tap Share approved device audio to grant Android system consent." else ""}",
-            )
-            is RoomSoundEvent.ControlRequestExpired -> appendRoomEvent("Audio request ${event.requestId} expired.")
-            is RoomSoundEvent.SourceDisconnected -> appendRoomEvent("The active source disconnected.")
-            is RoomSoundEvent.HostDisconnected -> appendRoomEvent("The host disconnected.")
-            is RoomSoundEvent.HostPromoted -> appendRoomEvent("A co-host was promoted to host.")
-            is RoomSoundEvent.Takeover -> appendRoomEvent("The room source was taken over immediately.")
-            is RoomSoundEvent.Removed -> {
-                latestRoomState = null
-                appendRoomEvent(event.message)
-                renderRoomState(null)
-            }
-            is RoomSoundEvent.RoomEnded -> {
-                latestRoomState = null
-                appendRoomEvent(event.message)
-                renderRoomState(null)
-            }
-            is RoomSoundEvent.Rtc -> Unit
-            is RoomSoundEvent.StaleStateIgnored -> appendRoomEvent(
-                "Ignored stale room state epoch ${event.receivedEpoch}; current epoch is ${event.currentEpoch}.",
-            )
-            is RoomSoundEvent.Unknown -> appendRoomEvent("Ignored unknown room event '${event.type}'.")
+            renderTransport()
+        } catch (t: Throwable) {
+            android.util.Log.e("RoomSound", "handleRoomEvent crashed for $event", t)
+            appendRoomEvent("Room event handling hit an internal error (${t.javaClass.simpleName}); state refresh may be needed.")
+            runCatching { renderTransport() }
         }
-        renderTransport()
     }
 
     private fun renderRoomConnection(state: RoomConnectionState) {
-        roomConnectionText.text = "Connection: ${state.name.lowercase(Locale.US)}"
-        val joined = state == RoomConnectionState.JOINED
-        createRoomButton.isEnabled = !joined
-        joinRoomButton.isEnabled = !joined
-        testConnectionButton.isEnabled = state !in setOf(
+        try {
+            roomConnectionText.text = "Connection: ${state.name.lowercase(Locale.US)}"
+            val joined = state == RoomConnectionState.JOINED
+            createRoomButton.isEnabled = !joined
+            joinRoomButton.isEnabled = !joined
+            testConnectionButton.isEnabled = state !in setOf(
             RoomConnectionState.CONNECTING,
             RoomConnectionState.JOINED,
             RoomConnectionState.CLOSING,
         )
-        if (!joined && latestRoomState == null) renderRoomState(null)
+        if (!joined && latestRoomState == null) runCatching { renderRoomState(null) }
+        } catch (t: Throwable) { android.util.Log.e("RoomSound", "renderRoomConnection failed", t) }
     }
 
     private fun renderRoomState(state: RoomState?) {
+        try {
         latestRoomState = state
         if (state == null) {
             roomStateText.text = "No room state. Create or join a room to continue."
@@ -479,8 +502,8 @@ class MainActivity : Activity() {
             requestAudioButton.isEnabled = false
             leaveRoomButton.isEnabled = false
             endRoomButton.isEnabled = false
-            approvalContainer.removeAllViews()
-            moderationContainer.removeAllViews()
+            runCatching { approvalContainer.removeAllViews() }
+            runCatching { moderationContainer.removeAllViews() }
             chatText.text = "—"
             return
         }
@@ -540,11 +563,12 @@ class MainActivity : Activity() {
         takeoverButton.isEnabled = isModerator && room.activeSourceId != null && !isSelfSource
         leaveRoomButton.isEnabled = true
         endRoomButton.isEnabled = isHost
-        renderApprovalControls(state, isModerator)
-        renderModerationControls(state, isHost, isModerator)
+        runCatching { renderApprovalControls(state, isModerator) }
+        runCatching { renderModerationControls(state, isHost, isModerator) }
         chatText.text = state.messages.takeLast(12).joinToString("\n") { message ->
             "${message.senderName ?: "Room"}: ${message.text}"
         }.ifEmpty { "No messages yet." }
+        } catch (t: Throwable) { android.util.Log.e("RoomSound", "renderRoomState failed", t); appendRoomEvent("Room UI hit an internal error: ${t.message}") }
     }
 
     private fun renderApprovalControls(state: RoomState, isModerator: Boolean) {
@@ -826,7 +850,7 @@ class MainActivity : Activity() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent) else startService(serviceIntent)
             renderSnapshot(CaptureSnapshot(CaptureStatus.STARTING, message = "Starting foreground playback capture; source activation waits for a successful AudioRecord read."))
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             failPendingCapture("The foreground capture service could not start: ${error.message}")
         } finally {
             pendingRoomSourceStart = false

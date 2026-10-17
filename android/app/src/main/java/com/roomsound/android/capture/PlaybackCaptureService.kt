@@ -56,27 +56,30 @@ class PlaybackCaptureService : Service() {
         }
         controller = PlaybackCaptureController(this) { snapshot ->
             val deliver = {
-                if (roomSession.onCaptureSnapshot(snapshot)) {
+                try { if (roomSession.onCaptureSnapshot(snapshot)) {
                     publish(snapshot)
                     if (snapshot.status == CaptureStatus.ERROR || snapshot.status == CaptureStatus.STOPPED) {
                         snapshot.sessionId?.let(::finishCapture)
                     }
-                }
+                } } catch (t: Throwable) { android.util.Log.e("RoomSound", "onSnapshot deliver failed", t) }
             }
             if (Looper.myLooper() == Looper.getMainLooper()) deliver() else main.post { deliver() }
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        try {
         when (intent?.action) {
             ACTION_STOP -> {
                 val requestedId = intent.getStringExtra(EXTRA_SESSION_ID)
                 val pendingId = roomSession.pendingCapture()?.id
-                if (requestedId == null || requestedId == pendingId) {
-                    roomSession.stopCapture("Capture stopped from the RoomSound notification.")
-                    stopCaptureNotification()
-                    stopSelf()
-                }
+                try {
+                    if (requestedId == null || requestedId == pendingId) {
+                        roomSession.stopCapture("Capture stopped from the RoomSound notification.")
+                    }
+                } catch (t: Throwable) { android.util.Log.e("RoomSound", "stopCapture on ACTION_STOP failed", t) }
+                stopCaptureNotification()
+                try { stopSelf() } catch (_: Throwable) {}
             }
 
             ACTION_START -> {
@@ -105,12 +108,13 @@ class PlaybackCaptureService : Service() {
                 try {
                     startForegroundCaptureNotification(sessionId)
                     controller.start(sessionId, resultCode, projectionData, roomSession.pcmSink(sessionId))
-                } catch (error: Exception) {
+                } catch (error: Throwable) {
                     roomSession.cancelCapture(sessionId, "Foreground playback capture could not start: ${error.message}")
                     finishCapture(sessionId)
                 }
             }
         }
+        } catch (t: Throwable) { android.util.Log.e("RoomSound", "onStartCommand failed", t) }
         return START_NOT_STICKY
     }
 
@@ -175,10 +179,21 @@ class PlaybackCaptureService : Service() {
             .addAction(Notification.Action.Builder(null, getString(R.string.stop_capture), stopPendingIntent).build())
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val fgType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                startForeground(NOTIFICATION_ID, notification, fgType)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (security: SecurityException) {
+            android.util.Log.e("RoomSound", "startForeground SecurityException", security)
+            publish(CaptureSnapshot(CaptureStatus.ERROR, message = "Foreground permission denied: ${security.message}", sessionId = sessionId))
+            return
+        } catch (error: Throwable) {
+            android.util.Log.e("RoomSound", "startForeground failed", error)
+            publish(CaptureSnapshot(CaptureStatus.ERROR, message = "Could not start foreground capture: ${error.message}", sessionId = sessionId))
+            return
         }
         foregroundStarted = true
         foregroundSessionId = sessionId

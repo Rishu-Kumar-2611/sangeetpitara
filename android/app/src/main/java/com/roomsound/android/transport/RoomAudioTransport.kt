@@ -229,7 +229,7 @@ class RoomAudioTransport(
         )
         return try {
             framePublisher.publish(frame)
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             runCatching { framePublisher.stop(currentAuthorization.sourceEpoch) }
             backendReady = false
             publisherEpoch = null

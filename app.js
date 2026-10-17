@@ -61,6 +61,13 @@ async function loadIceConfig() {
 }
 loadIceConfig();
 
+function hasTurnServer(config) {
+  return config?.iceServers?.some((server) => {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls ?? server.url];
+    return urls.some((url) => /^turns?:/i.test(String(url || '').trim()));
+  }) ?? false;
+}
+
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
 }
@@ -519,16 +526,40 @@ async function startLocalCapture(sourceType, intent = 'host') {
     // getDisplayMedia / getUserMedia require a secure context. http://localhost is secure,
     // but http://10.x LAN IPs are NOT secure, so phone browsers on http will always throw.
     if (sourceType !== 'TEST_TONE' && !window.isSecureContext) {
-      throw new Error('Audio capture blocked: this page is not a secure context. On this laptop open http://localhost:4173 (not the 10.x IP). On the phone browser this http LAN URL cannot capture mic/display — use Test Tone here, or install the native Android app, or add http://10.227.118.89:4173 to chrome://flags#unsafely-treat-insecure-origin-as-secure, or serve via https.');
+      const expected = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+        ? ' Use Test Tone to confirm the room in one click, or use the native Android app for device-audio, or serve this site over https so getDisplayMedia is allowed on LAN IPs.'
+        : ' On this phone browser, http LAN URLs like http://10.x or http://192.168.x cannot capture display/mic audio by design (Secure Context). Use Test Tone here to verify the room, or open the same site on the LAPTOP at http://localhost:4173 to use Share Audio, or use the native Android app, or enable chrome://flags#unsafely-treat-insecure-origin-as-secure for this URL on BOTH devices.';
+      throw new Error(`Audio capture blocked: this page is not a secure context (${location.protocol}//${location.host}).${expected}`);
     }
     if (sourceType === 'DEVICE_AUDIO') {
       if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('This browser does not expose display-audio capture. Try a current desktop browser or the Android app.');
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-      prepareDisplayAudioStream(stream);
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      } catch (e) {
+        const n2 = e?.name || '';
+        if (n2 === 'NotAllowedError' || n2 === 'PermissionDeniedError') throw new Error('Display capture was denied. Allow access and tick Share audio, or use Test Tone.');
+        if (n2 === 'InvalidStateError') throw new Error('Display capture is already in use. Close the other picker and try again.');
+        throw e;
+      }
+      try { prepareDisplayAudioStream(stream); } catch (e) {
+        // Ticking "Share audio" can yield a stream with zero live audio tracks.
+        // Never crash: stop the display stream, wrap the technical message in guidance.
+        try { stream.getTracks().forEach((t) => t.stop()); } catch {}
+        const hint = e?.message ? ` ${e.message}` : ' The source did not provide audio.';
+        throw new Error(`System audio was not captured.${hint} When the browser picker shows Entire Screen, tick Share audio (Chrome 116+) and pick a tab/window that is currently playing sound. To test without capture, choose Test Tone.`);
+      }
       label = 'device or browser audio';
     } else if (sourceType === 'MICROPHONE') {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser does not expose microphone capture.');
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        const n = e?.name || '';
+        if (n === 'NotAllowedError' || n === 'PermissionDeniedError') throw new Error('Microphone permission was denied. Allow microphone access and try again, or use Test Tone.');
+        if (n === 'NotFoundError' || n === 'OverconstrainedError') throw new Error('No microphone was found on this device. Use Test Tone to verify the room.');
+        if (n === 'NotReadableError' || n === 'AbortError') throw new Error('Microphone is in use by another app. Close that app and try again, or use Test Tone.');
+        throw e;
+      }
       label = 'microphone audio';
     } else {
       const context = new AudioContext();
@@ -584,9 +615,16 @@ function stopLocalCapture(stopServer = true) {
 }
 
 function closePeerConnections() {
-  for (const entry of state.peers.values()) entry.pc.close();
+  for (const entry of state.peers.values()) {
+    try { entry.pc?.close(); } catch {}
+  }
   state.peers.clear();
-  if (state.audioElement) state.audioElement.srcObject = null;
+  if (state.audioElement) {
+    try { state.audioElement.pause(); } catch {}
+    state.audioElement.srcObject = null;
+    state.audioElement.removeAttribute('src');
+    try { state.audioElement.load(); } catch {}
+  }
 }
 
 function ensureAudioElement() {
@@ -620,31 +658,52 @@ function ensurePublisherConnections() {
 async function createPublisherPeer(targetId) {
   if (!state.captureStream || state.peers.has(targetId)) return;
   const audioTracks = liveAudioTracks(state.captureStream);
-  if (!audioTracks.length) return;
+  if (!audioTracks.length) { console.warn("[RoomSound] no live tracks for "+targetId); return; }
   await loadIceConfig();
   const pc = new RTCPeerConnection(rtcConfig);
-  state.peers.set(targetId, { pc, role: 'publisher' });
+  const entry = { pc, role: 'publisher', pendingCandidates: [], remoteDescSet: false };
+  state.peers.set(targetId, entry);
   // Display capture uses a live video track to keep Chrome's audio session
   // alive, but the room protocol is audio-only. Never send an ended/disabled
   // display video track to native listeners.
   audioTracks.forEach((track) => pc.addTrack(track, state.captureStream));
-  pc.onicecandidate = (event) => { if (event.candidate) send({ type: 'rtc', to: targetId, signal: { type: 'candidate', candidate: event.candidate } }); };
+  pc.onicecandidate = (event) => { if (event.candidate) send({ type: 'rtc', to: targetId, signal: { type: 'candidate', candidate: event.candidate }, sourceEpoch: state.room?.sourceEpoch }); };
+  pc.onicegatheringstatechange = () => console.log("[RoomSound][pub->"+targetId+"] gathering="+pc.iceGatheringState);
+  pc.oniceconnectionstatechange = () => {
+    console.log("[RoomSound][pub->"+targetId+"] iceConn="+pc.iceConnectionState);
+    if (pc.iceConnectionState === 'failed') {
+      try { pc.restartIce(); } catch {}
+      const msg = hasTurnServer(rtcConfig) ? 'Audio relay failed — retrying ICE…' : 'No relay candidate — add TURN for internet/cross-NAT audio.';
+      toast(msg, 'error');
+      setTimeout(() => {
+        const cur = state.peers.get(targetId);
+        if (isSelfSource() && cur && cur.pc.iceConnectionState === 'failed') {
+          try{cur.pc.close();}catch{} state.peers.delete(targetId);
+          if (state.captureStream) createPublisherPeer(targetId).catch(()=>{});
+        }
+      }, 1500);
+    }
+  };
   pc.onconnectionstatechange = () => {
+    console.log("[RoomSound][pub->"+targetId+"] conn="+pc.connectionState+" ice="+pc.iceConnectionState);
     if (pc.connectionState === 'failed') {
       toast('Audio connection failed — trying to reconnect…', 'error');
-      // Attempt one renegotiation after 1s if still self source
+      try { pc.restartIce(); } catch {}
       setTimeout(() => {
-        if (isSelfSource() && state.peers.has(targetId) && pc.connectionState === 'failed') {
-          pc.close(); state.peers.delete(targetId);
+        const cur = state.peers.get(targetId);
+        if (isSelfSource() && cur && cur.pc.connectionState === 'failed') {
+          try{cur.pc.close();}catch{} state.peers.delete(targetId);
           if (state.captureStream) createPublisherPeer(targetId).catch(()=>{});
         }
       }, 1000);
     }
     if (['closed', 'disconnected'].includes(pc.connectionState)) { try{pc.close();}catch{} state.peers.delete(targetId); }
+    if (pc.connectionState === 'connected') addActivity("Audio peer connected to "+targetId, true);
   };
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  send({ type: 'rtc', to: targetId, signal: { type: 'offer', description: pc.localDescription } });
+  send({ type: 'rtc', to: targetId, signal: { type: 'offer', description: pc.localDescription }, sourceEpoch: state.room?.sourceEpoch });
+  console.log("[RoomSound] sent offer to "+targetId+" epoch="+state.room?.sourceEpoch);
 }
 
 async function handleRtcSignal(message) {
@@ -657,39 +716,109 @@ async function handleRtcSignal(message) {
     try { existing?.pc.close(); } catch {}
     if (existing) state.peers.delete(from);
     const pc = new RTCPeerConnection(rtcConfig);
-    state.peers.set(from, { pc, role: 'listener' });
-    pc.onicecandidate = (event) => { if (event.candidate) send({ type: 'rtc', to: from, signal: { type: 'candidate', candidate: event.candidate } }); };
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') {
-        toast('Audio connection failed. Check network or TURN config.', 'error');
-        state.audioNeedsGesture = true;
-        renderControls();
+    const entry = { pc, role: 'listener', pendingCandidates: [], remoteDescSet: false, localDescSet: false };
+    state.peers.set(from, entry);
+    pc.onicecandidate = (event) => { if (event.candidate) send({ type: 'rtc', to: from, signal: { type: 'candidate', candidate: event.candidate }, sourceEpoch: state.room?.sourceEpoch }); };
+    pc.onicegatheringstatechange = () => console.log("[RoomSound][lis<-"+from+"] gathering="+pc.iceGatheringState);
+    pc.oniceconnectionstatechange = () => {
+      console.log("[RoomSound][lis<-"+from+"] iceConn="+pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        try { pc.restartIce(); } catch {}
+        setTimeout(() => {
+          if (pc.iceConnectionState === 'failed') {
+            toast(hasTurnServer(rtcConfig) ? 'Audio relay failed — retrying ICE…' : 'No relay candidate — add TURN for internet/cross-NAT audio.', 'error');
+          }
+        }, 2000);
       }
     };
+    pc.onconnectionstatechange = () => {
+      console.log("[RoomSound][lis<-"+from+"] conn="+pc.connectionState+" ice="+pc.iceConnectionState);
+      if (pc.connectionState === 'failed') {
+        toast('Audio connection failed. Check network or TURN config.', 'error');
+        try { pc.restartIce(); } catch {}
+        state.audioNeedsGesture = true;
+        renderControls();
+        setTimeout(() => {
+          if (pc.connectionState === 'failed') console.warn("[RoomSound] listener still failed, waiting for publisher renegotiation");
+        }, 2500);
+      }
+      if (pc.connectionState === 'connected') addActivity("Audio connected to "+from, true);
+    };
     pc.ontrack = (event) => {
+      console.log("[RoomSound] ontrack from "+from+" kind="+(event.track?.kind||"audio")+" streams="+(event.streams?.length||0));
       const audio = ensureAudioElement();
-      audio.srcObject = event.streams[0] || new MediaStream([event.track]);
+      const inbound = event.streams?.[0] || new MediaStream([event.track]);
+      audio.srcObject = inbound;
       audio.volume = state.muted ? 0 : state.volume;
+      audio.muted = false;
       audio.play().then(() => {
         state.audioNeedsGesture = false;
         renderControls();
-      }).catch(() => {
+        console.log("[RoomSound] remote audio playing from "+from);
+      }).catch((err) => {
+        console.warn("[RoomSound] autoplay blocked", err);
         state.audioNeedsGesture = true;
         renderControls();
         toast('Tap “Enable room audio” to start playback.', 'error');
       });
     };
-    await pc.setRemoteDescription(signal.description);
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    send({ type: 'rtc', to: from, signal: { type: 'answer', description: pc.localDescription } });
+    try {
+      await pc.setRemoteDescription(signal.description);
+      entry.remoteDescSet = true;
+      for (const c of entry.pendingCandidates.splice(0)) { try { await pc.addIceCandidate(c); } catch (e) { console.warn("[RoomSound] late candidate flush failed", e); } }
+    } catch (e) {
+      console.error("[RoomSound] setRemoteDescription(offer) failed", e);
+      try { pc.close(); } catch {}
+      state.peers.delete(from);
+      return;
+    }
+    try {
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      entry.localDescSet = true;
+      send({ type: 'rtc', to: from, signal: { type: 'answer', description: pc.localDescription }, sourceEpoch: state.room?.sourceEpoch });
+      console.log("[RoomSound] sent answer to "+from+" epoch="+state.room?.sourceEpoch);
+    } catch (e) { console.error("[RoomSound] createAnswer failed", e); }
+    // flush early trickled candidates that arrived before offer was processed
+    const pkEarly = "__pending_"+from;
+    if (state.peers.has(pkEarly)) {
+      const pend = state.peers.get(pkEarly);
+      state.peers.delete(pkEarly);
+      for (const c of (pend.pendingCandidates||[])) { try { await pc.addIceCandidate(c); } catch {} }
+    }
     return;
   }
   const peer = state.peers.get(from);
-  if (!peer) return;
-  if (signal.type === 'answer') await peer.pc.setRemoteDescription(signal.description);
-  if (signal.type === 'candidate') {
-    try { await peer.pc.addIceCandidate(signal.candidate); } catch {}
+  if (!peer) {
+    if (signal.type === 'candidate' && signal.candidate && !isSelfSource() && state.room?.activeSourceId === from) {
+      let pend = state.peers.get("__pending_"+from);
+      if (!pend) { pend = { pendingCandidates: [] }; state.peers.set("__pending_"+from, pend); }
+      pend.pendingCandidates.push(signal.candidate);
+      console.log("[RoomSound] buffered early candidate from "+from+" before offer");
+    }
+    return;
+  }
+  if (signal.type === 'answer') {
+    try {
+      await peer.pc.setRemoteDescription(signal.description);
+      peer.remoteDescSet = true;
+      console.log("[RoomSound][pub->"+from+"] remote answer set");
+      for (const c of (peer.pendingCandidates||[]).splice(0)) { try { await peer.pc.addIceCandidate(c); } catch (e) { console.warn("[RoomSound] flush queued candidate failed", e); } }
+    } catch (e) { console.error("[RoomSound] setRemoteDescription(answer) failed", e); }
+  } else if (signal.type === 'candidate') {
+    if (!peer.remoteDescSet) {
+      peer.pendingCandidates = peer.pendingCandidates || [];
+      peer.pendingCandidates.push(signal.candidate);
+      console.log("[RoomSound] queued candidate from "+from+" until remoteDescSet");
+    } else {
+      try { await peer.pc.addIceCandidate(signal.candidate); } catch (e) { console.warn("[RoomSound] addIceCandidate failed", e); }
+    }
+  }
+  const pk = "__pending_"+from;
+  if (state.peers.has(pk) && peer?.remoteDescSet) {
+    const pend = state.peers.get(pk);
+    state.peers.delete(pk);
+    for (const c of (pend.pendingCandidates||[])) { try { await peer.pc.addIceCandidate(c); } catch {} }
   }
 }
 
