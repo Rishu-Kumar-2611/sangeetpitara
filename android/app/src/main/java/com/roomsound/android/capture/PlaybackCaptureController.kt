@@ -1,7 +1,9 @@
 package com.roomsound.android.capture
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
@@ -27,6 +29,8 @@ class PlaybackCaptureController(
         private const val SILENCE_TIMEOUT_MS = 2_000L
         private const val UI_UPDATE_MS = 250L
         private const val EMPTY_READ_TIMEOUT_MS = 5_000L
+        private const val RECORD_RECOVERY_ATTEMPTS = 3
+        private const val RECORD_RECOVERY_DELAY_MS = 250L
     }
 
     private class CaptureRun(
@@ -66,9 +70,14 @@ class PlaybackCaptureController(
                 .getMediaProjection(resultCode, projectionData)
                 ?: throw IllegalStateException("New system capture consent is required.")
         } catch (error: Throwable) {
+            val message = if (error is SecurityException) {
+                "Android playback-capture permission or consent was denied: ${error.message ?: "permission unavailable"}"
+            } else {
+                "Android could not start playback capture: ${error.message ?: error.javaClass.simpleName}"
+            }
             onSnapshot(CaptureSnapshot(
                 CaptureStatus.ERROR,
-                message = "Android could not start playback capture: ${error.message}",
+                message = message,
                 sessionId = sessionId,
             ))
             return
@@ -122,22 +131,8 @@ class PlaybackCaptureController(
     }
 
     private fun captureLoop(run: CaptureRun) {
-        var record: AudioRecord? = null
         try {
-            val created = createAudioRecord(run.projection)
-            synchronized(run.resourcesLock) {
-                if (run.stopped.get()) {
-                    created.release()
-                    return
-                }
-                run.record = created
-                record = created
-                created.startRecording()
-                check(created.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                    "AudioRecord did not enter recording state."
-                }
-            }
-            val reader = checkNotNull(record)
+            var reader = startAudioRecord(run) ?: return
             val frame = ShortArray(FRAME_SAMPLES)
             var filled = 0
             var lastSignalAt = SystemClock.elapsedRealtime()
@@ -150,10 +145,34 @@ class PlaybackCaptureController(
                 // stop() stops/releases this run's recorder to unblock READ_BLOCKING.
                 val count = reader.read(frame, filled, FRAME_SAMPLES - filled, AudioRecord.READ_BLOCKING)
                 if (run.stopped.get()) break
-                if (count < 0) throw IllegalStateException("AudioRecord read failed ($count).")
+                if (count < 0) {
+                    val failure = if (count == AudioRecord.ERROR_DEAD_OBJECT) {
+                        "AudioRecord returned ERROR_DEAD_OBJECT ($count)."
+                    } else {
+                        "AudioRecord.read returned $count."
+                    }
+                    reader = recoverAudioRecord(run, reader, failure) ?: break
+                    // Samples before a dead reader and samples after a new reader
+                    // are not one contiguous frame. Keep the room lease, but drop
+                    // this partial PCM frame rather than publishing mixed audio.
+                    filled = 0
+                    val recoveredAt = SystemClock.elapsedRealtime()
+                    lastReadAt = recoveredAt
+                    lastSignalAt = recoveredAt
+                    lastStatus = null
+                    lastUiAt = 0L
+                    continue
+                }
                 val now = SystemClock.elapsedRealtime()
                 if (count == 0) {
-                    check(now - lastReadAt < EMPTY_READ_TIMEOUT_MS) { "AudioRecord returned no samples." }
+                    if (now - lastReadAt >= EMPTY_READ_TIMEOUT_MS) {
+                        reader = recoverAudioRecord(run, reader, "AudioRecord returned no samples for ${EMPTY_READ_TIMEOUT_MS} ms.") ?: break
+                        filled = 0
+                        lastReadAt = now
+                        lastSignalAt = now
+                        lastStatus = null
+                        lastUiAt = 0L
+                    }
                     Thread.sleep(5)
                     continue
                 }
@@ -191,11 +210,96 @@ class PlaybackCaptureController(
                 }
             }
         } catch (error: Throwable) {
-            if (!run.stopped.get()) finish(run, CaptureStatus.ERROR, "Device playback capture failed: ${error.message}")
+            if (!run.stopped.get()) {
+                val message = if (error is SecurityException) {
+                    "Android playback-capture permission was denied or revoked: ${error.message ?: "permission unavailable"}"
+                } else {
+                    "Device playback capture failed: ${error.message ?: error.javaClass.simpleName}"
+                }
+                finish(run, CaptureStatus.ERROR, message)
+            }
         } finally {
             // This is idempotent and references only this run, never a shared recorder.
             release(run)
         }
+    }
+
+    /** Creates a reader without changing the projection, capture id, or room lease. */
+    private fun startAudioRecord(run: CaptureRun): AudioRecord? {
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            throw SecurityException("RECORD_AUDIO permission is not granted.")
+        }
+        val created = createAudioRecord(run.projection)
+        var installed = false
+        try {
+            synchronized(run.resourcesLock) {
+                if (!run.stopped.get()) {
+                    created.startRecording()
+                    check(created.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                        "AudioRecord did not enter recording state."
+                    }
+                    run.record = created
+                    installed = true
+                }
+            }
+            return if (installed) created else null
+        } finally {
+            if (!installed) releaseAudioRecord(created)
+        }
+    }
+
+    /**
+     * Android can invalidate an AudioRecord when playback starts or the audio
+     * route changes. Recreate only that reader; the MediaProjection and the
+     * CaptureRun remain intact so the server-issued source epoch is unchanged.
+     */
+    private fun recoverAudioRecord(run: CaptureRun, failed: AudioRecord, failure: String): AudioRecord? {
+        synchronized(run.resourcesLock) {
+            if (run.record === failed) run.record = null
+        }
+        releaseAudioRecord(failed)
+        if (run.stopped.get()) return null
+
+        publish(
+            run,
+            CaptureStatus.STARTING,
+            "$failure Recovering the Android playback reader without changing the room source.",
+        )
+
+        var lastError: Throwable? = null
+        repeat(RECORD_RECOVERY_ATTEMPTS) { attempt ->
+            if (run.stopped.get()) return null
+            try {
+                Thread.sleep(RECORD_RECOVERY_DELAY_MS * (attempt + 1))
+                val replacement = startAudioRecord(run)
+                if (replacement != null) {
+                    publish(run, CaptureStatus.STARTING, "Android playback reader recovered; keeping the current room source.")
+                    return replacement
+                }
+                return null
+            } catch (error: SecurityException) {
+                // Permission failures are not transient reader failures. Surface
+                // them immediately instead of hiding a revoked RECORD_AUDIO grant.
+                throw error
+            } catch (error: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return null
+            } catch (error: Throwable) {
+                lastError = error
+            }
+        }
+
+        throw IllegalStateException(
+            "AudioRecord could not be recovered after $RECORD_RECOVERY_ATTEMPTS attempts" +
+                (lastError?.message?.let { ": $it" } ?: "."),
+            lastError,
+        )
+    }
+
+    private fun releaseAudioRecord(record: AudioRecord?) {
+        if (record == null) return
+        runCatching { record.stop() }
+        runCatching { record.release() }
     }
 
     private fun createAudioRecord(mediaProjection: MediaProjection): AudioRecord {
@@ -248,10 +352,7 @@ class PlaybackCaptureController(
             run.record = null
             value
         }
-        if (record != null) {
-            runCatching { record.stop() }
-            runCatching { record.release() }
-        }
+        releaseAudioRecord(record)
         run.thread?.let { thread ->
             if (thread !== Thread.currentThread()) thread.interrupt()
         }

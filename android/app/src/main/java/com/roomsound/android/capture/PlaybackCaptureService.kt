@@ -91,7 +91,6 @@ class PlaybackCaptureService : Service() {
                         startForegroundCaptureNotification(null)
                         publish(CaptureSnapshot(CaptureStatus.ERROR, message = "Android capture consent data was missing."))
                         stopCaptureNotification()
-                        stopSelf()
                     }
                     return START_NOT_STICKY
                 }
@@ -101,12 +100,14 @@ class PlaybackCaptureService : Service() {
                     if (!foregroundStarted) {
                         startForegroundCaptureNotification(null)
                         stopCaptureNotification()
-                        stopSelf()
                     }
                     return START_NOT_STICKY
                 }
                 try {
-                    startForegroundCaptureNotification(sessionId)
+                    if (!startForegroundCaptureNotification(sessionId)) {
+                        roomSession.cancelCapture(sessionId, "Foreground playback capture could not start. Check Android's foreground-service permission and try again.")
+                        return START_NOT_STICKY
+                    }
                     controller.start(sessionId, resultCode, projectionData, roomSession.pcmSink(sessionId))
                 } catch (error: Throwable) {
                     roomSession.cancelCapture(sessionId, "Foreground playback capture could not start: ${error.message}")
@@ -151,7 +152,7 @@ class PlaybackCaptureService : Service() {
         listeners.forEach { it(snapshot) }
     }
 
-    private fun startForegroundCaptureNotification(sessionId: String?) {
+    private fun startForegroundCaptureNotification(sessionId: String?): Boolean {
         val stopIntent = Intent(this, PlaybackCaptureService::class.java).setAction(ACTION_STOP).apply {
             putExtra(EXTRA_SESSION_ID, sessionId)
             data = android.net.Uri.parse("roomsound://capture/${sessionId ?: "pending"}")
@@ -189,14 +190,15 @@ class PlaybackCaptureService : Service() {
         } catch (security: SecurityException) {
             android.util.Log.e("RoomSound", "startForeground SecurityException", security)
             publish(CaptureSnapshot(CaptureStatus.ERROR, message = "Foreground permission denied: ${security.message}", sessionId = sessionId))
-            return
+            return false
         } catch (error: Throwable) {
             android.util.Log.e("RoomSound", "startForeground failed", error)
             publish(CaptureSnapshot(CaptureStatus.ERROR, message = "Could not start foreground capture: ${error.message}", sessionId = sessionId))
-            return
+            return false
         }
         foregroundStarted = true
         foregroundSessionId = sessionId
+        return true
     }
 
     private fun stopCaptureNotification() {
@@ -209,9 +211,9 @@ class PlaybackCaptureService : Service() {
     private fun finishCapture(sessionId: String) {
         if (foregroundSessionId == sessionId) {
             stopCaptureNotification()
-            // Bound activities still receive state; the foreground notification
-            // must terminate even when this service remains bound.
-            stopSelf()
+            // Keep the started service alive after a capture failure or a
+            // projection callback. It owns the room WebSocket; stopping it
+            // here would disconnect an otherwise healthy room unnecessarily.
         }
     }
 
