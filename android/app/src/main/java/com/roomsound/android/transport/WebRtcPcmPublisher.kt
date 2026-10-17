@@ -120,6 +120,16 @@ public class WebRtcPcmPublisher(
         var statsRequestInFlight = false
     }
 
+    private data class SenderRetryKey(
+        val memberId: String,
+        val sourceEpoch: Long,
+    )
+
+    private class SenderRetryState(
+        var attempt: Int = 0,
+        var future: ScheduledFuture<*>? = null,
+    )
+
     private val applicationContext = context.applicationContext
     private val stateLock = Any()
     private val pcmQueue = Pcm16FrameQueue()
@@ -146,6 +156,8 @@ public class WebRtcPcmPublisher(
     private var audioSource: AudioSource? = null
     private var audioTrack: AudioTrack? = null
     private val peers = mutableMapOf<String, PeerSession>()
+    /** Signaling-thread-only retry gates, keyed by listener and source epoch. */
+    private val senderRetries = mutableMapOf<SenderRetryKey, SenderRetryState>()
     @Volatile
     private var peerDiagnosticsSnapshot: List<WebRtcPeerDiagnostics> = emptyList()
     @Volatile
@@ -550,10 +562,6 @@ public class WebRtcPcmPublisher(
             disposeAllPeers()
             return
         }
-        val factoryAvailable = synchronized(stateLock) { backendReady && peerConnectionFactory != null }
-        if (!factoryAvailable) return
-        loadIceServersIfNeeded()
-
         val authorization = state.sourceAuthorization()
         val epoch = state.room.sourceEpoch
         val shouldSend = synchronized(stateLock) {
@@ -568,6 +576,15 @@ public class WebRtcPcmPublisher(
             emptySet()
         }
 
+        // A retry belongs to exactly one authorized source epoch. Room-state
+        // changes cancel stale work before it can create a peer for a revoked
+        // source or a different epoch.
+        pruneSenderRetries(epoch, desiredSenderIds)
+
+        val factoryAvailable = synchronized(stateLock) { backendReady && peerConnectionFactory != null }
+        if (!factoryAvailable) return
+        loadIceServersIfNeeded()
+
         peers.values.toList().forEach { session ->
             val keep = when (session.role) {
                 PeerRole.SENDER -> shouldSend && session.sourceEpoch == epoch &&
@@ -581,7 +598,10 @@ public class WebRtcPcmPublisher(
 
         if (shouldSend) {
             desiredSenderIds.forEach { memberId ->
-                if (peers[memberId] == null) createSenderPeer(memberId, epoch)
+                val retryKey = SenderRetryKey(memberId, epoch)
+                if (peers[memberId] == null && !hasPendingSenderRetry(retryKey)) {
+                    createSenderPeer(memberId, epoch)
+                }
             }
         }
     }
@@ -664,7 +684,7 @@ public class WebRtcPcmPublisher(
             factory.createPeerConnection(rtcConfiguration(sourceEpoch), observer)
         }.getOrNull()
         if (connection == null) {
-            disposePeer(session, "PeerConnection creation failed")
+            disposePeer(session, "PeerConnection creation failed", retrySender = true)
             reportStatus("Could not create native sender peer for $memberId.")
             return null
         }
@@ -681,7 +701,11 @@ public class WebRtcPcmPublisher(
             preferOpus(transceiver)
             connection.createOffer(createOfferObserver(session), MediaConstraints())
         } catch (error: Throwable) {
-            disposePeer(session, "Sender peer setup failed: ${error.message ?: error.javaClass.simpleName}")
+            disposePeer(
+                session,
+                "Sender peer setup failed: ${error.message ?: error.javaClass.simpleName}",
+                retrySender = true,
+            )
             reportStatus("Could not negotiate native sender peer for $memberId: ${error.message}")
         }
         return session
@@ -724,7 +748,7 @@ public class WebRtcPcmPublisher(
         override fun onCreateFailure(error: String) {
             postToSignaling {
                 if (isCurrentSession(session)) {
-                    disposePeer(session, "Sender offer failed: $error")
+                    disposePeer(session, "Sender offer failed: $error", retrySender = true)
                     reportStatus("Native sender offer failed for ${session.memberId}: $error")
                 }
             }
@@ -752,7 +776,7 @@ public class WebRtcPcmPublisher(
             override fun onSetFailure(error: String) {
                 postToSignaling {
                     if (isCurrentSession(session)) {
-                        disposePeer(session, "Local description failed: $error")
+                        disposePeer(session, "Local description failed: $error", retrySender = true)
                         reportStatus("Native local description failed for ${session.memberId}: $error")
                     }
                 }
@@ -782,7 +806,11 @@ public class WebRtcPcmPublisher(
             override fun onSetFailure(error: String) {
                 postToSignaling {
                     if (isCurrentSession(session)) {
-                        disposePeer(session, "Remote description failed: $error")
+                        disposePeer(
+                            session,
+                            "Remote description failed: $error",
+                            retrySender = session.role == PeerRole.SENDER,
+                        )
                         reportStatus("Native remote description failed for ${session.memberId}: $error")
                     }
                 }
@@ -1027,6 +1055,9 @@ public class WebRtcPcmPublisher(
     }
 
     private fun disposePeersForEpoch(sourceEpoch: Long?) {
+        senderRetries.keys.toList()
+            .filter { sourceEpoch == null || it.sourceEpoch == sourceEpoch }
+            .forEach(::cancelSenderRetry)
         peers.values.toList()
             .filter { sourceEpoch == null || it.sourceEpoch == sourceEpoch }
             .forEach { session ->
@@ -1042,10 +1073,15 @@ public class WebRtcPcmPublisher(
     }
 
     private fun disposeAllPeers() {
+        cancelAllSenderRetries()
         peers.values.toList().forEach(::disposePeer)
     }
 
-    private fun disposePeer(session: PeerSession, reason: String = "Peer disposed") {
+    private fun disposePeer(
+        session: PeerSession,
+        reason: String = "Peer disposed",
+        retrySender: Boolean = false,
+    ) {
         if (session.closed) return
         refreshPeerConnectionStates(session)
         lastTerminalPeerDiagnostics = peerDiagnostics(
@@ -1063,6 +1099,78 @@ public class WebRtcPcmPublisher(
         runCatching { session.peerConnection?.dispose() }
         session.peerConnection = null
         refreshPeerDiagnostics()
+        if (retrySender && session.role == PeerRole.SENDER) scheduleSenderRetry(session)
+    }
+
+    private fun pruneSenderRetries(sourceEpoch: Long, desiredSenderIds: Set<String>) {
+        senderRetries.keys.toList()
+            .filter { it.sourceEpoch != sourceEpoch || it.memberId !in desiredSenderIds }
+            .forEach(::cancelSenderRetry)
+    }
+
+    private fun hasPendingSenderRetry(key: SenderRetryKey): Boolean =
+        senderRetries[key]?.future?.let { !it.isDone && !it.isCancelled } == true
+
+    private fun cancelSenderRetry(key: SenderRetryKey) {
+        senderRetries.remove(key)?.future?.cancel(false)
+    }
+
+    private fun cancelAllSenderRetries() {
+        senderRetries.values.forEach { it.future?.cancel(false) }
+        senderRetries.clear()
+    }
+
+    /**
+     * Recreate only an active sender that failed at the native peer boundary.
+     * The signaling executor serializes this with room reconciliation, while a
+     * per-member/epoch gate and bounded backoff prevent duplicate peers or a
+     * tight retry loop when the network is still unavailable.
+     */
+    private fun scheduleSenderRetry(session: PeerSession) {
+        val key = SenderRetryKey(session.memberId, session.sourceEpoch)
+        if (closed || !isSenderRetryAllowed(key)) {
+            cancelSenderRetry(key)
+            return
+        }
+
+        val retry = senderRetries.getOrPut(key) { SenderRetryState() }
+        if (hasPendingSenderRetry(key)) return
+
+        val delayMs = SenderRetryPolicy.delayMs(retry.attempt)
+        retry.attempt = (retry.attempt + 1).coerceAtMost(6)
+        retry.future = runCatching {
+            signalingExecutor.schedule({
+                retry.future = null
+                if (senderRetries[key] !== retry) return@schedule
+                if (!isSenderRetryAllowed(key)) {
+                    senderRetries.remove(key)
+                    return@schedule
+                }
+                // A room update may have created the peer while this task was
+                // queued. Keep one authoritative peer and discard this retry.
+                if (peers[key.memberId] != null) {
+                    senderRetries.remove(key)
+                    reconcilePeers()
+                    return@schedule
+                }
+                reconcilePeers()
+            }, delayMs, TimeUnit.MILLISECONDS)
+        }.getOrNull()
+        if (retry.future == null && senderRetries[key] === retry) senderRetries.remove(key)
+    }
+
+    private fun markSenderConnected(session: PeerSession) {
+        if (session.role == PeerRole.SENDER) {
+            cancelSenderRetry(SenderRetryKey(session.memberId, session.sourceEpoch))
+        }
+    }
+
+    private fun isSenderRetryAllowed(key: SenderRetryKey): Boolean = synchronized(stateLock) {
+        val state = latestRoomState ?: return@synchronized false
+        val authorization = state.sourceAuthorization()
+        sourceStarted && activeSourceEpoch == key.sourceEpoch &&
+            state.room.sourceEpoch == key.sourceEpoch && authorization.canPublishFrames &&
+            state.members.any { it.id == key.memberId && it.online && it.id != state.self?.id }
     }
 
     private fun isCurrentSession(session: PeerSession): Boolean =
@@ -1196,11 +1304,20 @@ public class WebRtcPcmPublisher(
                 if (!isCurrentSession(session)) return@postToSignaling
                 session.iceConnectionState = newState.name
                 refreshPeerDiagnostics()
+                if (newState == PeerConnection.IceConnectionState.CONNECTED ||
+                    newState == PeerConnection.IceConnectionState.COMPLETED
+                ) {
+                    markSenderConnected(session)
+                }
                 if (newState == PeerConnection.IceConnectionState.FAILED ||
                     newState == PeerConnection.IceConnectionState.CLOSED
                 ) {
                     reportStatus("Native ICE connection ${newState.name} for ${session.memberId}.")
-                    disposePeer(session, "ICE connection state ${newState.name}")
+                    disposePeer(
+                        session,
+                        "ICE connection state ${newState.name}",
+                        retrySender = session.role == PeerRole.SENDER,
+                    )
                 }
             }
         }
@@ -1260,11 +1377,18 @@ public class WebRtcPcmPublisher(
                 if (!isCurrentSession(session)) return@postToSignaling
                 session.peerConnectionState = newState.name
                 refreshPeerDiagnostics()
+                if (newState == PeerConnection.PeerConnectionState.CONNECTED) {
+                    markSenderConnected(session)
+                }
                 if (newState == PeerConnection.PeerConnectionState.FAILED ||
                     newState == PeerConnection.PeerConnectionState.CLOSED
                 ) {
                     reportStatus("Native PeerConnection ${newState.name} for ${session.memberId}.")
-                    disposePeer(session, "PeerConnection state ${newState.name}")
+                    disposePeer(
+                        session,
+                        "PeerConnection state ${newState.name}",
+                        retrySender = session.role == PeerRole.SENDER,
+                    )
                 }
             }
         }
