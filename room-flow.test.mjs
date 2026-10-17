@@ -16,10 +16,10 @@ async function unusedPort() {
   return port;
 }
 
-async function startServer() {
+async function startServer(extraEnv = {}) {
   const port = await unusedPort();
   const server = spawn(process.execPath, ['server.mjs'], {
-    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port) },
+    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const output = [];
@@ -30,7 +30,11 @@ async function startServer() {
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
-      if (response.ok) return { server, url: `ws://127.0.0.1:${port}` };
+      if (response.ok) return {
+        server,
+        url: `ws://127.0.0.1:${port}`,
+        http: `http://127.0.0.1:${port}`,
+      };
     } catch {
       // The listener may need another event-loop turn.
     }
@@ -39,6 +43,30 @@ async function startServer() {
   server.kill();
   throw new Error(`RoomSound server did not start: ${output.join('')}`);
 }
+
+test('config publishes configured TURN servers for web and Android clients', async (t) => {
+  const { server, http } = await startServer({
+    TURN_URLS: 'turn:relay.example.test:3478,turns:relay.example.test:5349?transport=tcp',
+    TURN_USERNAME: 'test-user',
+    TURN_CREDENTIAL: 'test-credential',
+  });
+  t.after(() => server.kill());
+
+  const response = await fetch(`${http}/config`);
+  assert.equal(response.status, 200);
+  const config = await response.json();
+  assert.deepEqual(config.iceServers, [
+    { urls: 'stun:stun.l.google.com:19302' },
+    {
+      urls: [
+        'turn:relay.example.test:3478',
+        'turns:relay.example.test:5349?transport=tcp',
+      ],
+      username: 'test-user',
+      credential: 'test-credential',
+    },
+  ]);
+});
 
 function client(url) {
   const socket = new WebSocket(url);
