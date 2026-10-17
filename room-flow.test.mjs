@@ -183,3 +183,41 @@ test('phone request keeps source authorization through RTC signaling', async (t)
   assert.equal(rtc.sourceEpoch, epoch);
   assert.equal(rtc.signal.description.sdp, 'phone-offer');
 });
+
+test('rejects microphone source requests', async (t) => {
+  const { server, url } = await startServer();
+  const host = client(url);
+  const phone = client(url);
+  t.after(() => {
+    host.socket.close();
+    phone.socket.close();
+    server.kill();
+  });
+
+  await host.open();
+  host.socket.send(JSON.stringify({
+    type: 'create-room',
+    name: 'Playback-only room',
+    displayName: 'Laptop',
+    guestId: 'playback-host',
+  }));
+  const created = await host.wait((message) => message.type === 'joined');
+
+  await phone.open();
+  phone.socket.send(JSON.stringify({
+    type: 'join-room',
+    code: created.state.room.code,
+    displayName: 'Phone',
+    guestId: 'playback-phone',
+  }));
+  await phone.wait((message) => message.type === 'joined');
+
+  const rejected = phone.wait((message) => message.type === 'error');
+  phone.socket.send(JSON.stringify({
+    type: 'request-control',
+    sourceType: 'MICROPHONE',
+    note: 'This must not be accepted.',
+  }));
+  const error = await rejected;
+  assert.match(error.message, /device playback audio/i);
+});

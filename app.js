@@ -85,7 +85,6 @@ function sourceLabel(type) {
     DEVICE_AUDIO: 'device audio',
     ANDROID_DEVICE_AUDIO: 'device audio',
     WEB_TAB_AUDIO: 'browser-tab audio',
-    MICROPHONE: 'microphone audio',
     TEST_TONE: 'test audio',
     IOS_REPLAYKIT: 'device audio',
   };
@@ -498,14 +497,14 @@ function openSourceModal(intent) {
   const isParticipantApproval = intent === 'participant';
   const insecure = typeof window !== 'undefined' && !window.isSecureContext;
   const insecureBanner = insecure
-    ? `<div class="settings-note" style="margin:0 0 14px;border-color:rgba(255,127,145,0.32);color:#ffb6c0;text-align:left;line-height:1.5"><strong style="color:#ff9aa8">\u26A0 Insecure origin \u2014 mic & display capture blocked</strong><br>Chrome blocks <code>getDisplayMedia</code>/<code>getUserMedia</code> on <code>http://10.x</code> LAN URLs. <br>\u2022 <strong>Laptop:</strong> open <code>http://localhost:4173</code> instead of the 10.x IP \u2014 localhost <em>is</em> a secure context and capture will work.<br>\u2022 <strong>Phone browser on this http LAN:</strong> only <strong>Test Tone</strong> will work here. For mic/device on the phone either: add <code>http://10.227.118.89:4173</code> to <code>chrome://flags#unsafely-treat-insecure-origin-as-secure</code> (enable + relaunch), or install the native Android app (MediaProjection), or serve via <code>https</code> with mkcert.<br><span style="color:#c8d1ec">Test Tone proves the whole WebRTC path even when the OS/browser blocks capture.</span></div>`
+    ? `<div class="settings-note" style="margin:0 0 14px;border-color:rgba(255,127,145,0.32);color:#ffb6c0;text-align:left;line-height:1.5"><strong style="color:#ff9aa8">\u26A0 Insecure origin \u2014 device-audio capture blocked</strong><br>Chrome blocks <code>getDisplayMedia</code> on <code>http://10.x</code> LAN URLs. <br>\u2022 <strong>Laptop:</strong> open <code>http://localhost:4173</code> instead of the 10.x IP \u2014 localhost <em>is</em> a secure context and device/browser audio capture will work.<br>\u2022 <strong>Phone browser:</strong> use the native Android app for device playback capture, or serve this page over <code>https</code>.<br><span style="color:#c8d1ec">Test Tone proves the whole WebRTC path even when the OS/browser blocks capture.</span></div>`
     : '';
   const hostNote = !insecure && /Mobi|Android/i.test(navigator.userAgent)
-    ? `<div class="settings-note" style="margin:0 0 14px;text-align:left;line-height:1.5">\uD83D\uDCF1 You're on a phone browser. Even on <code>https</code>, Chrome/Firefox on Android do not expose system-audio capture to the web \u2014 "Device / browser audio" will show <em>This browser does not expose display-audio capture</em>. That's expected. Use <strong>Microphone</strong> or <strong>Test Tone</strong> in the browser, or the <strong>Android app</strong> for device playback capture.</div>`
+    ? `<div class="settings-note" style="margin:0 0 14px;text-align:left;line-height:1.5">\uD83D\uDCF1 You're on a phone browser. Chrome/Firefox on Android do not expose system-audio capture to the web. Use the <strong>Android app</strong> for device playback capture.</div>`
     : '';
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="source-modal"><div class="modal-eyebrow">AUDIO SOURCE</div><h2>${intent === 'participant' ? 'You were approved to play' : 'Choose what to share'}</h2><p>RoomSound will publish the selected source without playing a duplicate copy back to you. The source app and operating system may still restrict capture.</p>${insecureBanner}${hostNote}<div class="source-options"><button class="source-option" data-source="DEVICE_AUDIO" ${insecure ? 'disabled title="Blocked \u2014 insecure origin (open localhost or use insecure flag / Android app)"' : ''}><span class="option-icon">◉</span><span><strong>Device / browser audio</strong><small>${insecure ? 'Blocked on http LAN \u2014 use localhost / flag / app' : 'Android playback capture or browser tab audio'}</small></span><span>›</span></button><button class="source-option" data-source="MICROPHONE" ${insecure ? 'disabled title="Blocked \u2014 insecure origin (open localhost or use insecure flag / Android app)"' : ''}><span class="option-icon">♩</span><span><strong>Microphone fallback</strong><small>${insecure ? 'Blocked on http LAN \u2014 only Test Tone works here' : 'Useful for testing when device audio is unavailable'}</small></span><span>›</span></button><button class="source-option" data-source="TEST_TONE"><span class="option-icon">∿</span><span><strong>Test audio</strong><small>Generate a private room-safe test signal \u2014 always works</small></span><span>›</span></button></div><button class="modal-close" type="button">Not now</button></div>`;
+  modal.innerHTML = `<div class="source-modal"><div class="modal-eyebrow">AUDIO SOURCE</div><h2>${intent === 'participant' ? 'You were approved to play' : 'Choose what to share'}</h2><p>RoomSound publishes supported device or browser playback only. It never opens or streams a microphone.</p>${insecureBanner}${hostNote}<div class="source-options"><button class="source-option" data-source="DEVICE_AUDIO" ${insecure ? 'disabled title="Blocked \u2014 insecure origin (open localhost or use the Android app)"' : ''}><span class="option-icon">◉</span><span><strong>Device / browser audio</strong><small>${insecure ? 'Blocked on http LAN \u2014 use localhost / Android app' : 'Android playback capture or browser tab audio'}</small></span><span>›</span></button><button class="source-option" data-source="TEST_TONE"><span class="option-icon">∿</span><span><strong>Test audio</strong><small>Generate a private room-safe diagnostic signal \u2014 always works</small></span><span>›</span></button></div><button class="modal-close" type="button">Not now</button></div>`;
   $('#modal-root').append(modal);
   modal.querySelector('.modal-close').addEventListener('click', () => {
     modal.remove();
@@ -523,12 +522,13 @@ async function startLocalCapture(sourceType, intent = 'host') {
   try {
     let stream;
     let label;
-    // getDisplayMedia / getUserMedia require a secure context. http://localhost is secure,
-    // but http://10.x LAN IPs are NOT secure, so phone browsers on http will always throw.
+    // getDisplayMedia requires a secure context. http://localhost is secure,
+    // but http://10.x LAN IPs are NOT secure, so browser device-audio capture
+    // on an http LAN page will always throw.
     if (sourceType !== 'TEST_TONE' && !window.isSecureContext) {
       const expected = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
         ? ' Use Test Tone to confirm the room in one click, or use the native Android app for device-audio, or serve this site over https so getDisplayMedia is allowed on LAN IPs.'
-        : ' On this phone browser, http LAN URLs like http://10.x or http://192.168.x cannot capture display/mic audio by design (Secure Context). Use Test Tone here to verify the room, or open the same site on the LAPTOP at http://localhost:4173 to use Share Audio, or use the native Android app, or enable chrome://flags#unsafely-treat-insecure-origin-as-secure for this URL on BOTH devices.';
+        : ' On this browser, http LAN URLs like http://10.x or http://192.168.x cannot capture device audio by design (Secure Context). Use Test Tone here to verify the room, open the same site on the LAPTOP at http://localhost:4173, use the native Android app, or serve the page over https.';
       throw new Error(`Audio capture blocked: this page is not a secure context (${location.protocol}//${location.host}).${expected}`);
     }
     if (sourceType === 'DEVICE_AUDIO') {
@@ -549,19 +549,7 @@ async function startLocalCapture(sourceType, intent = 'host') {
         throw new Error(`System audio was not captured.${hint} When the browser picker shows Entire Screen, tick Share audio (Chrome 116+) and pick a tab/window that is currently playing sound. To test without capture, choose Test Tone.`);
       }
       label = 'device or browser audio';
-    } else if (sourceType === 'MICROPHONE') {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser does not expose microphone capture.');
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch (e) {
-        const n = e?.name || '';
-        if (n === 'NotAllowedError' || n === 'PermissionDeniedError') throw new Error('Microphone permission was denied. Allow microphone access and try again, or use Test Tone.');
-        if (n === 'NotFoundError' || n === 'OverconstrainedError') throw new Error('No microphone was found on this device. Use Test Tone to verify the room.');
-        if (n === 'NotReadableError' || n === 'AbortError') throw new Error('Microphone is in use by another app. Close that app and try again, or use Test Tone.');
-        throw e;
-      }
-      label = 'microphone audio';
-    } else {
+    } else if (sourceType === 'TEST_TONE') {
       const context = new AudioContext();
       const oscillator = context.createOscillator();
       const gain = context.createGain();
@@ -574,6 +562,8 @@ async function startLocalCapture(sourceType, intent = 'host') {
       state.testOscillator = oscillator;
       stream = destination.stream;
       label = 'test audio';
+    } else {
+      throw new Error('Only device or browser playback audio is supported. RoomSound never streams a microphone.');
     }
     if (nonce !== state.captureNonce) { stream.getTracks().forEach((t) => t.stop()); return; }
     state.captureStream = stream;

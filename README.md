@@ -8,7 +8,7 @@ RoomSound is a small, runnable web prototype for the private audio-room idea. It
 - Host, co-host, participant, and active-source state
 - WebRTC audio publishing with a lightweight WebSocket signaling server
 - Browser display/tab-audio capture where supported
-- Microphone and generated test-audio fallbacks
+- Device/browser playback audio and a generated test-audio diagnostic source
 - Host approval/rejection of participant source requests
 - Host takeover and participant-to-host source resumption
 - Co-host promotion after host disconnect
@@ -26,7 +26,7 @@ npm start
 
 Open `http://localhost:4173` in a current browser. To test the room flow, open the URL in two browser windows or on two devices that can reach the machine running the server.
 
-For audio capture, use a secure context (`localhost` is allowed by browsers) and expect a browser permission prompt. Desktop Chrome and Edge are the most useful first targets for browser-tab audio. Mobile browsers generally cannot capture audio from a separate native app.
+For audio capture, use a secure context (`localhost` is allowed by browsers) and expect a browser permission prompt. Desktop Chrome and Edge are the most useful first targets for browser-tab audio. RoomSound does not stream microphones; mobile browsers generally cannot capture audio from a separate native app, so use the native Android app for Android device playback.
 
 With the server running in another terminal, the repeatable room-control smoke test is:
 

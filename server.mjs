@@ -44,7 +44,7 @@ const securityHeaders = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
-  'Permissions-Policy': 'camera=(), microphone=(self), display-capture=(self)',
+  'Permissions-Policy': 'camera=(), microphone=(), display-capture=(self)',
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Resource-Policy': 'same-site',
   'Cross-Origin-Embedder-Policy': 'require-corp',
@@ -118,6 +118,22 @@ function send(ws, payload) {
 
 function safeText(value, max = 240) {
   return String(value ?? '').trim().slice(0, max);
+}
+
+const SUPPORTED_SOURCE_TYPES = new Set([
+  'DEVICE_AUDIO',
+  'ANDROID_DEVICE_AUDIO',
+  'WEB_TAB_AUDIO',
+  'TEST_TONE',
+]);
+
+function requestedSourceType(value) {
+  const type = safeText(value, 60).toUpperCase();
+  return type || 'DEVICE_AUDIO';
+}
+
+function isSupportedSourceType(value) {
+  return SUPPORTED_SOURCE_TYPES.has(value);
 }
 
 function findMember(room, memberId) {
@@ -282,7 +298,7 @@ function addSystemMessage(room, text) {
 
 function setSource(room, member, sourceType, status = 'STARTING') {
   room.activeSourceId = member.id;
-  room.activeSourceType = safeText(sourceType, 60) || 'MICROPHONE';
+  room.activeSourceType = isSupportedSourceType(sourceType) ? sourceType : 'DEVICE_AUDIO';
   room.sourceStatus = status;
   room.sourceEpoch += 1;
 }
@@ -437,6 +453,8 @@ function handleMessage(ws, message) {
     if (room.activeSourceId && room.activeSourceId !== room.hostId && room.activeSourceId !== room.cohostId) {
       return sendError(ws, 'Control requests are paused while another participant is sharing.');
     }
+    const sourceType = requestedSourceType(message.sourceType);
+    if (!isSupportedSourceType(sourceType)) return sendError(ws, 'Only device playback audio is supported.');
     const hasPending = [...room.requests.values()].some((request) => request.requesterId === member.id && request.status === 'PENDING');
     if (hasPending) return sendError(ws, 'You already have a pending request.');
     const ttl = requestTtlMs + Math.floor(Math.random() * requestJitterMs);
@@ -444,7 +462,7 @@ function handleMessage(ws, message) {
       id: randomId(),
       requesterId: member.id,
       requesterName: member.name,
-      sourceType: safeText(message.sourceType, 60) || 'DEVICE_AUDIO',
+      sourceType,
       note: safeText(message.note, 160),
       status: 'PENDING',
       createdAt: Date.now(),
@@ -507,7 +525,9 @@ function handleMessage(ws, message) {
   if (type === 'start-source') {
     const authorized = member.id === room.activeSourceId || (isModerator(room, member) && (!room.activeSourceId || room.activeSourceId === member.id));
     if (!authorized) return sendError(ws, 'You are not authorized to publish audio right now.');
-    setSource(room, member, message.sourceType, 'LIVE');
+    const sourceType = requestedSourceType(message.sourceType);
+    if (!isSupportedSourceType(sourceType)) return sendError(ws, 'Only device playback audio is supported.');
+    setSource(room, member, sourceType, 'LIVE');
     addSystemMessage(room, `${member.name} is sharing ${safeText(message.sourceLabel, 80) || 'audio'}.`);
     broadcastState(room);
     return;
@@ -521,9 +541,11 @@ function handleMessage(ws, message) {
 
   if (type === 'takeover') {
     if (!isModerator(room, member)) return sendError(ws, 'Only the host or co-host can take control.');
+    const sourceType = requestedSourceType(message.sourceType);
+    if (!isSupportedSourceType(sourceType)) return sendError(ws, 'Only device playback audio is supported.');
     room.resumeSourceId = null;
     room.resumeSourceType = null;
-    setSource(room, member, message.sourceType || 'DEVICE_AUDIO', 'STARTING');
+    setSource(room, member, sourceType, 'STARTING');
     addSystemMessage(room, `${member.name} took control of the room.`);
     broadcast(room, { type: 'takeover', memberId: member.id });
     broadcastState(room);

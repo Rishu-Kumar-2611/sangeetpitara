@@ -1,9 +1,8 @@
 # RoomSound Android phase 2 transport slice
 
-This module contains the Android playback-capture probe plus the native
-RoomSound room control-plane client. The implementation is deliberately split
-between signaling/control and media transport so that Android playback PCM is
-never mistaken for a working WebRTC publisher.
+This module contains the Android playback-capture client and native RoomSound
+media transport. It shares eligible Android device playback only; it never
+opens or publishes a microphone input.
 
 ## Implemented behavior
 
@@ -52,20 +51,18 @@ PCM audio.
 
 ## PCM/WebRTC boundary
 
-`Pcm16FramePublisher` is the media-plane seam for a future native audio
+`Pcm16FramePublisher` is the media-plane seam for the native WebRTC audio
 backend. `RoomAudioTransport` stamps accepted frames with the authorized room
 source epoch, stops the publisher on an epoch/source transition, and reports
 unauthorized, not-live, stale-epoch, invalid-format, and unavailable-backend
 frames separately.
 
 The default `UnavailablePcm16FramePublisher` intentionally drops frames with
-an explicit `BACKEND_UNAVAILABLE` result. There is no microphone fallback,
-generated test tone, fake publisher, or PCM-over-WebSocket path in this
-module. The Android SDK's public Java APIs do not provide a supported way to
-inject arbitrary `AudioRecord` PCM into a WebRTC sender. A real implementation
-will need a verified native WebRTC audio-device/custom-source integration (and
-its own tested artifact/build configuration) before this seam can be backed by
-live media. No speculative WebRTC dependency is included.
+an explicit `BACKEND_UNAVAILABLE` result. The active native publisher accepts
+only Android playback PCM; there is no microphone fallback, generated test
+source in the Android UI, fake publisher, or PCM-over-WebSocket path. The
+native WebRTC audio-device integration is backed by the pinned WebRTC SDK and
+its diagnostics expose queue, ADM callback, playout, and peer state.
 
 Typical wiring for a future media backend is:
 
