@@ -3,6 +3,24 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+fun configuredValue(name: String): String? = providers.gradleProperty(name)
+    .orElse(providers.environmentVariable(name))
+    .orNull
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+
+val releaseKeystorePath = configuredValue("ROOMSOUND_KEYSTORE")
+val releaseKeystorePassword = configuredValue("ROOMSOUND_KEYSTORE_PASSWORD")
+val releaseKeyAlias = configuredValue("ROOMSOUND_KEY_ALIAS")
+val releaseKeyPassword = configuredValue("ROOMSOUND_KEY_PASSWORD")
+val releaseSigningConfigured = listOf(
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { it != null }
+val resolvedReleaseKeystore = releaseKeystorePath?.let(::file)
+
 android {
     namespace = "com.roomsound.android"
     compileSdk = 35
@@ -11,8 +29,8 @@ android {
         applicationId = "com.roomsound.android"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "1.0.0"
     }
 
     compileOptions {
@@ -24,10 +42,71 @@ android {
         jvmTarget = "17"
     }
 
+    // Force Java 17 toolchain even if a JDK 27 is on PATH
+    java {
+        toolchain {
+            languageVersion.set(JavaLanguageVersion.of(17))
+        }
+    }
+    kotlin {
+        jvmToolchain(17)
+    }
+
     buildFeatures {
         buildConfig = true
     }
+
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = resolvedReleaseKeystore
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            isShrinkResources = false
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
+
+val validateRoomSoundReleaseSigning = tasks.register("validateRoomSoundReleaseSigning") {
+    doLast {
+        if (!releaseSigningConfigured) {
+            throw GradleException(
+                "Release signing is not configured. Set ROOMSOUND_KEYSTORE, " +
+                    "ROOMSOUND_KEYSTORE_PASSWORD, ROOMSOUND_KEY_ALIAS, and " +
+                    "ROOMSOUND_KEY_PASSWORD as Gradle properties or environment variables.",
+            )
+        }
+        check(resolvedReleaseKeystore?.isFile == true) {
+            "Release keystore does not exist: ${resolvedReleaseKeystore?.path}"
+        }
+    }
+}
+
+// Debug builds stay usable without private signing material. Any release
+// lifecycle task must validate the explicitly supplied local/CI credentials.
+tasks.matching { it.name == "preReleaseBuild" || it.name == "validateSigningRelease" }
+    .configureEach { dependsOn(validateRoomSoundReleaseSigning) }
 
 dependencies {
     // JSON signaling/control uses the platform org.json APIs. OkHttp is used
