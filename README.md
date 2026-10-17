@@ -60,6 +60,40 @@ proxy, set `ALLOWED_ORIGINS`, and provide TURN values (`TURN_URLS`, `TURN_USERNA
 and `TURN_CREDENTIAL`) when clients may be behind restrictive NATs. The Android
 client fetches the same `/config` ICE settings before creating native peers.
 
+## Android release build
+
+The Android wrapper is checked in and pins Gradle 8.9. Use JDK 17, Android SDK
+Platform 35, and Android SDK Build-Tools. The Android Gradle Plugin and Kotlin
+plugin versions are pinned in `android/build.gradle.kts`.
+
+From `android/`, a debug build is:
+
+```powershell
+./gradlew.bat :app:assembleDebug --no-daemon --console=plain
+```
+
+If the repository is inside OneDrive or another synchronised folder, move only
+the generated Android output to a local temporary directory:
+
+```powershell
+$env:ROOMSOUND_BUILD_DIR = Join-Path $env:TEMP "RoomSoundAndroidBuild"
+./gradlew.bat :app:assembleDebug --no-daemon --console=plain
+```
+
+Release signing is intentionally opt-in. Keep the keystore and passwords
+outside git, set `ROOMSOUND_KEYSTORE`, `ROOMSOUND_KEYSTORE_PASSWORD`,
+`ROOMSOUND_KEY_ALIAS`, and `ROOMSOUND_KEY_PASSWORD` in the build environment,
+then run:
+
+```powershell
+./gradlew.bat :app:assembleRelease --no-daemon --console=plain
+```
+
+The signed APK is written to
+`android/app/build/outputs/apk/release/app-release.apk`, or to the equivalent
+directory below `ROOMSOUND_BUILD_DIR` when that option is set. The keystore
+file pattern is ignored by git; do not commit signing material.
+
 ## Server hardening (this patch)
 - `GET /config` returns `iceServers` (STUN + TURN when env set). Web + Android should fetch it.
 - `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL` env wire TURN for symmetric NAT/CGNAT.
@@ -77,6 +111,12 @@ The prototype still uses an in-memory `rooms` map and WebRTC mesh (no SFU). Clie
 
 Android-wide application audio also remains platform-dependent. The production Android client should use `MediaProjection` and Android playback-capture APIs; a web page cannot guarantee capture of Spotify, YouTube, or other native Android applications.
 
-## Android phase 2A probe
+## Android client
 
-The `android/` folder contains a native Kotlin capture probe. It requests `RECORD_AUDIO`, obtains one-time `MediaProjection` consent, starts a media-projection foreground service, and reads eligible playback into an in-memory PCM16 sink. It intentionally does not record audio or connect to the room yet. Build and device validation require Android Studio or a JDK/Gradle/Android SDK toolchain, plus a physical Android 10+ device for meaningful playback-capture testing.
+The `android/` folder contains the native Kotlin capture and RoomSound client.
+It requests `RECORD_AUDIO`, obtains one-time `MediaProjection` consent, starts
+a media-projection foreground service, reads eligible playback as PCM16, and
+uses native WebRTC for the room media plane. Build and device validation still
+require a JDK 17/Android SDK toolchain plus a physical Android 10+ device for
+meaningful playback-capture testing. See `android/README.md` for the native
+transport boundary and device setup.

@@ -88,86 +88,66 @@ the existing probe continues to capture only in memory and publishes no media.
 ## Build and run
 
 The Android SDK and JDK 17 are external prerequisites; they are not bundled
-with this workspace. A Gradle wrapper is not checked in yet. Open `android/`
-in Android Studio, or install JDK 17, Gradle 8.9, and Android SDK platform 35
-before building from a terminal.
+with this workspace. The Gradle wrapper is checked in and pins Gradle 8.9, so
+do not install a second global Gradle version. Android SDK Platform 35 and
+Build-Tools are required.
 
-Once the toolchain and dependency access are available:
+Once the toolchain and dependency access are available, run from this folder:
 
-```powershell
-gradle :app:assembleDebug
+```text
+./gradlew :app:assembleDebug --no-daemon --console=plain
 ```
 
-The build declares OkHttp `4.12.0` from Maven Central. JDK `17.0.20.1` and
-Gradle `8.9` were verified locally after repairing the Windows installation.
-The Android SDK now installs successfully through Gradle, but a normal build
-under this OneDrive-backed workspace hit a Windows `AccessDeniedException`
-while Kotlin tried to replace `app/build/kotlin/compileDebugKotlin` caches.
-That is a generated-output/OneDrive lock, not a source compilation error.
-JDK `17.0.20.1`, Gradle `8.9`, Android SDK Platform 35, dependency resolution,
-Kotlin compilation, Java compilation, resource processing, and APK packaging
-were verified by relocating the temporary Gradle build directory outside
-OneDrive. The resulting debug APK was 3,787,875 bytes with SHA-256
-`18BBA602000F85C855696D35C4086EAE7E71B181475F3F54AEDEB01E05036A5D`.
-
-The build emitted a non-fatal SDK XML warning because the installed Android
-command-line tools understand an older SDK XML version than Android Studio.
-Update Android SDK Command-line Tools from SDK Manager when convenient.
-
-If Gradle is not installed on Windows, install JDK 17 and Gradle 8.9 (the
-minimum Gradle line for the pinned Android Gradle Plugin) from PowerShell:
+The build declares OkHttp `4.12.0` and the WebRTC SDK from Maven Central. If
+the checkout is under OneDrive or another synchronised folder, generated
+output can be locked while Gradle replaces it. Use the project-supported
+external build directory switch instead of deleting random Gradle caches:
 
 ```powershell
-winget install --id Microsoft.OpenJDK.17 -e
-
-# Accept the installer elevation prompt. Then reopen PowerShell so Java's
-# installer-provided environment changes are visible.
-$ErrorActionPreference = "Stop"
-$version = "8.9"
-$zip = Join-Path $env:TEMP "gradle-$version-bin.zip"
-$root = Join-Path $env:LOCALAPPDATA "Gradle"
-$url = "https://services.gradle.org/distributions/gradle-$version-bin.zip"
-curl.exe --fail --location --retry 3 --output $zip $url
-if ($LASTEXITCODE -ne 0) { throw "Gradle download failed; do not extract a partial ZIP." }
-$expectedHash = (Invoke-RestMethod "$url.sha256").ToString().Trim()
-if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $expectedHash) {
-    throw "Gradle ZIP checksum mismatch; download it again before extracting."
-}
-New-Item -ItemType Directory -Force -Path $root | Out-Null
-Expand-Archive -LiteralPath $zip -DestinationPath $root -Force
-$gradleHome = Join-Path $root "gradle-$version"
-if (-not (Test-Path -LiteralPath "$gradleHome\bin\gradle.bat")) {
-    throw "Gradle extraction did not complete."
-}
-[Environment]::SetEnvironmentVariable("GRADLE_HOME", $gradleHome, "User")
-$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-$gradleBin = Join-Path $gradleHome "bin"
-if (($userPath -split ";") -notcontains $gradleBin) {
-    [Environment]::SetEnvironmentVariable("Path", "$gradleBin;$userPath", "User")
-}
+$env:ROOMSOUND_BUILD_DIR = Join-Path $env:TEMP "RoomSoundAndroidBuild"
+./gradlew.bat :app:assembleDebug --no-daemon --console=plain
 ```
 
-Do not name a variable `$home`: PowerShell treats it as the read-only built-in
-`$HOME`, regardless of capitalization. Use `$gradleHome` instead.
+The equivalent Linux/macOS command is:
 
-Installation does not update the environment of already-running terminals or
-OmniRush.ai. Restart them, or refresh the current PowerShell environment:
+```sh
+export ROOMSOUND_BUILD_DIR="${TMPDIR:-/tmp}/roomsound-android-build"
+./gradlew :app:assembleDebug --no-daemon --console=plain
+```
+
+`ROOMSOUND_BUILD_DIR` (or `-Proomsound.buildDir=...`) moves generated project
+output only; source files and the Gradle wrapper remain in this checkout.
+
+### Signed release APK
+
+Release signing never uses a password embedded in the build script. Supply the
+four values from a local secret store, shell environment, or CI secret:
 
 ```powershell
-$env:JAVA_HOME = [Environment]::GetEnvironmentVariable("JAVA_HOME", "User")
-if (-not $env:JAVA_HOME) {
-    $env:JAVA_HOME = [Environment]::GetEnvironmentVariable("JAVA_HOME", "Machine")
-}
-$env:GRADLE_HOME = [Environment]::GetEnvironmentVariable("GRADLE_HOME", "User")
-$env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
-    [Environment]::GetEnvironmentVariable("Path", "User")
-java -version
-gradle --version
+$env:ROOMSOUND_BUILD_DIR = Join-Path $env:TEMP "RoomSoundAndroidBuild"
+$env:ROOMSOUND_KEYSTORE = "$PWD\app\roomsound-release.keystore"
+$env:ROOMSOUND_KEYSTORE_PASSWORD = "<local keystore password>"
+$env:ROOMSOUND_KEY_ALIAS = "<local key alias>"
+$env:ROOMSOUND_KEY_PASSWORD = "<local key password>"
+./gradlew.bat :app:assembleRelease --no-daemon --console=plain
 ```
 
-Then run `gradle :app:assembleDebug` from `android/`. The Android SDK must
-also be installed and configured using Android Studio or `ANDROID_HOME` /
-an uncommitted `local.properties` file; JDK and Gradle alone are insufficient.
+Use `export` and `./gradlew` on Linux/macOS. The release task fails early with
+an actionable message if any value is missing or the keystore path is invalid.
+The APK is produced at
+`$ROOMSOUND_BUILD_DIR/app/outputs/apk/release/app-release.apk` when the
+external directory is enabled. Copy it to `android/artifacts/` for local
+distribution if desired; that directory is ignored by git.
+
+If Gradle reports `Unable to delete directory` or `AccessDeniedException` under
+`app/build`, stop stale Gradle/Java processes and rerun with
+`ROOMSOUND_BUILD_DIR` outside the synchronised checkout. A 30-second terminal
+timeout is not a Gradle failure; allow the full command to finish and inspect
+the `BUILD SUCCESSFUL`/`BUILD FAILED` footer.
+
+The Android SDK must be installed and configured using Android Studio or
+`ANDROID_HOME` / an uncommitted `local.properties` file; JDK and the wrapper
+alone are insufficient.
 
 Android Studio can be launched with:
 
