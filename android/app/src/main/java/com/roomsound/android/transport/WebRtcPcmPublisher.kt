@@ -19,6 +19,8 @@ import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpReceiver
 import org.webrtc.RtpTransceiver
+import org.webrtc.RTCStatsCollectorCallback
+import org.webrtc.RTCStatsReport
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.audio.AudioProcessingOptions
@@ -26,8 +28,53 @@ import org.webrtc.audio.JavaAudioDeviceModule
 import java.nio.ByteBuffer
 import java.util.ArrayDeque
 import java.util.Locale
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+
+/** The RTP counters and audio-level values exposed by a native WebRTC report. */
+data class WebRtcRtpStatsSnapshot(
+    val reportTimestampUs: Double? = null,
+    val rtpStatsAvailable: Boolean = false,
+    val bytesSent: Long? = null,
+    val packetsSent: Long? = null,
+    val bytesReceived: Long? = null,
+    val packetsReceived: Long? = null,
+    val audioLevel: Double? = null,
+    val audioLevelSource: String? = null,
+    val error: String? = null,
+)
+
+/** A serialized diagnostic snapshot for one active native peer. */
+data class WebRtcPeerDiagnostics(
+    val role: String,
+    val memberId: String,
+    val sourceEpoch: Long,
+    val signalingState: String,
+    val iceConnectionState: String,
+    val peerConnectionState: String,
+    val remoteTrackPresent: Boolean,
+    val rtpStats: WebRtcRtpStatsSnapshot,
+) {
+    fun asDiagnosticLine(): String = buildString {
+        append("peer role=").append(role)
+        append(" member=").append(memberId)
+        append(" epoch=").append(sourceEpoch)
+        append(" signalingState=").append(signalingState)
+        append(" iceState=").append(iceConnectionState)
+        append(" peerConnectionState=").append(peerConnectionState)
+        append(" remoteTrackPresent=").append(remoteTrackPresent)
+        append(" rtpStatsAvailable=").append(rtpStats.rtpStatsAvailable)
+        append(" bytesSent=").append(rtpStats.bytesSent ?: "n/a")
+        append(" packetsSent=").append(rtpStats.packetsSent ?: "n/a")
+        append(" bytesReceived=").append(rtpStats.bytesReceived ?: "n/a")
+        append(" packetsReceived=").append(rtpStats.packetsReceived ?: "n/a")
+        append(" audioLevel=").append(rtpStats.audioLevel ?: "n/a")
+        rtpStats.audioLevelSource?.let { append(" audioLevelSource=").append(it) }
+        rtpStats.error?.let { append(" statsError=").append(it) }
+    }
+}
 
 /**
  * Native WebRTC media backend for Android playback PCM.
@@ -41,6 +88,7 @@ public class WebRtcPcmPublisher(
     context: Context,
     private val roomClient: RoomSoundWebSocketClient,
     private val onStatus: (String) -> Unit = {},
+    private val onDiagnosticsChanged: () -> Unit = {},
 ) : Pcm16FramePublisher {
     private enum class PeerRole {
         SENDER,
@@ -60,15 +108,22 @@ public class WebRtcPcmPublisher(
         val pendingRemoteCandidates = ArrayDeque<IceCandidate>()
         val pendingLocalCandidates = ArrayDeque<IceCandidate>()
         val remoteAudioTracks = mutableListOf<AudioTrack>()
+        val remoteTracks = mutableSetOf<MediaStreamTrack>()
+        var signalingState = PeerConnection.SignalingState.STABLE.name
+        var iceConnectionState = PeerConnection.IceConnectionState.NEW.name
+        var peerConnectionState = PeerConnection.PeerConnectionState.NEW.name
+        var rtpStats = WebRtcRtpStatsSnapshot()
+        var statsRequestInFlight = false
     }
 
     private val applicationContext = context.applicationContext
     private val stateLock = Any()
     private val pcmQueue = Pcm16FrameQueue()
-    private val signalingExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+    private val signalingExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "RoomSound-WebRTC-Signaling").apply { isDaemon = true }
     }
 
+    @Volatile
     private var closed = false
     private var latestRoomState: RoomState? = null
     private var sourceStarted = false
@@ -87,6 +142,10 @@ public class WebRtcPcmPublisher(
     private var audioSource: AudioSource? = null
     private var audioTrack: AudioTrack? = null
     private val peers = mutableMapOf<String, PeerSession>()
+    @Volatile
+    private var peerDiagnosticsSnapshot: List<WebRtcPeerDiagnostics> = emptyList()
+    @Volatile
+    private var statsPollFuture: ScheduledFuture<*>? = null
 
     private val roomListener = object : RoomSoundWebSocketClient.Listener {
         override fun onConnectionStateChanged(state: RoomConnectionState) {
@@ -150,6 +209,12 @@ public class WebRtcPcmPublisher(
         roomClient.addListener(roomListener)
         initializeMediaBackend()
         roomClient.currentRoomState()?.let(::acceptRoomState)
+        statsPollFuture = signalingExecutor.scheduleWithFixedDelay(
+            { runCatching { pollPeerStats() } },
+            STATS_INITIAL_DELAY_MS,
+            STATS_POLL_INTERVAL_MS,
+            TimeUnit.MILLISECONDS,
+        )
     }
 
     /**
@@ -201,9 +266,19 @@ public class WebRtcPcmPublisher(
             append(" droppedSamples=").append(pcmQueue.droppedSamples())
             append(" underrunSamples=").append(pcmQueue.underrunSamples())
             append(" admCallbacks=").append(pcmQueue.callbackCount())
-            append(" peers=").append(peers.size)
+            append(" peers=").append(peerDiagnosticsSnapshot.size)
+            peerDiagnosticsSnapshot.forEach { peer ->
+                append("\n").append(peer.asDiagnosticLine())
+            }
         }
     }
+
+    /**
+     * Returns the latest immutable peer snapshot for instrumentation callers.
+     * Peer state and stats are collected on the signaling executor; this method
+     * never touches a live PeerConnection or performs a native WebRTC call.
+     */
+    public fun peerDiagnostics(): List<WebRtcPeerDiagnostics> = peerDiagnosticsSnapshot.toList()
 
     override fun start(format: Pcm16AudioFormat, sourceEpoch: Long): Boolean {
         if (format != Pcm16AudioFormat(CAPTURE_SAMPLE_RATE, CAPTURE_CHANNELS)) {
@@ -277,6 +352,8 @@ public class WebRtcPcmPublisher(
             pcmQueue.revoke()
         }
         roomClient.removeListener(roomListener)
+        statsPollFuture?.cancel(false)
+        statsPollFuture = null
         runCatching {
             signalingExecutor.execute {
                 disposeAllPeers()
@@ -576,10 +653,13 @@ public class WebRtcPcmPublisher(
         }.getOrNull()
         if (connection == null) {
             peers.remove(memberId)
+            refreshPeerDiagnostics()
             reportStatus("Could not create native sender peer for $memberId.")
             return null
         }
         session.peerConnection = connection
+        refreshPeerConnectionStates(session)
+        refreshPeerDiagnostics()
         try {
             val transceiver = connection.addTransceiver(
                 sourceTrack,
@@ -606,10 +686,13 @@ public class WebRtcPcmPublisher(
         }.getOrNull()
         if (connection == null) {
             peers.remove(memberId)
+            refreshPeerDiagnostics()
             reportStatus("Could not create native receiver peer for $memberId.")
             return null
         }
         session.peerConnection = connection
+        refreshPeerConnectionStates(session)
+        refreshPeerDiagnostics()
         // No local track or transceiver is added to a receiver peer. The
         // remote offer creates the receive-only audio m-section, so the answer
         // cannot accidentally publish this phone's microphone.
@@ -762,10 +845,163 @@ public class WebRtcPcmPublisher(
     }
 
     private fun handleRemoteTrack(session: PeerSession, track: MediaStreamTrack?) {
-        val audio = track as? AudioTrack ?: return
-        if (!session.remoteAudioTracks.contains(audio)) session.remoteAudioTracks += audio
-        runCatching { audio.setEnabled(true) }
-        runCatching { audio.setVolume(playbackVolume) }
+        val remote = track ?: return
+        session.remoteTracks += remote
+        val audio = remote as? AudioTrack
+        if (audio != null) {
+            if (!session.remoteAudioTracks.contains(audio)) session.remoteAudioTracks += audio
+            runCatching { audio.setEnabled(true) }
+            runCatching { audio.setVolume(playbackVolume) }
+        }
+        refreshPeerDiagnostics()
+    }
+
+    private fun handleRemoteTrackRemoved(session: PeerSession, track: MediaStreamTrack?) {
+        val remote = track ?: return
+        session.remoteTracks.remove(remote)
+        (remote as? AudioTrack)?.let { audio -> session.remoteAudioTracks.remove(audio) }
+        refreshPeerDiagnostics()
+    }
+
+    private fun refreshPeerConnectionStates(session: PeerSession) {
+        val connection = session.peerConnection ?: return
+        session.signalingState = runCatching { connection.signalingState().name }
+            .getOrDefault(session.signalingState)
+        session.iceConnectionState = runCatching { connection.iceConnectionState().name }
+            .getOrDefault(session.iceConnectionState)
+        session.peerConnectionState = runCatching { connection.connectionState().name }
+            .getOrDefault(session.peerConnectionState)
+    }
+
+    private fun refreshPeerDiagnostics() {
+        peerDiagnosticsSnapshot = peers.values
+            .asSequence()
+            .filterNot { it.closed }
+            .map { session ->
+                WebRtcPeerDiagnostics(
+                    role = session.role.name,
+                    memberId = session.memberId,
+                    sourceEpoch = session.sourceEpoch,
+                    signalingState = session.signalingState,
+                    iceConnectionState = session.iceConnectionState,
+                    peerConnectionState = session.peerConnectionState,
+                    remoteTrackPresent = session.remoteTracks.isNotEmpty(),
+                    rtpStats = session.rtpStats,
+                )
+            }
+            .sortedWith(compareBy<WebRtcPeerDiagnostics> { it.memberId }.thenBy { it.role })
+            .toList()
+        runCatching { onDiagnosticsChanged() }
+    }
+
+    private fun pollPeerStats() {
+        if (closed) return
+        peers.values.toList().forEach(::requestPeerStats)
+    }
+
+    private fun requestPeerStats(session: PeerSession) {
+        if (!isCurrentSession(session) || session.statsRequestInFlight) return
+        val connection = session.peerConnection ?: return
+        session.statsRequestInFlight = true
+        runCatching {
+            connection.getStats(object : RTCStatsCollectorCallback {
+                override fun onStatsDelivered(report: RTCStatsReport) {
+                    val parsed = runCatching { parseRtpStats(report) }
+                        .getOrElse { error ->
+                            WebRtcRtpStatsSnapshot(
+                                reportTimestampUs = report.getTimestampUs(),
+                                error = error.message ?: error.javaClass.simpleName,
+                            )
+                        }
+                    postToSignaling {
+                        if (!isCurrentSession(session)) return@postToSignaling
+                        session.statsRequestInFlight = false
+                        session.rtpStats = parsed
+                        refreshPeerDiagnostics()
+                    }
+                }
+            })
+        }.onFailure { error ->
+            session.statsRequestInFlight = false
+            session.rtpStats = WebRtcRtpStatsSnapshot(
+                error = error.message ?: error.javaClass.simpleName,
+            )
+            refreshPeerDiagnostics()
+        }
+    }
+
+    private fun parseRtpStats(report: RTCStatsReport): WebRtcRtpStatsSnapshot {
+        var rtpStatsAvailable = false
+        var bytesSent: Long? = null
+        var packetsSent: Long? = null
+        var bytesReceived: Long? = null
+        var packetsReceived: Long? = null
+        var audioLevel: Double? = null
+        var audioLevelSource: String? = null
+
+        fun add(current: Long?, next: Long?): Long? = when {
+            next == null -> current
+            current == null -> next
+            else -> current + next
+        }
+
+        report.getStatsMap().values.forEach { stat ->
+            val type = stat.getType().lowercase(Locale.US)
+            val members = stat.getMembers()
+            when (type) {
+                "outbound-rtp" -> if (isAudioStats(members)) {
+                    rtpStatsAvailable = true
+                    bytesSent = add(bytesSent, members.longValue("bytesSent"))
+                    packetsSent = add(packetsSent, members.longValue("packetsSent"))
+                    members.doubleValue("audioLevel")?.let {
+                        audioLevel = it
+                        audioLevelSource = type
+                    }
+                }
+                "inbound-rtp" -> if (isAudioStats(members)) {
+                    rtpStatsAvailable = true
+                    bytesReceived = add(bytesReceived, members.longValue("bytesReceived"))
+                    packetsReceived = add(packetsReceived, members.longValue("packetsReceived"))
+                    members.doubleValue("audioLevel")?.let {
+                        audioLevel = it
+                        audioLevelSource = type
+                    }
+                }
+                // Chromium exposes the local source level as media-source in
+                // some builds rather than putting audioLevel on outbound-rtp.
+                "media-source" -> if (isAudioStats(members)) {
+                    members.doubleValue("audioLevel")?.let {
+                        audioLevel = it
+                        audioLevelSource = type
+                    }
+                }
+                else -> if (type.endsWith("-rtp") && isAudioStats(members)) {
+                    // Keep this tolerant of remote-inbound/remote-outbound
+                    // variants that may expose an audioLevel member without
+                    // treating their counters as local send/receive totals.
+                    members.doubleValue("audioLevel")?.let {
+                        audioLevel = it
+                        audioLevelSource = type
+                    }
+                }
+            }
+        }
+
+        return WebRtcRtpStatsSnapshot(
+            reportTimestampUs = report.getTimestampUs(),
+            rtpStatsAvailable = rtpStatsAvailable,
+            bytesSent = bytesSent,
+            packetsSent = packetsSent,
+            bytesReceived = bytesReceived,
+            packetsReceived = packetsReceived,
+            audioLevel = audioLevel,
+            audioLevelSource = audioLevelSource,
+        )
+    }
+
+    private fun isAudioStats(members: Map<String, Any?>): Boolean {
+        val kind = members["kind"] ?: members["mediaType"] ?: members["media_type"]
+        return kind == null || kind.toString().equals("audio", ignoreCase = true)
     }
 
     private fun disposePeersForEpoch(sourceEpoch: Long?) {
@@ -785,8 +1021,11 @@ public class WebRtcPcmPublisher(
         session.pendingRemoteCandidates.clear()
         session.pendingLocalCandidates.clear()
         session.remoteAudioTracks.clear()
+        session.remoteTracks.clear()
+        session.statsRequestInFlight = false
         runCatching { session.peerConnection?.dispose() }
         session.peerConnection = null
+        refreshPeerDiagnostics()
     }
 
     private fun isCurrentSession(session: PeerSession): Boolean =
@@ -907,14 +1146,23 @@ public class WebRtcPcmPublisher(
     private inner class PeerObserver(
         private val session: PeerSession,
     ) : PeerConnection.Observer {
-        override fun onSignalingChange(newState: PeerConnection.SignalingState) = Unit
+        override fun onSignalingChange(newState: PeerConnection.SignalingState) {
+            postToSignaling {
+                if (!isCurrentSession(session)) return@postToSignaling
+                session.signalingState = newState.name
+                refreshPeerDiagnostics()
+            }
+        }
 
         override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState) {
-            if (newState == PeerConnection.IceConnectionState.FAILED ||
-                newState == PeerConnection.IceConnectionState.CLOSED
-            ) {
-                postToSignaling {
-                    if (isCurrentSession(session)) disposePeer(session)
+            postToSignaling {
+                if (!isCurrentSession(session)) return@postToSignaling
+                session.iceConnectionState = newState.name
+                refreshPeerDiagnostics()
+                if (newState == PeerConnection.IceConnectionState.FAILED ||
+                    newState == PeerConnection.IceConnectionState.CLOSED
+                ) {
+                    disposePeer(session)
                 }
             }
         }
@@ -931,11 +1179,21 @@ public class WebRtcPcmPublisher(
 
         override fun onAddStream(stream: MediaStream) {
             postToSignaling {
-                if (isCurrentSession(session)) stream.audioTracks.forEach { handleRemoteTrack(session, it) }
+                if (isCurrentSession(session)) {
+                    stream.audioTracks.forEach { handleRemoteTrack(session, it) }
+                    stream.videoTracks.forEach { handleRemoteTrack(session, it) }
+                }
             }
         }
 
-        override fun onRemoveStream(stream: MediaStream) = Unit
+        override fun onRemoveStream(stream: MediaStream) {
+            postToSignaling {
+                if (isCurrentSession(session)) {
+                    stream.audioTracks.forEach { handleRemoteTrackRemoved(session, it) }
+                    stream.videoTracks.forEach { handleRemoteTrackRemoved(session, it) }
+                }
+            }
+        }
 
         override fun onDataChannel(dataChannel: DataChannel) = Unit
 
@@ -947,6 +1205,12 @@ public class WebRtcPcmPublisher(
             }
         }
 
+        override fun onRemoveTrack(receiver: RtpReceiver) {
+            postToSignaling {
+                if (isCurrentSession(session)) handleRemoteTrackRemoved(session, receiver.track())
+            }
+        }
+
         override fun onTrack(transceiver: RtpTransceiver) {
             postToSignaling {
                 if (isCurrentSession(session)) handleRemoteTrack(session, transceiver.receiver.track())
@@ -954,11 +1218,14 @@ public class WebRtcPcmPublisher(
         }
 
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
-            if (newState == PeerConnection.PeerConnectionState.FAILED ||
-                newState == PeerConnection.PeerConnectionState.CLOSED
-            ) {
-                postToSignaling {
-                    if (isCurrentSession(session)) disposePeer(session)
+            postToSignaling {
+                if (!isCurrentSession(session)) return@postToSignaling
+                session.peerConnectionState = newState.name
+                refreshPeerDiagnostics()
+                if (newState == PeerConnection.PeerConnectionState.FAILED ||
+                    newState == PeerConnection.PeerConnectionState.CLOSED
+                ) {
+                    disposePeer(session)
                 }
             }
         }
@@ -976,6 +1243,8 @@ public class WebRtcPcmPublisher(
         const val CAPTURE_SAMPLE_RATE = 48_000
         const val CAPTURE_CHANNELS = 1
         private const val MAX_PENDING_ICE_CANDIDATES = 64
+        private const val STATS_INITIAL_DELAY_MS = 500L
+        private const val STATS_POLL_INTERVAL_MS = 2_000L
         private val WEBRTC_INIT_LOCK = Any()
         private var webRtcInitialized = false
 
@@ -1000,3 +1269,15 @@ public class WebRtcPcmPublisher(
 }
 
 private fun JSONObject.objectOrEmpty(key: String): JSONObject = optJSONObject(key) ?: JSONObject()
+
+private fun Map<*, *>.longValue(key: String): Long? = when (val value = this[key]) {
+    is Number -> value.toLong()
+    is String -> value.toLongOrNull()
+    else -> null
+}
+
+private fun Map<*, *>.doubleValue(key: String): Double? = when (val value = this[key]) {
+    is Number -> value.toDouble()
+    is String -> value.toDoubleOrNull()
+    else -> null
+}

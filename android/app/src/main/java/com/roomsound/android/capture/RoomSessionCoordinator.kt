@@ -103,9 +103,16 @@ class RoomSessionCoordinator(
         client = nextClient
         endpoint = next
         try {
-            val nextPublisher = WebRtcPcmPublisher(appContext, nextClient) { message ->
-                main.post { if (!closed && client === nextClient) status(message) }
-            }
+            val nextPublisher = WebRtcPcmPublisher(
+                context = appContext,
+                roomClient = nextClient,
+                onStatus = { message ->
+                    main.post { if (!closed && client === nextClient) status(message) }
+                },
+                onDiagnosticsChanged = {
+                    main.post { if (!closed && client === nextClient) changed() }
+                },
+            )
             publisher = nextPublisher
             nextPublisher.setPlaybackVolume(volume)
             transport = RoomAudioTransport(nextClient, nextPublisher)
