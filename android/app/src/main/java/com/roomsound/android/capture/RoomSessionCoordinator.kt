@@ -91,7 +91,7 @@ class RoomSessionCoordinator(
         val uri = runCatching { URI(next) }.getOrNull() ?: return false
         if (uri.scheme !in setOf("ws", "wss") || uri.host.isNullOrBlank() ||
             uri.userInfo != null || uri.fragment != null || uri.port !in -1..65535 ||
-            (!BuildConfig.DEBUG && uri.scheme != "wss")
+            (!BuildConfig.DEBUG && uri.scheme != "wss" && !isLocalNetworkHost(uri.host))
         ) return false
         if (endpoint == next && client != null) return true
         if (client?.currentRoomState() != null || roomSelectionPending || attempt != null) {
@@ -135,6 +135,20 @@ class RoomSessionCoordinator(
         nextClient.addListener(listener)
         changed()
         return true
+    }
+
+    /** Allow plain ws:// only for a laptop/server on the local network. */
+    private fun isLocalNetworkHost(host: String?): Boolean {
+        val value = host?.trim()?.lowercase() ?: return false
+        if (value == "localhost" || value == "127.0.0.1" || value == "::1" || value.endsWith(".local")) return true
+        val octets = value.split('.')
+        if (octets.size != 4 || octets.any { it.toIntOrNull() == null }) return false
+        val numbers = octets.map { it.toInt() }
+        if (numbers.any { it !in 0..255 }) return false
+        return numbers[0] == 10 ||
+            (numbers[0] == 172 && numbers[1] in 16..31) ||
+            (numbers[0] == 192 && numbers[1] == 168) ||
+            (numbers[0] == 169 && numbers[1] == 254)
     }
 
     fun createRoom(name: String, displayName: String, guestId: String) {

@@ -221,7 +221,7 @@ class MainActivity : Activity() {
             text = if (BuildConfig.DEBUG) {
                 "Debug: emulator ws://10.0.2.2:4173 · phone ws://<laptop LAN IPv4>:4173 · localhost is the phone itself."
             } else {
-                "Release builds require a secure wss:// RoomSound endpoint."
+                "Local testing: ws://<laptop LAN IPv4>:4173 · public servers require wss://."
             }
             textSize = 11f
             setTextColor(android.graphics.Color.rgb(126, 143, 177))
@@ -382,7 +382,7 @@ class MainActivity : Activity() {
             appendRoomEvent(if (BuildConfig.DEBUG) {
                 "Enter a host endpoint such as ws://192.168.1.20:4173. Do not use localhost on a phone."
             } else {
-                "Release builds require a wss:// endpoint."
+                "Use ws://<laptop LAN IPv4>:4173 on the same Wi-Fi, or wss:// for a public server."
             })
             return null
         }
@@ -402,7 +402,7 @@ class MainActivity : Activity() {
         val endpoint = when {
             withScheme.startsWith("http://", ignoreCase = true) && BuildConfig.DEBUG -> "ws://${withScheme.substringAfter("://")}"
             withScheme.startsWith("https://", ignoreCase = true) -> "wss://${withScheme.substringAfter("://")}"
-            withScheme.startsWith("ws://", ignoreCase = true) && BuildConfig.DEBUG -> "ws://${withScheme.substringAfter("://")}"
+            withScheme.startsWith("ws://", ignoreCase = true) -> "ws://${withScheme.substringAfter("://")}"
             withScheme.startsWith("wss://", ignoreCase = true) -> "wss://${withScheme.substringAfter("://")}"
             else -> return null
         }
