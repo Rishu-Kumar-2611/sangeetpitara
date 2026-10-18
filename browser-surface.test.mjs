@@ -39,3 +39,11 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.doesNotMatch(html, /<script[^>]+src=["']https?:\/\//i);
   assert.doesNotMatch(`${html}\n${app}\n${ads}`, /ca-pub-\d+/i);
 });
+
+test('browser RTC keeps transiently disconnected peers for ICE recovery', async () => {
+  const app = await readFile(new URL('app.js', root), 'utf8');
+
+  assert.match(app, /if \(pc\.connectionState === 'closed'\) removePeerConnection\(/g);
+  assert.doesNotMatch(app, /\['closed', 'disconnected'\]\.includes\(pc\.connectionState\)\) removePeerConnection/);
+  assert.match(app, /disconnected.*recoverable|transient `disconnected` state is not terminal/s);
+});

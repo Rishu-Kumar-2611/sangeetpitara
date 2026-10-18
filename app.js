@@ -1342,7 +1342,10 @@ async function createPublisherPeer(targetId) {
         }
       }, 1000);
     }
-    if (['closed', 'disconnected'].includes(pc.connectionState)) removePeerConnection(targetId, entry);
+    // `disconnected` is recoverable while ICE is still checking/restarting.
+    // Keep the peer alive so a STUN-only connection can recover instead of
+    // silently losing the only publisher path before the retry guard runs.
+    if (pc.connectionState === 'closed') removePeerConnection(targetId, entry);
     if (pc.connectionState === 'connected' && isCurrentPeerEntry(targetId, entry)) addActivity("Audio peer connected to "+targetId, true);
   };
   registerPeerTelemetry(targetId, entry);
@@ -1421,7 +1424,9 @@ async function handleRtcSignal(message) {
           if (isCurrentPeerEntry(from, entry) && pc.connectionState === 'failed') console.warn("[RoomSound] listener still failed, waiting for publisher renegotiation");
         }, 2500);
       }
-      if (['closed', 'disconnected'].includes(pc.connectionState)) removePeerConnection(from, entry);
+      // A transient `disconnected` state is not terminal. ICE may recover
+      // without a new offer, so only discard a listener peer once it is closed.
+      if (pc.connectionState === 'closed') removePeerConnection(from, entry);
       if (pc.connectionState === 'connected' && isCurrentPeerEntry(from, entry)) addActivity("Audio connected to "+from, true);
     };
     pc.ontrack = (event) => {
