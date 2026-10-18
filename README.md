@@ -100,6 +100,14 @@ docker build -t roomsound:local .
 docker run --rm -p 4173:4173 --env-file .env roomsound:local
 ```
 
+The default Docker target builds and runs the Node/WebSocket service. The same
+Dockerfile also provides an isolated Android build target with JDK 17, Android
+SDK Platform 35, and pinned command-line/build-tools versions:
+
+```powershell
+docker build --target android-build -t roomsound-android:local .
+```
+
 Create `.env` from `.env.example` first. For a deployment, use HTTPS/WSS at a reverse
 proxy, set `ALLOWED_ORIGINS`, and provide TURN values (`TURN_URLS`, `TURN_USERNAME`,
 and `TURN_CREDENTIAL`) when clients may be behind restrictive NATs. The Android
