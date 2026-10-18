@@ -410,7 +410,7 @@ public class WebRtcPcmPublisher(
         signalingExecutor.shutdown()
     }
 
-    private fun initializeMediaBackend() {
+    private fun initializeMediaBackend(preferLowLatency: Boolean = true) {
         var createdAdm: JavaAudioDeviceModule? = null
         var createdFactory: PeerConnectionFactory? = null
         var createdSource: AudioSource? = null
@@ -423,10 +423,10 @@ public class WebRtcPcmPublisher(
                 .setUseStereoOutput(false)
                 .setUseHardwareAcousticEchoCanceler(false)
                 .setUseHardwareNoiseSuppressor(false)
-                // Prefer the broadly supported AudioTrack path while bringing
-                // up custom PCM injection. Low-latency mode is device-specific
-                // and can fail without a useful Java exception.
-                .setUseLowLatency(false)
+                // Prefer Android's low-latency AudioTrack path for the receive
+                // side. Some OEM routes reject performance mode, so the catch
+                // block retries the complete backend with the normal path.
+                .setUseLowLatency(preferLowLatency)
                 .setEnableVolumeLogger(false)
                 .setAudioAttributes(
                     AudioAttributes.Builder()
@@ -524,7 +524,10 @@ public class WebRtcPcmPublisher(
             createdFactory = null
             createdSource = null
             createdTrack = null
-            reportStatus("Native WebRTC media backend ready (recordingless ADM, Opus factory).")
+            reportStatus(
+                "Native WebRTC media backend ready (recordingless ADM, Opus factory, " +
+                    "lowLatency=$preferLowLatency).",
+            )
         } catch (error: Throwable) {
             val message = error.message ?: error.javaClass.simpleName
             synchronized(stateLock) {
@@ -535,6 +538,11 @@ public class WebRtcPcmPublisher(
             runCatching { createdSource?.dispose() }
             runCatching { createdFactory?.dispose() }
             runCatching { createdAdm?.release() }
+            if (preferLowLatency) {
+                reportStatus("Low-latency native audio setup failed; retrying the compatible AudioTrack path.")
+                initializeMediaBackend(preferLowLatency = false)
+                return
+            }
             reportStatus("Native WebRTC media backend unavailable: $message")
         }
     }
