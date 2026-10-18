@@ -115,10 +115,11 @@ export ROOMSOUND_BUILD_DIR="${TMPDIR:-/tmp}/roomsound-android-build"
 `ROOMSOUND_BUILD_DIR` (or `-Proomsound.buildDir=...`) moves generated project
 output only; source files and the Gradle wrapper remain in this checkout.
 
-The release APK also accepts `ws://` endpoints for private/local addresses
-such as `10.x.x.x`, `172.16.x.x`–`172.31.x.x`, and `192.168.x.x`, which makes
-same-Wi-Fi laptop testing possible. Public deployments should still use
-`wss://`; non-local insecure endpoints are rejected by the app.
+Debug APKs accept `ws://` endpoints for private/local addresses such as
+`10.x.x.x`, `172.16.x.x`–`172.31.x.x`, and `192.168.x.x`, which makes same-Wi-Fi
+laptop testing possible. Release builds should use `wss://`; the release
+manifest does not enable Android cleartext traffic and non-local insecure
+endpoints are rejected by the app.
 
 ### Signed release APK
 
