@@ -1,5 +1,6 @@
 package com.roomsound.android.room
 
+import com.roomsound.android.auth.normalizeRoomAuthToken
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -37,7 +38,7 @@ class RoomSoundWebSocketClient(
     endpoint: String,
     private val okHttpClient: OkHttpClient = defaultOkHttpClient(),
     private val autoReconnect: Boolean = true,
-) : Closeable {
+) : Closeable, RoomAuthTokenAware {
     interface Listener {
         fun onConnectionStateChanged(state: RoomConnectionState)
         fun onEvent(event: RoomSoundEvent)
@@ -66,6 +67,7 @@ class RoomSoundWebSocketClient(
     private var reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS
     private var stopRequested = false
     private var permanentlyClosed = false
+    private var bearerToken: String? = null
 
     init {
         require(endpoint.startsWith("ws://") || endpoint.startsWith("wss://")) {
@@ -90,6 +92,20 @@ class RoomSoundWebSocketClient(
         roomState?.sourceAuthorization()
     }
 
+    /**
+     * Applies a bearer token to requests created after this call.
+     *
+     * Tokens are deliberately kept only in memory. Blank, oversized, or
+     * non-HTTP-safe values clear the current token rather than becoming a
+     * malformed Authorization header, and no token value is logged.
+     */
+    override fun setBearerToken(token: String?) {
+        val nextToken = normalizeBearerToken(token)
+        synchronized(lock) {
+            bearerToken = nextToken
+        }
+    }
+
     /** Fetches the HTTP ICE configuration that belongs to this WebSocket endpoint. */
     fun fetchIceServers(): List<RoomIceServer> {
         val uri = runCatching { URI(endpoint) }.getOrNull() ?: return emptyList()
@@ -98,7 +114,13 @@ class RoomSoundWebSocketClient(
         val configUrl = runCatching {
             URI(scheme, null, host, uri.port, "/config", null, null).toString()
         }.getOrNull() ?: return emptyList()
-        val request = runCatching { Request.Builder().url(configUrl).get().build() }.getOrNull() ?: return emptyList()
+        val request = runCatching {
+            Request.Builder()
+                .url(configUrl)
+                .applyAuthorizationHeader()
+                .get()
+                .build()
+        }.getOrNull() ?: return emptyList()
         return runCatching {
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use emptyList()
@@ -320,7 +342,10 @@ class RoomSoundWebSocketClient(
 
     private fun openSocket() {
         val request = try {
-            Request.Builder().url(endpoint).build()
+            Request.Builder()
+                .url(endpoint)
+                .applyAuthorizationHeader()
+                .build()
         } catch (error: Throwable) {
             setConnectionState(RoomConnectionState.FAILED)
             emit(RoomSoundEvent.Error("Invalid RoomSound WebSocket endpoint: ${error.message}"))
@@ -551,6 +576,11 @@ class RoomSoundWebSocketClient(
 
     private fun webSocketSnapshot(): WebSocket? = synchronized(lock) { webSocket }
 
+    private fun Request.Builder.applyAuthorizationHeader(): Request.Builder {
+        val token = synchronized(lock) { bearerToken } ?: return this
+        return header("Authorization", "Bearer $token")
+    }
+
     private fun setConnectionState(next: RoomConnectionState) {
         val changed = synchronized(lock) {
             if (connectionState == next) false else {
@@ -591,6 +621,8 @@ class RoomSoundWebSocketClient(
         private const val NORMAL_CLOSE = 1000
         private const val INITIAL_RECONNECT_DELAY_MS = 1_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
+
+        private fun normalizeBearerToken(token: String?): String? = normalizeRoomAuthToken(token)
 
         private fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
             .pingInterval(20, TimeUnit.SECONDS)

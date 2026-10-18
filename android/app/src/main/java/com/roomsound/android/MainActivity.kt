@@ -15,6 +15,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
 import android.text.InputType
+import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -23,6 +24,12 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
+import com.roomsound.android.auth.EncryptedSessionStore
+import com.roomsound.android.auth.RoomAccountUser
+import com.roomsound.android.auth.RoomAuthClient
+import com.roomsound.android.auth.RoomAuthException
+import com.roomsound.android.auth.RoomAuthSession
+import com.roomsound.android.auth.RoomAuthEndpoint
 import com.roomsound.android.capture.CaptureCapabilityReport
 import com.roomsound.android.capture.CaptureSnapshot
 import com.roomsound.android.capture.CaptureStatus
@@ -37,6 +44,7 @@ import java.io.StringWriter
 import java.util.ArrayDeque
 import java.util.Locale
 import java.util.UUID
+import okhttp3.Call
 
 /** Native Android room controls. Media/signaling state is owned by the service. */
 class MainActivity : Activity() {
@@ -63,6 +71,11 @@ class MainActivity : Activity() {
     }
 
     private lateinit var statusText: TextView
+    private lateinit var authStatusText: TextView
+    private lateinit var authEmailInput: EditText
+    private lateinit var authPasswordInput: EditText
+    private lateinit var authSignInButton: Button
+    private lateinit var authSignOutButton: Button
     private lateinit var endpointInput: EditText
     private lateinit var endpointHintText: TextView
     private lateinit var displayNameInput: EditText
@@ -103,6 +116,16 @@ class MainActivity : Activity() {
     private var latestRoomState: RoomState? = null
     private var latestSnapshot = CaptureSnapshot(CaptureStatus.IDLE)
     private var muted = false
+    private var authUser: RoomAccountUser? = null
+    private var authToken: String? = null
+    private var authHasStoredToken = false
+    private var authCall: Call? = null
+    private var authOperation = 0L
+    private var authBusy = false
+    private var authChecking = false
+    private var authMessage: String? = null
+    private val sessionStore by lazy { EncryptedSessionStore(applicationContext) }
+    private val authClient by lazy { RoomAuthClient() }
     private val roomEvents = ArrayDeque<String>()
     private val transportRenderHandler = Handler(Looper.getMainLooper())
     private var transportRenderPosted = false
@@ -181,6 +204,7 @@ class MainActivity : Activity() {
         showPreviousCrashNotice()
         refreshCapability()
         ensureCaptureService()
+        restoreSavedSession()
     }
 
     override fun onResume() {
@@ -206,6 +230,11 @@ class MainActivity : Activity() {
         activityResumed = false
         transportRenderHandler.removeCallbacks(transportRenderRunnable)
         transportRenderPosted = false
+        authOperation += 1
+        authCall?.cancel()
+        authCall = null
+        authClient.cancelAll()
+        authToken = null
         detachFromService()
         if (serviceBound || serviceBindingInFlight) {
             runCatching { unbindService(serviceConnection) }
@@ -303,6 +332,10 @@ class MainActivity : Activity() {
         captureService = service
         roomSession = session
         serviceBound = true
+        // A started service may outlive this Activity (including rotation).
+        // Do not clear its already-authenticated client before the encrypted
+        // session restore finishes; a successful restore reapplies the token.
+        authToken?.let(session::setBearerToken)
         session.addListener(roomListener)
         service.addListener(serviceListener)
         renderAttachedServiceState()
@@ -349,6 +382,32 @@ class MainActivity : Activity() {
             setPadding(0, dp(7), 0, dp(5))
         }, matchWrap())
         content.addView(header, panelLayout())
+
+        val accountPanel = panelContainer()
+        accountPanel.addView(sectionTitle("Account"), matchWrap())
+        authStatusText = labelText().apply {
+            text = "Guest mode (explicit fallback). Sign in to use an account."
+            setTextColor(getColor(R.color.roomsound_cream_soft))
+            setPadding(0, 0, 0, dp(8))
+        }
+        accountPanel.addView(authStatusText, matchWrap())
+        authEmailInput = inputText("Email address", null).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
+        }
+        accountPanel.addView(authEmailInput, matchWrap())
+        authPasswordInput = inputText("Password", null).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            transformationMethod = PasswordTransformationMethod.getInstance()
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
+            isSaveEnabled = false
+        }
+        accountPanel.addView(authPasswordInput, marginLayout())
+        authSignInButton = button("Sign in") { signIn() }
+        accountPanel.addView(authSignInButton, marginLayout())
+        authSignOutButton = button("Sign out", ButtonTone.SECONDARY) { signOut() }
+        accountPanel.addView(authSignOutButton, marginLayout())
+        content.addView(accountPanel, panelLayout())
 
         val roomPanel = panelContainer()
         roomPanel.addView(sectionTitle("Room control"), matchWrap())
@@ -473,6 +532,7 @@ class MainActivity : Activity() {
         renderRoomState(null)
         renderTransportNow()
         updateMuteButton()
+        renderAuthState()
         return ScrollView(this).apply {
             isFillViewport = true
             isVerticalScrollBarEnabled = false
@@ -570,6 +630,228 @@ class MainActivity : Activity() {
 
     private fun saveRoomInputs(displayName: String) {
         preferences.edit().putString(DISPLAY_NAME_KEY, displayName).apply()
+    }
+
+    private fun restoreSavedSession() {
+        val token = runCatching { sessionStore.readToken() }.getOrNull()
+        authHasStoredToken = !token.isNullOrBlank()
+        if (token.isNullOrBlank()) {
+            authMessage = null
+            renderAuthState()
+            return
+        }
+        val endpoint = authEndpoint()
+        if (endpoint == null) {
+            authMessage = "Saved sign-in is waiting for a valid server endpoint. Guest mode is an explicit fallback."
+            renderAuthState()
+            return
+        }
+
+        authChecking = true
+        authMessage = null
+        renderAuthState()
+        val operation = ++authOperation
+        authCall = authClient.currentUser(endpoint, token) { result ->
+            runOnUiThread {
+                if (operation != authOperation || isFinishing) return@runOnUiThread
+                authCall = null
+                authChecking = false
+                val user = result.getOrNull()
+                if (result.isSuccess && user != null) {
+                    authToken = token
+                    authUser = user
+                    authHasStoredToken = true
+                    roomSession?.setBearerToken(token)
+                    authMessage = null
+                } else if (result.isSuccess) {
+                    clearSignedInState("Your saved session expired. Guest mode is an explicit fallback.")
+                } else {
+                    // Keep the encrypted token for a later retry, but never
+                    // attach an unvalidated session to a room client.
+                    authToken = null
+                    authUser = null
+                    authMessage = "Saved sign-in could not be checked. Guest mode is an explicit fallback; try again when online."
+                }
+                renderAuthState()
+            }
+        }
+    }
+
+    private fun signIn() {
+        if (authBusy || authChecking || authUser != null) return
+        if (roomSession?.connectionState() == RoomConnectionState.JOINED ||
+            roomSession?.isRoomSelectionPending() == true
+        ) {
+            authMessage = "Leave the current room before signing in."
+            renderAuthState()
+            return
+        }
+        val endpoint = authEndpoint()
+        if (endpoint == null) {
+            authMessage = "Enter a valid RoomSound endpoint before signing in."
+            renderAuthState()
+            return
+        }
+        val email = authEmailInput.text.toString().trim()
+        val password = authPasswordInput.text.toString()
+        if (email.isEmpty() || password.isEmpty()) {
+            authMessage = "Enter your email and password."
+            renderAuthState()
+            return
+        }
+        if (password.length < 12) {
+            authMessage = "Password must be at least 12 characters."
+            renderAuthState()
+            return
+        }
+
+        authBusy = true
+        authMessage = null
+        renderAuthState()
+        val operation = ++authOperation
+        authCall = authClient.signIn(endpoint, email, password) { result ->
+            runOnUiThread {
+                if (operation != authOperation || isFinishing) return@runOnUiThread
+                authCall = null
+                authBusy = false
+                // Do not keep the password in the view after the request.
+                authPasswordInput.setText("")
+                val session = result.getOrNull()
+                if (result.isSuccess && session != null && persistSession(session)) {
+                    authToken = session.token
+                    authUser = session.user
+                    authHasStoredToken = true
+                    roomSession?.setBearerToken(session.token)
+                    authMessage = null
+                } else if (result.isSuccess && session != null) {
+                    // A token that cannot be protected locally must not be used
+                    // for room traffic. Best-effort server invalidation avoids
+                    // leaving an otherwise inaccessible session active.
+                    authClient.signOut(endpoint, session.token) { }
+                    authToken = null
+                    authUser = null
+                    authMessage = "This device could not protect the session. Sign-in was not completed."
+                } else {
+                    authMessage = authFailureMessage(result)
+                }
+                renderAuthState()
+            }
+        }
+    }
+
+    private fun signOut() {
+        if (authBusy || authChecking) return
+        val token = authToken ?: runCatching { sessionStore.readToken() }.getOrNull()
+        if (token.isNullOrBlank()) {
+            clearSignedInState("Signed out on this device. Guest mode is an explicit fallback.")
+            return
+        }
+        val endpoint = authEndpoint()
+        if (endpoint == null) {
+            clearSignedInState("Signed out on this device. Guest mode is an explicit fallback.")
+            return
+        }
+
+        authBusy = true
+        authMessage = null
+        renderAuthState()
+        val operation = ++authOperation
+        authCall = authClient.signOut(endpoint, token) { result ->
+            runOnUiThread {
+                if (operation != authOperation || isFinishing) return@runOnUiThread
+                authCall = null
+                authBusy = false
+                if (result.isSuccess) {
+                    clearSignedInState("Signed out. Guest mode is an explicit fallback.")
+                } else {
+                    authMessage = "Could not sign out. Check the connection and try again."
+                    renderAuthState()
+                }
+            }
+        }
+    }
+
+    private fun persistSession(session: RoomAuthSession): Boolean = runCatching {
+        sessionStore.saveToken(session.token)
+    }.isSuccess
+
+    private fun clearSignedInState(message: String) {
+        // Leave before clearing the client token so an active room can send its
+        // normal leave message. The started capture service itself remains
+        // alive; only its room session is released.
+        roomSession?.leaveRoom()
+        roomSession?.clearBearerToken()
+        pendingCaptureId = null
+        pendingCaptureStart = false
+        pendingRoomSourceStart = false
+        projectionConsentInFlight = false
+        notificationPermissionRequestInFlight = false
+        notificationPermissionRequestedRoomId = null
+        authToken = null
+        authUser = null
+        authHasStoredToken = false
+        authBusy = false
+        authChecking = false
+        runCatching { sessionStore.clear() }
+        authMessage = message
+        renderRoomState(null)
+        renderTransportNow()
+        renderAuthState()
+    }
+
+    private fun authEndpoint(): String? {
+        if (!::endpointInput.isInitialized) return null
+        val endpoint = normalizeRoomEndpoint(endpointInput.text.toString().trim()) ?: return null
+        return RoomAuthEndpoint.httpBase(endpoint)
+    }
+
+    private fun authFailureMessage(result: Result<*>): String {
+        val error = result.exceptionOrNull()
+        if (error is RoomAuthException) {
+            return when (error.statusCode) {
+                401 -> "Invalid email or password."
+                429 -> "Too many attempts. Try again later."
+                else -> error.message?.takeIf { it.isNotBlank() } ?: "Account request could not be completed."
+            }
+        }
+        return "Account request could not be completed."
+    }
+
+    private fun renderAuthState() {
+        if (!::authStatusText.isInitialized) return
+        val user = authUser
+        val signedIn = user != null
+        val canSignOut = signedIn || authHasStoredToken
+        val status = when {
+            authChecking -> "Checking saved sign-in…"
+            authBusy -> if (signedIn) "Signing out…" else "Working…"
+            signedIn -> "Signed in as ${user?.email}."
+            !authMessage.isNullOrBlank() -> authMessage
+            else -> "Guest mode (explicit fallback). Sign in to use an account."
+        }
+        authStatusText.text = status
+        authStatusText.setTextColor(
+            getColor(
+                when {
+                    signedIn -> R.color.roomsound_success
+                    !authMessage.isNullOrBlank() -> R.color.roomsound_warning
+                    else -> R.color.roomsound_cream_soft
+                },
+            ),
+        )
+        authEmailInput.visibility = if (signedIn) View.GONE else View.VISIBLE
+        authPasswordInput.visibility = if (signedIn) View.GONE else View.VISIBLE
+        authSignInButton.visibility = if (signedIn) View.GONE else View.VISIBLE
+        authSignOutButton.visibility = if (canSignOut) View.VISIBLE else View.GONE
+        authEmailInput.isEnabled = !authBusy && !authChecking
+        authPasswordInput.isEnabled = !authBusy && !authChecking
+        authSignInButton.isEnabled = !authBusy && !authChecking
+        authSignOutButton.isEnabled = !authBusy && !authChecking
+        if (::endpointInput.isInitialized) {
+            // A bearer session belongs to the server origin. Require an
+            // explicit sign-out before the origin can be changed.
+            endpointInput.isEnabled = !signedIn && !authBusy && !authChecking
+        }
     }
 
     private fun handleRoomEvent(event: RoomSoundEvent) {
