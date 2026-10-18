@@ -5,6 +5,17 @@ import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
+import {
+  AuthConflictError,
+  AuthValidationError,
+  InvalidCredentialsError,
+  clearSessionCookie,
+  createAuthService,
+  sessionCookieSecure,
+  sessionTokenFromRequest,
+  serializeSessionCookie,
+} from './auth.mjs';
+import { createRepositoryFromEnv } from './persistence.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const rootPath = resolve(root);
@@ -22,6 +33,12 @@ const RATE_LIMIT_MAX = 120;
 const TURN_URLS = process.env.TURN_URLS ? process.env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean) : [];
 const TURN_USERNAME = process.env.TURN_USERNAME || '';
 const TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || '';
+const repository = await createRepositoryFromEnv(process.env);
+const auth = createAuthService({
+  repository,
+  sessionTtlMs: process.env.SESSION_TTL_MS,
+});
+const secureSessionCookie = sessionCookieSecure(process.env);
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -196,6 +213,114 @@ function broadcast(room, payload) {
 
 function sendError(ws, message) {
   send(ws, { type: 'error', message });
+}
+
+function sendJson(res, status, payload, headers = {}) {
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    ...headers,
+  });
+  res.end(JSON.stringify(payload));
+}
+
+class RequestBodyError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function readJsonBody(req) {
+  const chunks = [];
+  let totalBytes = 0;
+  for await (const chunk of req) {
+    totalBytes += Buffer.byteLength(chunk);
+    if (totalBytes > 16 * 1024) throw new RequestBodyError(413, 'Request body is too large.');
+    chunks.push(chunk);
+  }
+  if (!chunks.length) throw new AuthValidationError('A JSON object with email and password is required.');
+  let parsed;
+  try {
+    parsed = JSON.parse(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8'));
+  } catch {
+    throw new RequestBodyError(400, 'Request body must be valid JSON.');
+  }
+  return parsed;
+}
+
+function authErrorResponse(error) {
+  if (error instanceof AuthValidationError) {
+    return { status: 400, body: { error: error.message, code: error.code, ...(error.field ? { field: error.field } : {}) } };
+  }
+  if (error instanceof AuthConflictError) {
+    return { status: 409, body: { error: error.message, code: error.code } };
+  }
+  if (error instanceof InvalidCredentialsError) {
+    return { status: 401, body: { error: error.message, code: error.code } };
+  }
+  return null;
+}
+
+function sessionCookieMaxAgeSeconds(expiresAt) {
+  const remaining = Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000);
+  return Number.isFinite(remaining) ? Math.max(0, remaining) : Math.ceil(auth.sessionTtlMs / 1000);
+}
+
+async function handleAuthRequest(req, res, requestPath) {
+  const path = requestPath.replace(/\/+$/, '') || '/';
+  const isRegister = path === '/api/auth/register';
+  const isLogin = path === '/api/auth/login';
+  const isLogout = path === '/api/auth/logout';
+  const isCurrentUser = path === '/api/auth/me' || path === '/api/auth/current-user';
+  if (!isRegister && !isLogin && !isLogout && !isCurrentUser) return false;
+
+  const method = isCurrentUser ? 'GET' : 'POST';
+  if (req.method !== method) {
+    sendJson(res, 405, { error: 'Method not allowed.' }, { Allow: method });
+    return true;
+  }
+
+  try {
+    if (isCurrentUser) {
+      const user = await auth.currentUser(sessionTokenFromRequest(req));
+      if (!user) {
+        sendJson(res, 401, { error: 'Authentication required.', code: 'AUTHENTICATION_REQUIRED' }, { Vary: 'Cookie, Authorization' });
+      } else {
+        sendJson(res, 200, { user }, { Vary: 'Cookie, Authorization' });
+      }
+      return true;
+    }
+
+    if (isLogout) {
+      await auth.logout(sessionTokenFromRequest(req));
+      sendJson(res, 200, { ok: true }, { 'Set-Cookie': clearSessionCookie({ secure: secureSessionCookie }) });
+      return true;
+    }
+
+    const credentials = await readJsonBody(req);
+    const result = isRegister ? await auth.register(credentials) : await auth.login(credentials);
+    sendJson(res, isRegister ? 201 : 200, { user: result.user }, {
+      'Set-Cookie': serializeSessionCookie(result.token, {
+        maxAgeSeconds: sessionCookieMaxAgeSeconds(result.expiresAt),
+        secure: secureSessionCookie,
+      }),
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      sendJson(res, error.status, { error: error.message });
+      return true;
+    }
+    const response = authErrorResponse(error);
+    if (response) {
+      sendJson(res, response.status, response.body);
+      return true;
+    }
+    console.error('Authentication request failed:', error.message);
+    sendJson(res, 500, { error: 'Authentication service unavailable.', code: 'AUTHENTICATION_ERROR' });
+    return true;
+  }
 }
 
 function findRoomByCode(code) {
@@ -636,6 +761,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (await handleAuthRequest(req, res, requestPath)) return;
+
   if (requestPath === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ ok: true, service: 'roomsound', websocket: true, port, rooms: rooms.size }));
@@ -753,7 +880,10 @@ function shutdown(signal) {
     if (room.hostFailoverTimer) clearTimeout(room.hostFailoverTimer);
     if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
   }
-  wss.close(() => server.close(() => process.exit(0)));
+  wss.close(() => server.close(async () => {
+    await repository.close().catch((error) => console.error('Repository shutdown failed:', error.message));
+    process.exit(0);
+  }));
   setTimeout(() => process.exit(0), 5000).unref();
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));

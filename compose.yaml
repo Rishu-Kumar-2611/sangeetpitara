@@ -1,0 +1,76 @@
+name: roomsound
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.runtime
+    image: roomsound:local
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4173
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_SSL: ${DATABASE_SSL:-}
+      DATABASE_SSL_REJECT_UNAUTHORIZED: ${DATABASE_SSL_REJECT_UNAUTHORIZED:-}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      DATABASE_CONNECT_TIMEOUT_MS: ${DATABASE_CONNECT_TIMEOUT_MS:-10000}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-1}
+      SESSION_TTL_MS: ${SESSION_TTL_MS:-604800000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      TURN_URLS: ${TURN_URLS:-}
+      TURN_USERNAME: ${TURN_USERNAME:-}
+      TURN_CREDENTIAL: ${TURN_CREDENTIAL:-}
+      REDIS_URL: ${REDIS_URL:-}
+      BILLING_PROVIDER: ${BILLING_PROVIDER:-stripe}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-}
+    ports:
+      - "${ROOMSOUND_PORT:-4173}:4173"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "--input-type=module", "--eval", "const response = await fetch('http://127.0.0.1:' + (process.env.PORT || 4173) + '/health'); if (!response.ok) process.exit(1); const body = await response.json(); if (body.ok !== true) process.exit(1);"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+      redis:
+        condition: service_healthy
+        required: false
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: [postgres]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-roomsound}
+      POSTGRES_USER: ${POSTGRES_USER:-roomsound}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD before enabling the postgres profile}
+    volumes:
+      - roomsound-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    profiles: [redis]
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - roomsound-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  roomsound-postgres:
+  roomsound-redis:

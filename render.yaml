@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: roomsound
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile.runtime
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: roomsound-db
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "1"
+      - key: SESSION_COOKIE_SECURE
+        value: "1"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: TURN_URLS
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
+      - key: BILLING_PROVIDER
+        value: stripe
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+
+databases:
+  - name: roomsound-db
+    plan: basic-256mb
+    databaseName: roomsound
+    user: roomsound

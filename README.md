@@ -14,6 +14,7 @@ RoomSound is a small, runnable web prototype for the private audio-room idea. It
 - Host takeover and participant-to-host source resumption
 - Co-host promotion after host disconnect
 - Text chat, roster presence, local mute, and volume controls
+- Optional PostgreSQL-backed email/password accounts with server-issued HttpOnly sessions
 - No audio recording
 
 ## Run it
@@ -24,6 +25,30 @@ Requirements: Node.js 22.14.0 (the exact version is pinned in `.nvmrc`).
 npm ci
 npm start
 ```
+
+When `DATABASE_URL` is absent, the server uses an in-memory account/session
+repository. This keeps `npm test` and local development offline. For a persistent
+deployment, set `DATABASE_URL` in the deployment secret store; startup applies the
+SQL files in [`migrations/`](migrations/) before opening the HTTP listener. The
+explicit migration command is:
+
+```sh
+npm run migrate
+```
+
+The account API is same-origin and does not return session tokens in JSON. A
+successful registration or login sets the `roomsound_session` HttpOnly cookie:
+
+- `POST /api/auth/register` with `{ "email": "...", "password": "..." }` returns `201`.
+- `POST /api/auth/login` with the same shape returns `200` or a generic `401` for invalid credentials.
+- `GET /api/auth/me` (also `/api/auth/current-user`) returns the current public user or `401`.
+- `POST /api/auth/logout` invalidates the server-side session and clears the cookie.
+
+Passwords are validated before persistence and stored as salted, parameterized
+scrypt hashes. Set `SESSION_COOKIE_SECURE=1` when HTTPS terminates at the server
+or reverse proxy; it defaults on automatically for `NODE_ENV=production`. Keep
+`DATABASE_URL` and any database credentials out of `.env.example` and source
+them from the deployment secret manager.
 
 `npm start` remains the simple local start path. For a local `.env` file (including TURN settings), use the restart-safe commands below instead of starting a second copy on port `4173`.
 
@@ -96,15 +121,15 @@ npm run check
 ## Reproducible container run
 
 The Node runtime is pinned in `.nvmrc`, dependencies are pinned by `package-lock.json`,
-and the included Dockerfile runs the web server without requiring global packages:
+and the production-only `Dockerfile.runtime` runs the web server without requiring
+global packages or building the Android toolchain:
 
 ```powershell
-docker build -t roomsound:local .
+docker build -f Dockerfile.runtime -t roomsound:local .
 docker run --rm -p 4173:4173 --env-file .env roomsound:local
 ```
 
-The default Docker target builds and runs the Node/WebSocket service. The same
-Dockerfile also provides an isolated Android build target with JDK 17, Android
+The root `Dockerfile` also provides an isolated Android build target with JDK 17, Android
 SDK Platform 35, and pinned command-line/build-tools versions:
 
 ```powershell
@@ -115,6 +140,13 @@ Create `.env` from `.env.example` first. For a deployment, use HTTPS/WSS at a re
 proxy, set `ALLOWED_ORIGINS`, and provide TURN values (`TURN_URLS`, `TURN_USERNAME`,
 and `TURN_CREDENTIAL`) when clients may be behind restrictive NATs. The Android
 client fetches the same `/config` ICE settings before creating native peers.
+
+For provider-neutral production deployment, use the Android-free
+[`Dockerfile.runtime`](Dockerfile.runtime), [`compose.yaml`](compose.yaml), or
+[`render.yaml`](render.yaml). Health/readiness, migration, reverse-proxy, and
+secret-store procedures are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). The
+disabled-by-default billing and entitlement contract is documented in
+[`docs/BILLING.md`](docs/BILLING.md).
 
 ## Android release build
 

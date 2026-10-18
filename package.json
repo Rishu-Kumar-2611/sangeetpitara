@@ -9,11 +9,13 @@
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env server.mjs",
-    "check": "node --check server.mjs && node --check app.js && node --check notifications-sw.js",
+    "migrate": "node --env-file-if-exists=.env migrate.mjs",
+    "check": "node --check server.mjs && node --check auth.mjs && node --check persistence.mjs && node --check migrate.mjs && node --check billing.mjs && node --check app.js && node --check notifications-sw.js",
     "test": "node --test && node checks/origin.mjs && node checks/payload.mjs && node checks/rtc.mjs",
     "smoke": "node smoke.mjs"
   },
   "dependencies": {
+    "pg": "^8.16.3",
     "ws": "^8.18.0"
   }
 }
