@@ -61,6 +61,24 @@ function mapSession(row) {
   };
 }
 
+function mapRoom(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    status: row.status,
+    hostUserId: row.hostUserId ?? row.host_user_id ?? null,
+    cohostUserId: row.cohostUserId ?? row.cohost_user_id ?? null,
+    sourceStatus: row.sourceStatus ?? row.source_status ?? 'NONE',
+    sourceType: row.sourceType ?? row.source_type ?? null,
+    sourceEpoch: Number(row.sourceEpoch ?? row.source_epoch ?? 0),
+    createdAt: isoDate(row.createdAt ?? row.created_at),
+    updatedAt: isoDate(row.updatedAt ?? row.updated_at),
+    endedAt: (row.endedAt ?? row.ended_at) ? isoDate(row.endedAt ?? row.ended_at) : null,
+  };
+}
+
 function isUniqueViolation(error) {
   return error?.code === '23505';
 }
@@ -78,6 +96,7 @@ export class InMemoryRepository {
     this.usersById = new Map();
     this.userIdsByEmail = new Map();
     this.sessionsByTokenHash = new Map();
+    this.roomsById = new Map();
   }
 
   async migrate() {
@@ -163,6 +182,34 @@ export class InMemoryRepository {
       }
     }
     return deleted;
+  }
+
+  async createRoom(room) {
+    const record = clone(room);
+    if (!record?.id || !record.code) throw new RepositoryError('A room id and code are required.');
+    this.roomsById.set(record.id, record);
+    return clone(record);
+  }
+
+  async updateRoom(room) {
+    if (!room?.id || !this.roomsById.has(room.id)) return null;
+    this.roomsById.set(room.id, clone(room));
+    return clone(room);
+  }
+
+  async listActiveRooms() {
+    return [...this.roomsById.values()]
+      .filter((room) => room.status === 'ACTIVE')
+      .map(clone);
+  }
+
+  async endRoom(roomId, endedAt = this.clock()) {
+    const room = this.roomsById.get(roomId);
+    if (!room) return false;
+    room.status = 'ENDED';
+    room.endedAt = isoDate(endedAt);
+    room.updatedAt = isoDate(endedAt);
+    return true;
   }
 
   async close() {}
@@ -257,6 +304,79 @@ export class PostgresRepository {
   async deleteExpiredSessions() {
     const result = await this.pool.query('DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP');
     return result.rowCount;
+  }
+
+  async createRoom(room) {
+    const result = await this.pool.query(
+      `INSERT INTO rooms (
+         id, code, name, status, host_user_id, cohost_user_id,
+         source_status, source_type, source_epoch, created_at, updated_at, ended_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, $11::timestamptz, $12::timestamptz)
+       RETURNING id, code, name, status, host_user_id, cohost_user_id,
+         source_status, source_type, source_epoch, created_at, updated_at, ended_at`,
+      [
+        room.id,
+        room.code,
+        room.name,
+        room.status || 'ACTIVE',
+        room.hostUserId || null,
+        room.cohostUserId || null,
+        room.sourceStatus || 'NONE',
+        room.sourceType || null,
+        Number.isInteger(room.sourceEpoch) ? room.sourceEpoch : 0,
+        room.createdAt ? isoDate(room.createdAt) : null,
+        room.updatedAt ? isoDate(room.updatedAt) : null,
+        room.endedAt ? isoDate(room.endedAt) : null,
+      ],
+    );
+    return mapRoom(result.rows[0]);
+  }
+
+  async updateRoom(room) {
+    const result = await this.pool.query(
+      `UPDATE rooms
+       SET name = $2, status = $3, host_user_id = $4, cohost_user_id = $5,
+           source_status = $6, source_type = $7, source_epoch = $8,
+           updated_at = COALESCE($9::timestamptz, CURRENT_TIMESTAMP),
+           ended_at = $10::timestamptz
+       WHERE id = $1
+       RETURNING id, code, name, status, host_user_id, cohost_user_id,
+         source_status, source_type, source_epoch, created_at, updated_at, ended_at`,
+      [
+        room.id,
+        room.name,
+        room.status,
+        room.hostUserId || null,
+        room.cohostUserId || null,
+        room.sourceStatus || 'NONE',
+        room.sourceType || null,
+        Number.isInteger(room.sourceEpoch) ? room.sourceEpoch : 0,
+        room.updatedAt ? isoDate(room.updatedAt) : null,
+        room.endedAt ? isoDate(room.endedAt) : null,
+      ],
+    );
+    return mapRoom(result.rows[0]);
+  }
+
+  async listActiveRooms() {
+    const result = await this.pool.query(
+      `SELECT id, code, name, status, host_user_id, cohost_user_id,
+         source_status, source_type, source_epoch, created_at, updated_at, ended_at
+       FROM rooms
+       WHERE status = 'ACTIVE'
+       ORDER BY created_at ASC`,
+    );
+    return result.rows.map(mapRoom);
+  }
+
+  async endRoom(roomId, endedAt = new Date()) {
+    const result = await this.pool.query(
+      `UPDATE rooms
+       SET status = 'ENDED', ended_at = $2::timestamptz, updated_at = $2::timestamptz
+       WHERE id = $1`,
+      [roomId, isoDate(endedAt)],
+    );
+    return result.rowCount > 0;
   }
 
   async close() {

@@ -344,6 +344,69 @@ function findRoomByCode(code) {
   return [...rooms.values()].find((room) => room.code === String(code).toUpperCase());
 }
 
+function persistedRoomRecord(room) {
+  return {
+    id: room.id,
+    code: room.code,
+    name: room.name,
+    status: room.status,
+    hostUserId: room.hostUserId || null,
+    cohostUserId: room.cohostUserId || null,
+    sourceStatus: room.sourceStatus,
+    sourceType: room.activeSourceType,
+    sourceEpoch: room.sourceEpoch,
+    createdAt: new Date(room.createdAt).toISOString(),
+    updatedAt: new Date(room.updatedAt || room.createdAt).toISOString(),
+    endedAt: room.endedAt ? new Date(room.endedAt).toISOString() : null,
+  };
+}
+
+async function persistRoom(room) {
+  if (typeof repository.updateRoom !== 'function') return;
+  room.updatedAt = Date.now();
+  await repository.updateRoom(persistedRoomRecord(room));
+}
+
+async function createPersistedRoom(room) {
+  if (typeof repository.createRoom !== 'function') return;
+  room.updatedAt = Date.now();
+  await repository.createRoom(persistedRoomRecord(room));
+}
+
+async function restorePersistedRooms() {
+  if (typeof repository.listActiveRooms !== 'function') return;
+  const records = await repository.listActiveRooms();
+  for (const record of records) {
+    const createdAt = Date.parse(record.createdAt);
+    const room = {
+      id: record.id,
+      code: record.code,
+      name: record.name,
+      status: 'ACTIVE',
+      hostId: null,
+      hostUserId: record.hostUserId || null,
+      cohostId: null,
+      cohostUserId: record.cohostUserId || null,
+      activeSourceId: null,
+      activeSourceType: null,
+      sourceStatus: 'NONE',
+      sourceEpoch: Math.max(0, Number(record.sourceEpoch) || 0) + 1,
+      resumeSourceId: null,
+      resumeSourceType: null,
+      members: new Map(),
+      requests: new Map(),
+      messages: [],
+      createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+      updatedAt: Date.now(),
+      endedAt: null,
+      cleanupTimer: null,
+      hostFailoverTimer: null,
+    };
+    rooms.set(room.id, room);
+  }
+  if (records.length) logger.info('Restored durable room directory', { rooms: records.length });
+}
+
 function makeMember({ guestId, name, ws, role = 'PARTICIPANT' }) {
   return {
     id: randomId(),
@@ -372,7 +435,7 @@ function attachRoom(ws, room, member) {
   broadcastState(room);
 }
 
-function createRoom(ws, message) {
+async function createRoom(ws, message) {
   if (requireAuth && !ws.authenticatedUser) return sendError(ws, 'Sign in is required to create a room.');
   let code = randomCode();
   while (findRoomByCode(code)) code = randomCode();
@@ -383,7 +446,9 @@ function createRoom(ws, message) {
     name: safeText(message.name, 60) || 'Listening room',
     status: 'ACTIVE',
     hostId: null,
+    hostUserId: ws.authenticatedUser?.id || null,
     cohostId: null,
+    cohostUserId: null,
     activeSourceId: null,
     activeSourceType: null,
     sourceStatus: 'NONE',
@@ -394,13 +459,21 @@ function createRoom(ws, message) {
     requests: new Map(),
     messages: [],
     createdAt: Date.now(),
+    updatedAt: Date.now(),
+    endedAt: null,
     cleanupTimer: null,
     hostFailoverTimer: null,
   };
 
   const member = makeMember({ guestId: message.guestId, name: message.displayName, ws, role: 'HOST' });
   room.hostId = member.id;
-  rooms.set(room.id, room);
+  try {
+    await createPersistedRoom(room);
+    rooms.set(room.id, room);
+  } catch (error) {
+    logger.error('Room persistence failed during creation', { error });
+    return sendError(ws, 'The room could not be saved. Try again.');
+  }
   attachRoom(ws, room, member);
 }
 
@@ -414,6 +487,7 @@ function joinRoom(ws, message) {
     (ws.authenticatedUser && member.accountId === ws.authenticatedUser.id)
       || (!ws.authenticatedUser && member.guestId === guestIdClean)
   ));
+  if (existing?.ws) return sendError(ws, 'This account is already connected to the room.');
   if (existing && !existing.ws) {
     existing.ws = ws;
     existing.name = safeText(message.displayName, 40) || existing.name;
@@ -427,7 +501,15 @@ function joinRoom(ws, message) {
     return sendError(ws, 'This room is full. The limit is 10 people.');
   }
 
-  const member = makeMember({ guestId: message.guestId, name: message.displayName, ws });
+  const accountId = ws.authenticatedUser?.id || null;
+  const role = accountId && room.hostUserId === accountId
+    ? 'HOST'
+    : accountId && room.cohostUserId === accountId
+      ? 'CO_HOST'
+      : 'PARTICIPANT';
+  const member = makeMember({ guestId: message.guestId, name: message.displayName, ws, role });
+  if (role === 'HOST') room.hostId = member.id;
+  if (role === 'CO_HOST') room.cohostId = member.id;
   attachRoom(ws, room, member);
 }
 
@@ -449,6 +531,7 @@ function setSource(room, member, sourceType, status = 'STARTING') {
   room.activeSourceType = isSupportedSourceType(sourceType) ? sourceType : 'DEVICE_AUDIO';
   room.sourceStatus = status;
   room.sourceEpoch += 1;
+  void persistRoom(room).catch((error) => logger.error('Room persistence failed during source update', { error }));
 }
 
 function stopSource(room, reason, resume = true, notify = true) {
@@ -476,6 +559,7 @@ function stopSource(room, reason, resume = true, notify = true) {
   }
 
   addSystemMessage(room, reason || 'The active audio source stopped.');
+  void persistRoom(room).catch((error) => logger.error('Room persistence failed during source stop', { error }));
   if (notify) broadcastState(room);
 }
 
@@ -485,8 +569,10 @@ function scheduleCleanup(room) {
     const online = [...room.members.values()].some((member) => member.ws);
     if (!online && room.status === 'ACTIVE') {
       room.status = 'ENDED';
+      room.endedAt = Date.now();
       if (room.hostFailoverTimer) clearTimeout(room.hostFailoverTimer);
       rooms.delete(room.id);
+      void persistRoom(room).catch((error) => logger.error('Room persistence failed during cleanup', { error }));
     }
   }, 5 * 60 * 1000);
 }
@@ -497,11 +583,14 @@ function promoteCohost(room) {
   const previousHost = findMember(room, room.hostId);
   if (previousHost) previousHost.role = 'PARTICIPANT';
   room.hostId = cohost.id;
+  room.hostUserId = cohost.accountId || null;
   room.cohostId = null;
+  room.cohostUserId = null;
   cohost.role = 'HOST';
   addSystemMessage(room, `${cohost.name} is now the host.`);
   broadcast(room, { type: 'host-promoted', memberId: cohost.id });
   broadcastState(room);
+  void persistRoom(room).catch((error) => logger.error('Room persistence failed during host promotion', { error }));
   return true;
 }
 
@@ -706,8 +795,10 @@ function handleMessage(ws, message) {
       const previous = room.cohostId ? findMember(room, room.cohostId) : null;
       if (previous) previous.role = 'PARTICIPANT';
       room.cohostId = null;
+      room.cohostUserId = null;
       addSystemMessage(room, 'The co-host role was removed.');
       broadcastState(room);
+      void persistRoom(room).catch((error) => logger.error('Room persistence failed during co-host removal', { error }));
       return;
     }
     const target = findMember(room, message.memberId);
@@ -718,9 +809,11 @@ function handleMessage(ws, message) {
       if (previous) previous.role = 'PARTICIPANT';
     }
     room.cohostId = target.id;
+    room.cohostUserId = target.accountId || null;
     target.role = 'CO_HOST';
     addSystemMessage(room, `${target.name} is now co-host.`);
     broadcastState(room);
+    void persistRoom(room).catch((error) => logger.error('Room persistence failed during co-host assignment', { error }));
     return;
   }
 
@@ -734,20 +827,26 @@ function handleMessage(ws, message) {
       target.ws.close(4003, 'Removed from room');
     }
     room.members.delete(target.id);
-    if (room.cohostId === target.id) room.cohostId = null;
+    if (room.cohostId === target.id) {
+      room.cohostId = null;
+      room.cohostUserId = null;
+    }
     for (const [id, req] of room.requests) if (req.requesterId === target.id) room.requests.delete(id);
     broadcastState(room);
+    void persistRoom(room).catch((error) => logger.error('Room persistence failed during member removal', { error }));
     return;
   }
 
   if (type === 'end-room') {
     if (member.id !== room.hostId) return sendError(ws, 'Only the host can end the room.');
     room.status = 'ENDED';
+    room.endedAt = Date.now();
     broadcast(room, { type: 'room-ended', message: 'The host ended the room.' });
     for (const participant of room.members.values()) participant.ws?.close(1000, 'Room ended');
     if (room.hostFailoverTimer) clearTimeout(room.hostFailoverTimer);
     if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
     rooms.delete(room.id);
+    void persistRoom(room).catch((error) => logger.error('Room persistence failed during room end', { error }));
     return;
   }
 
@@ -961,15 +1060,22 @@ function shutdown(signal) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-server.listen(port, host, () => {
-  health.setReady(true);
-  audit.record({ type: 'server.ready', severity: 'info', metadata: { repository: repository.kind, requireAuth } });
-  logger.info('RoomSound is ready', {
-    host,
-    port,
-    repository: repository.kind,
-    requireAuth,
-    turnConfigured: TURN_URLS.length > 0,
+try {
+  await restorePersistedRooms();
+  server.listen(port, host, () => {
+    health.setReady(true);
+    audit.record({ type: 'server.ready', severity: 'info', metadata: { repository: repository.kind, requireAuth } });
+    logger.info('RoomSound is ready', {
+      host,
+      port,
+      repository: repository.kind,
+      requireAuth,
+      turnConfigured: TURN_URLS.length > 0,
+    });
+    for (const address of lanAddresses()) logger.info('RoomSound LAN address', { address, port });
   });
-  for (const address of lanAddresses()) logger.info('RoomSound LAN address', { address, port });
-});
+} catch (error) {
+  logger.error('Room directory restore failed', { error });
+  await repository.close().catch(() => {});
+  process.exitCode = 1;
+}
