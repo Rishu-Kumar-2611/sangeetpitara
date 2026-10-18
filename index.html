@@ -43,8 +43,23 @@
             <input id="room-code" class="text-input code-input" maxlength="6" placeholder="ABC123" autocomplete="one-time-code" />
             <button id="join-room" class="primary-button full-button" type="button"><span>→</span> Join room</button>
           </div>
-          <p class="entry-footnote">No signup. Your guest identity is remembered on this device.</p>
-          <div id="entry-error" class="inline-error hidden"></div>
+           <p class="entry-footnote">No signup. Your guest identity is remembered on this device.</p>
+           <div class="account-panel" id="account-panel">
+             <div class="account-heading"><span class="section-label">OPTIONAL ACCOUNT</span><span id="account-state">Guest mode</span></div>
+             <div id="account-form">
+               <label class="field-label" for="account-email">Email</label>
+               <input id="account-email" class="text-input" type="email" autocomplete="email" placeholder="you@example.com" />
+               <label class="field-label account-password-label" for="account-password">Password</label>
+               <input id="account-password" class="text-input" type="password" autocomplete="current-password" placeholder="12+ characters" />
+               <div class="account-actions">
+                 <button id="account-login" class="secondary-button" type="button">Sign in</button>
+                 <button id="account-register" class="secondary-button" type="button">Create account</button>
+               </div>
+             </div>
+             <div id="account-signed-in" class="hidden account-signed-in"><span id="account-email-label"></span><button id="account-logout" class="ghost-button" type="button">Sign out</button></div>
+             <div id="account-error" class="inline-error hidden"></div>
+           </div>
+           <div id="entry-error" class="inline-error hidden"></div>
         </div>
       </section>
 

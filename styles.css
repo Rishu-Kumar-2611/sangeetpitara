@@ -726,6 +726,16 @@ input:focus-visible {
 
 .modal-close { width: 100%; margin-top: 15px; padding: 9px; border: 0; border-radius: 8px; background: transparent; color: #806447; font-size: 11px; font-weight: 800; }
 .modal-close:hover { color: #4b301e; background: rgba(121, 85, 47, 0.1); }
+.account-panel { margin-top: 22px; padding-top: 17px; border-top: 1px solid rgba(121, 85, 47, 0.2); }
+.account-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
+.account-heading .section-label { color: var(--brass-dark); }
+.account-heading > span:last-child { color: #806447; font-size: 10px; font-weight: 800; }
+.account-password-label { margin-top: 12px; }
+.account-actions { display: grid; grid-template-columns: 1fr 1.35fr; gap: 8px; margin-top: 12px; }
+.account-actions .secondary-button { min-height: 38px; padding: 0 9px; font-size: 11px; }
+.account-signed-in { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #604733; font-size: 11px; }
+.account-signed-in .ghost-button { min-height: 30px; }
+.account-panel .inline-error { margin-top: 10px; }
 .settings-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 18px 0 10px; }
 .settings-summary > div { padding: 11px; border: 1px solid rgba(121, 85, 47, 0.25); border-radius: 9px; background: rgba(255, 249, 233, 0.55); }
 .settings-summary span { display: block; margin-bottom: 5px; color: #886a46; font-size: 9px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }

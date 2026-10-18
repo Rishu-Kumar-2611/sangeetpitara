@@ -15,7 +15,11 @@ import {
   sessionTokenFromRequest,
   serializeSessionCookie,
 } from './auth.mjs';
+import { createAuditRecorder } from './audit.mjs';
+import { createBillingService } from './billing.mjs';
+import { createStructuredLogger, createHealthState, createMetricsRegistry } from './observability.mjs';
 import { createRepositoryFromEnv } from './persistence.mjs';
+import { readJsonBody as readSecureJsonBody, RequestBodyError as SecureRequestBodyError } from './security.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const rootPath = resolve(root);
@@ -39,6 +43,29 @@ const auth = createAuthService({
   sessionTtlMs: process.env.SESSION_TTL_MS,
 });
 const secureSessionCookie = sessionCookieSecure(process.env);
+const requireAuth = process.env.REQUIRE_AUTH === '1' || process.env.REQUIRE_AUTH === 'true';
+const billing = createBillingService({ env: process.env });
+const logger = createStructuredLogger({
+  service: 'roomsound',
+  level: process.env.LOG_LEVEL || 'info',
+  context: { repository: repository.kind },
+});
+const metrics = createMetricsRegistry({ prefix: 'roomsound' });
+const httpRequests = metrics.registerCounter('http_requests', 'HTTP requests handled by route and status.');
+const websocketConnections = metrics.registerGauge('websocket_connections', 'Currently open WebSocket connections.');
+const activeRooms = metrics.registerGauge('active_rooms', 'Currently active in-memory rooms.');
+const audit = createAuditRecorder({
+  sink: (event) => logger.info('audit event', event),
+  onSinkError: (error) => logger.warn('audit sink failed', { error }),
+});
+const health = createHealthState({
+  service: 'roomsound',
+  version: process.env.APP_VERSION || '0.1.0',
+  ready: false,
+  checks: {
+    repository: async () => ({ ok: true, kind: repository.kind }),
+  },
+});
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -224,29 +251,11 @@ function sendJson(res, status, payload, headers = {}) {
   res.end(JSON.stringify(payload));
 }
 
-class RequestBodyError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
-
 async function readJsonBody(req) {
-  const chunks = [];
-  let totalBytes = 0;
-  for await (const chunk of req) {
-    totalBytes += Buffer.byteLength(chunk);
-    if (totalBytes > 16 * 1024) throw new RequestBodyError(413, 'Request body is too large.');
-    chunks.push(chunk);
-  }
-  if (!chunks.length) throw new AuthValidationError('A JSON object with email and password is required.');
-  let parsed;
-  try {
-    parsed = JSON.parse(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8'));
-  } catch {
-    throw new RequestBodyError(400, 'Request body must be valid JSON.');
-  }
-  return parsed;
+  return readSecureJsonBody(req, {
+    maxBytes: 16 * 1024,
+    requireJsonContentType: true,
+  });
 }
 
 function authErrorResponse(error) {
@@ -294,12 +303,19 @@ async function handleAuthRequest(req, res, requestPath) {
 
     if (isLogout) {
       await auth.logout(sessionTokenFromRequest(req));
+      audit.record({ type: 'auth.logout', severity: 'info' });
       sendJson(res, 200, { ok: true }, { 'Set-Cookie': clearSessionCookie({ secure: secureSessionCookie }) });
       return true;
     }
 
     const credentials = await readJsonBody(req);
     const result = isRegister ? await auth.register(credentials) : await auth.login(credentials);
+    audit.record({
+      type: isRegister ? 'auth.login.succeeded' : 'auth.login.succeeded',
+      severity: 'info',
+      actorId: result.user.id,
+      metadata: { operation: isRegister ? 'register' : 'login' },
+    });
     sendJson(res, isRegister ? 201 : 200, { user: result.user }, {
       'Set-Cookie': serializeSessionCookie(result.token, {
         maxAgeSeconds: sessionCookieMaxAgeSeconds(result.expiresAt),
@@ -308,16 +324,17 @@ async function handleAuthRequest(req, res, requestPath) {
     });
     return true;
   } catch (error) {
-    if (error instanceof RequestBodyError) {
-      sendJson(res, error.status, { error: error.message });
+    if (error instanceof SecureRequestBodyError) {
+      sendJson(res, error.status, { error: error.message, code: error.code });
       return true;
     }
     const response = authErrorResponse(error);
     if (response) {
+      if (error instanceof InvalidCredentialsError) audit.record({ type: 'auth.login.failed', severity: 'warn' });
       sendJson(res, response.status, response.body);
       return true;
     }
-    console.error('Authentication request failed:', error.message);
+    logger.error('Authentication request failed', { error });
     sendJson(res, 500, { error: 'Authentication service unavailable.', code: 'AUTHENTICATION_ERROR' });
     return true;
   }
@@ -331,6 +348,7 @@ function makeMember({ guestId, name, ws, role = 'PARTICIPANT' }) {
   return {
     id: randomId(),
     guestId: safeText(guestId, 80) || randomId(),
+    accountId: ws?.authenticatedUser?.id || null,
     name: safeText(name, 40) || 'Guest',
     role,
     ws,
@@ -355,6 +373,7 @@ function attachRoom(ws, room, member) {
 }
 
 function createRoom(ws, message) {
+  if (requireAuth && !ws.authenticatedUser) return sendError(ws, 'Sign in is required to create a room.');
   let code = randomCode();
   while (findRoomByCode(code)) code = randomCode();
 
@@ -386,11 +405,15 @@ function createRoom(ws, message) {
 }
 
 function joinRoom(ws, message) {
+  if (requireAuth && !ws.authenticatedUser) return sendError(ws, 'Sign in is required to join a room.');
   const room = findRoomByCode(message.code);
   if (!room || room.status !== 'ACTIVE') return sendError(ws, 'That room is unavailable or has ended.');
 
   const guestIdClean = safeText(message.guestId, 80);
-  const existing = [...room.members.values()].find((member) => member.guestId === guestIdClean);
+  const existing = [...room.members.values()].find((member) => (
+    (ws.authenticatedUser && member.accountId === ws.authenticatedUser.id)
+      || (!ws.authenticatedUser && member.guestId === guestIdClean)
+  ));
   if (existing && !existing.ws) {
     existing.ws = ws;
     existing.name = safeText(message.displayName, 40) || existing.name;
@@ -764,8 +787,34 @@ const server = http.createServer(async (req, res) => {
   if (await handleAuthRequest(req, res, requestPath)) return;
 
   if (requestPath === '/health') {
+    activeRooms.set(rooms.size);
+    httpRequests.inc(1, { route: 'health', status: 200 });
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify({ ok: true, service: 'roomsound', websocket: true, port, rooms: rooms.size }));
+    res.end(JSON.stringify({ ok: true, ...health.getHealth(), websocket: true, port, rooms: rooms.size }));
+    return;
+  }
+  if (requestPath === '/ready') {
+    const response = await health.readinessResponse();
+    httpRequests.inc(1, { route: 'ready', status: response.statusCode });
+    res.writeHead(response.statusCode, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ ok: response.statusCode === 200, ...response.body }));
+    return;
+  }
+  if (requestPath === '/metrics') {
+    httpRequests.inc(1, { route: 'metrics', status: 200 });
+    res.writeHead(200, { 'Content-Type': metrics.contentType, 'Cache-Control': 'no-store' });
+    res.end(metrics.renderPrometheus());
+    return;
+  }
+  if (requestPath === '/api/billing/status') {
+    const user = await auth.currentUser(sessionTokenFromRequest(req));
+    if (!user) {
+      httpRequests.inc(1, { route: 'billing_status', status: 401 });
+      sendJson(res, 401, { error: 'Authentication required.', code: 'AUTHENTICATION_REQUIRED' });
+      return;
+    }
+    httpRequests.inc(1, { route: 'billing_status', status: 200 });
+    sendJson(res, 200, { userId: user.id, billing: billing.status() }, { Vary: 'Cookie, Authorization' });
     return;
   }
   if (requestPath === '/config') {
@@ -775,6 +824,7 @@ const server = http.createServer(async (req, res) => {
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...(turn ? [turn] : [])],
       maxMembers: 10,
       requestTtlMs,
+      authRequired: requireAuth,
     }));
     return;
   }
@@ -851,6 +901,21 @@ const wss = new WebSocketServer({
 });
 wss.on('connection', (ws, req) => {
   ws._ip = getClientIp(req);
+  ws.authenticatedUser = null;
+  ws.authReady = false;
+  ws.pendingMessages = [];
+  websocketConnections.set(wss.clients.size);
+  void auth.currentUser(sessionTokenFromRequest(req)).then((user) => {
+    ws.authenticatedUser = user;
+    ws.authReady = true;
+    const pending = ws.pendingMessages.splice(0);
+    for (const data of pending) handleMessage(ws, data);
+  }).catch((error) => {
+    logger.warn('WebSocket authentication lookup failed', { error });
+    ws.authReady = true;
+    const pending = ws.pendingMessages.splice(0);
+    for (const data of pending) handleMessage(ws, data);
+  });
   ws.on('message', (raw) => {
     if (Buffer.byteLength(raw) > MAX_PAYLOAD_BYTES) return sendError(ws, 'Message too large.');
     let data;
@@ -868,14 +933,21 @@ wss.on('connection', (ws, req) => {
       ws._msgCount = 1;
     }
     if (ws._msgCount > 30) return sendError(ws, 'You are sending messages too quickly.');
+    if (!ws.authReady) {
+      if (ws.pendingMessages.length >= 8) return sendError(ws, 'Authentication is still loading; try again.');
+      ws.pendingMessages.push(data);
+      return;
+    }
     handleMessage(ws, data);
   });
-  ws.on('close', () => handleDisconnect(ws));
-  ws.on('error', () => handleDisconnect(ws));
+  ws.on('close', () => { websocketConnections.set(Math.max(0, wss.clients.size)); handleDisconnect(ws); });
+  ws.on('error', () => { websocketConnections.set(Math.max(0, wss.clients.size)); handleDisconnect(ws); });
 });
 
 function shutdown(signal) {
-  console.log(`\nReceived ${signal}, closing ${rooms.size} rooms...`);
+  health.setReady(false);
+  audit.record({ type: 'server.shutdown', severity: 'info', metadata: { signal, rooms: rooms.size } });
+  logger.info('Shutting down RoomSound', { signal, rooms: rooms.size });
   for (const room of rooms.values()) {
     if (room.hostFailoverTimer) clearTimeout(room.hostFailoverTimer);
     if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
@@ -890,9 +962,14 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 server.listen(port, host, () => {
-  console.log(`RoomSound is running at http://localhost:${port}`);
-  for (const address of lanAddresses()) console.log(`RoomSound LAN address: http://${address}:${port}`);
-  console.log(`RoomSound health check: http://localhost:${port}/health`);
-  if (TURN_URLS.length) console.log(`TURN configured: ${TURN_URLS.join(', ')}`);
-  else console.log('TURN not configured — set TURN_URLS="turn:turn.example.com:3478" for NAT traversal.');
+  health.setReady(true);
+  audit.record({ type: 'server.ready', severity: 'info', metadata: { repository: repository.kind, requireAuth } });
+  logger.info('RoomSound is ready', {
+    host,
+    port,
+    repository: repository.kind,
+    requireAuth,
+    turnConfigured: TURN_URLS.length > 0,
+  });
+  for (const address of lanAddresses()) logger.info('RoomSound LAN address', { address, port });
 });

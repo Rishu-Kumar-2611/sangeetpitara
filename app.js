@@ -53,6 +53,8 @@ const state = {
   pendingNotificationActions: [],
   sentNotificationActions: new Set(),
   notificationUnavailableNotified: false,
+  user: null,
+  authRequired: false,
 };
 
 let rtcConfig = {
@@ -68,12 +70,77 @@ async function loadIceConfig() {
     if (!r.ok) throw new Error('config fetch failed');
     const j = await r.json();
     if (Array.isArray(j.iceServers) && j.iceServers.length) rtcConfig = { iceServers: j.iceServers };
+    state.authRequired = j.authRequired === true;
     iceConfigLoaded = true;
+    renderAuthState();
   } catch {
     // keep default STUN
   }
 }
 loadIceConfig();
+
+async function loadAuthState() {
+  try {
+    const response = await fetch('/api/auth/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    if (response.ok) {
+      const payload = await response.json();
+      state.user = payload.user || null;
+    }
+  } catch {
+    // Guest mode remains available when the optional account service is offline.
+  }
+  renderAuthState();
+}
+
+function setAccountError(message = '') {
+  const element = $('#account-error');
+  if (!element) return;
+  element.textContent = message;
+  element.classList.toggle('hidden', !message);
+}
+
+function renderAuthState() {
+  const form = $('#account-form');
+  const signedIn = $('#account-signed-in');
+  const stateLabel = $('#account-state');
+  const emailLabel = $('#account-email-label');
+  if (!form || !signedIn || !stateLabel || !emailLabel) return;
+  const user = state.user;
+  form.classList.toggle('hidden', Boolean(user));
+  signedIn.classList.toggle('hidden', !user);
+  stateLabel.textContent = user ? (state.authRequired ? 'Required' : 'Signed in') : (state.authRequired ? 'Required' : 'Guest mode');
+  emailLabel.textContent = user?.email || '';
+  setAccountError('');
+}
+
+async function submitAuth(path) {
+  const email = $('#account-email')?.value.trim() || '';
+  const password = $('#account-password')?.value || '';
+  setAccountError('');
+  try {
+    const response = await fetch(path, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Account request failed.');
+    state.user = payload.user || null;
+    $('#account-password').value = '';
+    renderAuthState();
+    toast(state.user ? `Signed in as ${state.user.email}.` : 'Account ready.', 'success');
+  } catch (error) {
+    setAccountError(error.message || 'Account request failed.');
+  }
+}
+
+async function signOut() {
+  try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch {}
+  state.user = null;
+  renderAuthState();
+  toast('Signed out.', 'success');
+}
 
 function hasTurnServer(config) {
   return config?.iceServers?.some((server) => {
@@ -406,6 +473,11 @@ function scheduleReconnect() {
 }
 
 function connectAnd(action, isReconnect = false) {
+  if (state.authRequired && !state.user) {
+    setAccountError('Sign in before entering a room.');
+    toast('Sign in is required for this deployment.', 'error');
+    return;
+  }
   const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const isDeviceLocalhost = ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
   if (!isReconnect && isMobileDevice && isDeviceLocalhost) {
@@ -1518,6 +1590,9 @@ function wireEvents() {
     if (!button) return;
     send({ type: button.dataset.requestAction === 'approve' ? 'approve-request' : 'reject-request', requestId: button.dataset.requestId });
   });
+  $('#account-login')?.addEventListener('click', () => submitAuth('/api/auth/login'));
+  $('#account-register')?.addEventListener('click', () => submitAuth('/api/auth/register'));
+  $('#account-logout')?.addEventListener('click', signOut);
 }
 
 wireEvents();
@@ -1526,6 +1601,7 @@ if (notificationSupportAvailable()) {
   navigator.serviceWorker.addEventListener('controllerchange', postNotificationReady);
 }
 void registerNotificationServiceWorker();
+void loadAuthState();
 
 const locationParams = new URLSearchParams(location.search);
 const initialNotificationAction = normalizeNotificationAction({
