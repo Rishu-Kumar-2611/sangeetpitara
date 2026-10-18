@@ -171,6 +171,10 @@ export class InMemoryRepository {
     return { applied: [], kind: this.kind };
   }
 
+  async healthCheck() {
+    return true;
+  }
+
   async createUser({ email, passwordHash, createdAt } = {}) {
     const normalizedEmail = normalizeEmail(email);
     if (this.userIdsByEmail.has(normalizedEmail)) throw new DuplicateEmailError();
@@ -363,6 +367,11 @@ export class PostgresRepository {
 
   async migrate() {
     return runMigrations(this.pool, { directory: this.migrationsDirectory });
+  }
+
+  async healthCheck() {
+    await this.pool.query('SELECT 1');
+    return true;
   }
 
   async createUser({ email, passwordHash, id = randomUUID(), createdAt } = {}) {

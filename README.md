@@ -15,6 +15,8 @@ RoomSound is a small, runnable web prototype for the private audio-room idea. It
 - Co-host promotion after host disconnect
 - Text chat, roster presence, local mute, and volume controls
 - Optional PostgreSQL-backed email/password accounts with server-issued HttpOnly sessions
+- Durable room directory, moderation records, billing events, and subscription entitlements when PostgreSQL is enabled
+- Production health (`/health`, `/ready`), bounded Prometheus metrics, structured redacted logs, and abuse-report APIs
 - No audio recording
 
 ## Run it
@@ -43,6 +45,11 @@ successful registration or login sets the `roomsound_session` HttpOnly cookie:
 - `POST /api/auth/login` with the same shape returns `200` or a generic `401` for invalid credentials.
 - `GET /api/auth/me` (also `/api/auth/current-user`) returns the current public user or `401`.
 - `POST /api/auth/logout` invalidates the server-side session and clears the cookie.
+
+For public SaaS mode, set `REQUIRE_AUTH=1`. The browser account panel signs in
+before room entry and the WebSocket uses the same-origin HttpOnly session cookie.
+Guest mode remains available for local development and the current Android build
+until native Android account/token UX is added.
 
 Passwords are validated before persistence and stored as salted, parameterized
 scrypt hashes. Set `SESSION_COOKIE_SECURE=1` when HTTPS terminates at the server
@@ -147,6 +154,9 @@ For provider-neutral production deployment, use the Android-free
 secret-store procedures are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). The
 disabled-by-default billing and entitlement contract is documented in
 [`docs/BILLING.md`](docs/BILLING.md).
+Legal and abuse-launch templates are in [`docs/PRIVACY.md`](docs/PRIVACY.md),
+[`docs/TERMS.md`](docs/TERMS.md), and [`docs/ABUSE.md`](docs/ABUSE.md); replace
+their placeholders and obtain legal review before launch.
 
 ## Android release build
 
@@ -182,7 +192,7 @@ The signed APK is written to
 directory below `ROOMSOUND_BUILD_DIR` when that option is set. The keystore
 file pattern is ignored by git; do not commit signing material.
 
-## Server hardening (this patch)
+## Server hardening and production foundations
 - `GET /config` returns `iceServers` (STUN + TURN when env set). Web + Android should fetch it.
 - `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL` env wire TURN for symmetric NAT/CGNAT.
 - `ALLOWED_ORIGINS` optional allowlist for WebSocket handshake.
@@ -190,12 +200,19 @@ file pattern is ignored by git; do not commit signing material.
 - Message/history bounded: `messages >200 splice 100`; requests auto-prune after cancel/expire/approve.
 - CSP + `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` etc. Also `<meta http-equiv CSP>` in `index.html`.
 - `/health` + `SIGTERM`/`SIGINT` graceful shutdown; timed `host → cohost` promotion at 30s.
+- `/ready` blocks readiness until startup/migrations/room-directory restore finish; `/metrics` emits bounded Prometheus output.
+- Authenticated report/block/ban APIs and Stripe checkout/portal/webhook seams fail closed when unconfigured.
 
 Client hardening: 1 → 30s exponential backoff reconnect (mirrors `RoomSoundWebSocketClient`), `captureNonce` race fix, `clampVolume`, listening `audioElement` is visually hidden but accessible (`aria-label` on control panel), `connectionState=failed` toast + retry, listener-leave peer cleanup, `fetch /config` before RTC.
 
-## Prototype boundary
+## Current scale boundary
 
-The prototype still uses an in-memory `rooms` map and WebRTC mesh (no SFU). Client `guestId` remains trusted until a JWT/session layer is added. For internet-scale, add TURN + SFU, persistent storage for rooms, and HttpOnly signed session for `guestId`.
+Live WebSocket membership and WebRTC media remain single-process and mesh-based;
+durable PostgreSQL metadata survives restarts but live sockets and audio do not.
+The production target is 100 total concurrent users and at most 10 users per
+room. Larger rooms or multiple live instances require shared room state and an
+SFU such as LiveKit, mediasoup, or Janus. Do not promise 100 listeners in one
+mesh room.
 
 Android-wide application audio also remains platform-dependent. The production Android client should use `MediaProjection` and Android playback-capture APIs; a web page cannot guarantee capture of Spotify, YouTube, or other native Android applications.
 

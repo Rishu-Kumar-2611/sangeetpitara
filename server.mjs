@@ -72,7 +72,7 @@ const health = createHealthState({
   version: process.env.APP_VERSION || '0.1.0',
   ready: false,
   checks: {
-    repository: async () => ({ ok: true, kind: repository.kind }),
+    repository: async () => ({ ok: await repository.healthCheck(), kind: repository.kind }),
   },
 });
 
@@ -307,7 +307,9 @@ async function handleProductApiRequest(req, res, requestPath) {
   const blockMatch = path.match(/^\/api\/moderation\/blocks\/([^/]+)$/);
   const isBans = path === '/api/moderation/bans';
   const isBillingWebhook = path === '/api/billing/webhook';
-  if (!isReports && !isBlocks && !blockMatch && !isBans && !isBillingWebhook) return false;
+  const isCheckout = path === '/api/billing/checkout';
+  const isPortal = path === '/api/billing/portal';
+  if (!isReports && !isBlocks && !blockMatch && !isBans && !isBillingWebhook && !isCheckout && !isPortal) return false;
 
   try {
     if (isBillingWebhook) {
@@ -359,6 +361,30 @@ async function handleProductApiRequest(req, res, requestPath) {
     const user = await requestUser(req);
     if (!user) {
       sendJson(res, 401, { error: 'Authentication required.', code: 'AUTHENTICATION_REQUIRED' });
+      return true;
+    }
+
+    if (isCheckout) {
+      if (req.method !== 'POST') { sendJson(res, 405, { error: 'Method not allowed.' }, { Allow: 'POST' }); return true; }
+      const body = await readJsonBody(req);
+      const result = await billing.createCheckoutSession({
+        userId: user.id,
+        email: user.email,
+        successUrl: body.successUrl,
+        cancelUrl: body.cancelUrl,
+      });
+      if (!result.ok) { sendJson(res, result.status === 400 ? 400 : 503, { error: result.error || 'Checkout is not configured.', code: result.code }); return true; }
+      sendJson(res, 200, { url: result.payload.url, sessionId: result.payload.id });
+      return true;
+    }
+
+    if (isPortal) {
+      if (req.method !== 'POST') { sendJson(res, 405, { error: 'Method not allowed.' }, { Allow: 'POST' }); return true; }
+      const entitlement = await repository.getEntitlement?.(user.id);
+      const body = await readJsonBody(req);
+      const result = await billing.createPortalSession({ customerId: entitlement?.customerId, returnUrl: body.returnUrl });
+      if (!result.ok) { sendJson(res, result.status === 400 ? 400 : 503, { error: result.error || 'Billing portal is not configured.', code: result.code }); return true; }
+      sendJson(res, 200, { url: result.payload.url });
       return true;
     }
 

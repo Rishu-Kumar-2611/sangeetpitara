@@ -11,7 +11,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy only the Node/WebSocket runtime and browser assets. This keeps Android
 # sources, Gradle caches, logs, and local artifacts out of the production image.
-COPY --chown=node:node index.html styles.css app.js capture-tracks.js guest-id.js notifications-sw.js ./
+COPY --chown=node:node index.html privacy.html terms.html styles.css app.js capture-tracks.js guest-id.js notifications-sw.js ./
 COPY --chown=node:node server.mjs auth.mjs persistence.mjs migrate.mjs security.mjs moderation.mjs observability.mjs audit.mjs billing.mjs ./
 COPY --chown=node:node migrations ./migrations
 

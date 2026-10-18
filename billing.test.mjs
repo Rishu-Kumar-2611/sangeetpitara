@@ -106,3 +106,45 @@ test('enabled billing service verifies signatures and delegates entitlement chec
   assert.deepEqual(service.verifyWebhook(payload, 't=1,v1=bad'), { ok: false, code: 'INVALID_SIGNATURE' });
   assert.equal(service.canUse({ subjectId: 'user-1', plan: 'pro', status: 'active' }, 'pro'), true);
 });
+
+test('billing service creates checkout and portal sessions without exposing the Stripe secret', async () => {
+  const calls = [];
+  const service = createBillingService({
+    env: {
+      BILLING_PROVIDER: 'stripe',
+      STRIPE_SECRET_KEY: apiSecret,
+      STRIPE_WEBHOOK_SECRET: webhookSecret,
+      STRIPE_PRICE_ID: 'price_test',
+      STRIPE_CHECKOUT_SUCCESS_URL: 'https://roomsound.test/success',
+      STRIPE_CHECKOUT_CANCEL_URL: 'https://roomsound.test/cancel',
+      STRIPE_PORTAL_RETURN_URL: 'https://roomsound.test/',
+      fetch: async (url, options) => {
+        calls.push({ url, options });
+        return new Response(JSON.stringify({ id: 'cs_test', url: 'https://checkout.stripe.test/session' }), { status: 200 });
+      },
+    },
+  });
+
+  const checkout = await service.createCheckoutSession({ userId: 'user-1', email: 'owner@example.com' });
+  assert.equal(checkout.ok, true);
+  assert.equal(checkout.payload.url, 'https://checkout.stripe.test/session');
+  assert.match(String(calls[0].options.headers.Authorization), /^Bearer /);
+  assert.equal(String(calls[0].options.body).includes(apiSecret), false);
+  const checkoutFields = new URLSearchParams(calls[0].options.body);
+  assert.equal(checkoutFields.get('line_items[0][price]'), 'price_test');
+  assert.equal(checkoutFields.get('subscription_data[metadata][userId]'), 'user-1');
+
+  const portalService = createBillingService({
+    env: {
+      BILLING_PROVIDER: 'stripe',
+      STRIPE_SECRET_KEY: apiSecret,
+      STRIPE_WEBHOOK_SECRET: webhookSecret,
+      STRIPE_PRICE_ID: 'price_test',
+      STRIPE_PORTAL_RETURN_URL: 'https://roomsound.test/',
+      fetch: async () => new Response(JSON.stringify({ url: 'https://billing.stripe.test/portal' }), { status: 200 }),
+    },
+  });
+  const portal = await portalService.createPortalSession({ customerId: 'cus_test' });
+  assert.equal(portal.ok, true);
+  assert.equal(portal.payload.url, 'https://billing.stripe.test/portal');
+});

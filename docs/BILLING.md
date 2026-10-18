@@ -1,10 +1,10 @@
 # Billing and entitlement seam
 
 RoomSound includes a dependency-light, provider-neutral contract in
-[`billing.mjs`](../billing.mjs). It does not call Stripe, create checkout
-sessions, or expose an HTTP webhook route. The seam is ready for a future
-adapter to map provider events into a stable entitlement record without adding
-an SDK to the media server.
+[`billing.mjs`](../billing.mjs). It can create Stripe Checkout and Customer
+Portal sessions through the Stripe REST API, verify raw webhook signatures,
+deduplicate provider events, and persist normalized entitlements without adding
+a Stripe SDK to the media server.
 
 ## Disabled-by-default contract
 
@@ -16,8 +16,8 @@ STRIPE_SECRET_KEY=<injected at runtime>
 STRIPE_WEBHOOK_SECRET=<injected at runtime>
 ```
 
-`STRIPE_PRICE_ID` is optional metadata for a future checkout adapter. Missing
-secrets make `status().enabled` false, cause `verifyWebhook()` to return
+`STRIPE_PRICE_ID` and the checkout/portal return URLs are required to activate
+the corresponding actions. Missing secrets make `status().enabled` false, cause `verifyWebhook()` to return
 `{ ok: false, code: "BILLING_DISABLED" }`, and make `canUse()` return false.
 Paid access therefore fails closed while billing is not configured. The config
 object exposes only booleans and missing-key names; it never returns secret
@@ -76,16 +76,19 @@ map for another product catalog. The canonical subject key is `subjectId`
 integration must bind it to the server-issued account ID rather than a guest
 ID or a client-provided room member ID.
 
-## Future integration points
+## HTTP endpoints
 
-When billing is activated, the main server integration should add:
+- `POST /api/billing/checkout` — authenticated; returns a Stripe Checkout URL.
+  The optional JSON body can provide `successUrl` and `cancelUrl`.
+- `POST /api/billing/portal` — authenticated; returns a Customer Portal URL
+  when the account has a stored Stripe customer ID. The optional JSON body can
+  provide `returnUrl`.
+- `POST /api/billing/webhook` — Stripe raw-body webhook; verifies the
+  `stripe-signature` header, deduplicates the event ID, and writes the
+  entitlement record.
+- `GET /api/billing/status` — authenticated; returns sanitized billing state
+  and the current entitlement. It never returns provider secrets.
 
-1. a same-origin authenticated checkout endpoint that uses the configured
-   secret key and stores the provider customer/subscription IDs;
-2. a raw-body webhook endpoint that calls `verifyWebhook()` before parsing;
-3. an idempotent event/entitlement repository table and transaction;
-4. a request-time entitlement lookup for paid capabilities; and
-5. metrics and redacted audit events for accepted/rejected billing events.
-
-Until those routes and durable records exist, this module is a contract and
-configuration seam only. It does not claim that paid product behavior is live.
+Paid capabilities must still call `entitlementAllows()` at the authorization
+boundary. The current room limit remains the product's free baseline until a
+specific paid room/seat policy is selected.

@@ -18,10 +18,13 @@ needed to run the web service.
 - Secrets are injected by the platform and are absent from the image, Compose
   file, Render blueprint, and tracked environment examples.
 
-The current application is intentionally single-process: rooms and WebSocket
-membership are in memory, there is no recording, and the release target is 100
-concurrent users with at most 10 users in a room. Run one web instance unless a
-future room-state/SFU design adds cross-instance coordination.
+The current application is intentionally single-process for live WebSocket
+membership and WebRTC mesh media. Durable PostgreSQL room-directory metadata,
+accounts, moderation records, billing events, and entitlements survive a
+restart; active sockets, live capture, requests, and audio do not. There is no
+recording. The release target is 100 concurrent users with at most 10 users in
+a room. Run one web instance unless a future shared-room-state/SFU design adds
+cross-instance coordination.
 
 ## Runtime-only container
 
@@ -83,24 +86,25 @@ service, set `ALLOWED_ORIGINS`, TURN values, and any billing secrets, then apply
 the blueprint. Render supplies `PORT`; the blueprint sets `/health` as the
 deployment health check and enables TLS at the platform edge.
 
-The `STRIPE_*` values are `sync: false` and are intentionally empty until a
-separate billing rollout is approved. Leaving them unset keeps billing
-disabled.
+The `STRIPE_*` values are `sync: false`. Leave them unset to keep billing
+disabled; configure the secret key, webhook secret, price ID, and return URLs
+only after the checkout/tax/refund policy has been approved.
 
-## Health, readiness, and shutdown
+## Health, readiness, metrics, and shutdown
 
-RoomSound currently exposes one operational endpoint:
+RoomSound exposes these operational endpoints:
 
 ```text
 GET /health  -> 200 {"ok":true,"service":"roomsound","websocket":true,...}
+GET /ready   -> 200 when startup and migrations are ready, otherwise 503
+GET /metrics -> bounded Prometheus text metrics; protect this endpoint at the proxy
 ```
 
-Use `/health` for both liveness and readiness in an orchestrator. The process
-constructs the repository and runs PostgreSQL migrations before calling
-`server.listen`; therefore a healthy response means startup initialization has
-completed. A failed database migration exits before a listener is opened and
-the platform should retry the service. Do not route `/config` or a browser page
-as a health check.
+Use `/health` for liveness and `/ready` for readiness in an orchestrator. The
+process constructs the repository, applies PostgreSQL migrations, restores the
+durable room directory, and only then opens the listener. A failed database
+migration/restore exits before a listener is opened and the platform should
+retry the service. Do not route `/config` or a browser page as a health check.
 
 On `SIGTERM`/`SIGINT`, the server closes WebSocket rooms and the repository,
 then exits. Give the container at least 5 seconds of termination grace. A
@@ -118,6 +122,20 @@ timeout longer than the expected room session.
 4. Back up the database and test restoring it before enabling account login.
 5. Rotate `TURN_CREDENTIAL`, session/database credentials, and billing secrets
    through the platform; never put them in a Docker layer or tracked `.env`.
+
+## Account, moderation, and legal launch requirements
+
+Set `REQUIRE_AUTH=1` for a public SaaS deployment. The browser provides
+same-origin email/password registration and login; WebSocket connections use the
+HttpOnly session cookie. Android remains compatible with guest mode until its
+native account/token flow is enabled, so do not turn on `REQUIRE_AUTH=1` for a
+deployment that still needs the current guest-only Android build.
+
+Replace the legal placeholders in `docs/PRIVACY.md`, `docs/TERMS.md`, and
+`docs/ABUSE.md`, publish the pages, and set `ADMIN_EMAILS` or database admin
+flags before accepting reports. Do not expose unrestricted ban operations to
+the public internet; put them behind an internal admin console or network
+policy.
 
 ## Operational smoke checks
 

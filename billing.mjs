@@ -41,6 +41,9 @@ export function billingConfigFromEnv(env = process.env) {
     secretKeyConfigured,
     webhookSecretConfigured,
     priceId: clean(source.STRIPE_PRICE_ID) || null,
+    successUrl: clean(source.STRIPE_CHECKOUT_SUCCESS_URL) || null,
+    cancelUrl: clean(source.STRIPE_CHECKOUT_CANCEL_URL) || null,
+    portalReturnUrl: clean(source.STRIPE_PORTAL_RETURN_URL) || null,
     missing: Object.freeze(missing),
   });
 }
@@ -220,6 +223,25 @@ export function verifyStripeWebhookSignature(
 export function createBillingService({ env = process.env, clock = () => Date.now() } = {}) {
   if (typeof clock !== 'function') throw new TypeError('clock must be a function.');
   const config = billingConfigFromEnv(env);
+  const fetchImpl = typeof env.fetch === 'function' ? env.fetch : globalThis.fetch;
+
+  async function stripeRequest(path, params) {
+    if (!config.enabled || !config.priceId || !env.STRIPE_SECRET_KEY) {
+      return { ok: false, code: 'BILLING_DISABLED' };
+    }
+    if (typeof fetchImpl !== 'function') throw new Error('Fetch is unavailable for billing requests.');
+    const response = await fetchImpl(`https://api.stripe.com/v1/${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams(params),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, code: 'BILLING_PROVIDER_ERROR', status: response.status, error: payload?.error?.message || 'Stripe request failed.' };
+    return { ok: true, payload };
+  }
 
   return Object.freeze({
     ...config,
@@ -241,6 +263,24 @@ export function createBillingService({ env = process.env, clock = () => Date.now
     canUse(entitlement, requiredPlan = 'free', options = {}) {
       if (!config.enabled) return false;
       return entitlementAllows(entitlement, requiredPlan, { ...options, now: options.now ?? clock() });
+    },
+    async createCheckoutSession({ userId, email, successUrl = config.successUrl, cancelUrl = config.cancelUrl } = {}) {
+      if (!userId || !email || !successUrl || !cancelUrl) return { ok: false, code: 'CHECKOUT_CONFIGURATION_REQUIRED' };
+      return stripeRequest('checkout/sessions', {
+        mode: 'subscription',
+        'line_items[0][price]': config.priceId,
+        'line_items[0][quantity]': '1',
+        customer_email: email,
+        client_reference_id: userId,
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        'subscription_data[metadata][userId]': userId,
+        'subscription_data[metadata][plan]': 'pro',
+      });
+    },
+    async createPortalSession({ customerId, returnUrl = config.portalReturnUrl } = {}) {
+      if (!customerId || !returnUrl) return { ok: false, code: 'PORTAL_CONFIGURATION_REQUIRED' };
+      return stripeRequest('billing_portal/sessions', { customer: customerId, return_url: returnUrl });
     },
     normalizeEntitlement,
   });

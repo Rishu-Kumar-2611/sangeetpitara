@@ -1,9 +1,10 @@
 # Security, moderation, and observability foundations
 
 This document describes the reusable server-side contracts added for RoomSound.
-The modules are intentionally independent of the WebSocket room implementation,
-the account repository, and audio capture. They can be exercised offline with
-`node --test` and do not record audio.
+The modules remain dependency-light and do not record audio. They are integrated
+with the HTTP/WebSocket server, account repository, moderation routes, startup
+health, metrics, and redacted audit logging. They can be exercised offline with
+`node --test`.
 
 ## Modules
 
@@ -40,13 +41,12 @@ the account repository, and audio capture. They can be exercised offline with
     conventional HTTP response descriptors (`200` for live/ready and `503`
     while not ready).
 
-## Exact server integration points
+## Server integration now in place
 
-The current server remains unchanged by this foundation task. The next server
-integration should make the following focused changes:
-
-1. **HTTP body parsing** — in `server.mjs`, replace the local
-   `readJsonBody(req)` used by `handleAuthRequest` with:
+1. **HTTP body parsing** — `server.mjs` uses bounded `readJsonBody` for auth,
+   moderation, and billing control routes, and `readRawBody` before Stripe
+   signature verification. Request bodies, cookies, and authorization headers
+   are not logged.
 
    ```js
    import { readJsonBody } from './security.mjs';
@@ -61,26 +61,22 @@ integration should make the following focused changes:
    response. Do not put request bodies, cookies, or authorization headers in
    logs.
 
-2. **Logger and audit recorder** — after repository/auth initialization, create
-   one process logger and recorder:
+2. **Logger and audit recorder** — after repository/auth initialization, the
+   server creates one process logger and recorder:
 
    ```js
    const logger = createLogger({ service: 'roomsound' });
    const audit = createAuditRecorder({ sink: (event) => logger.info('audit', event) });
    ```
 
-   Replace `console.log`/`console.error` in startup, auth errors, and shutdown
-   with `logger.info`/`logger.error`. Record events at these existing flow
-   boundaries: room creation/join/leave/end, successful/failed auth, rate
-   limiting, rejected requests, and moderator actions. Pass canonical member
-   or room IDs as top-level fields; put user-provided details in `metadata` so
-   the shared redactor is always applied.
+   Startup, auth errors, shutdown, and billing/moderation boundaries use the
+   structured logger. Audit events are bounded in memory and can be redirected
+   to an external sink without exposing secrets.
 
-3. **Health/readiness/metrics** — create the health state and metrics registry
-   during startup, register the repository as a readiness check, and call
-   `healthState.setReady(true)` only after repository initialization and the
-   HTTP/WebSocket listeners are ready. Add routes beside the current `/health`
-   route:
+3. **Health/readiness/metrics** — startup creates the health state and metrics
+   registry, restores the durable room directory, and calls `setReady(true)`
+   after the listener starts. The server exposes `/health`, `/ready`, and
+   `/metrics`.
 
    ```js
    if (requestPath === '/health') return sendJson(res, 200, healthState.health());
@@ -101,13 +97,11 @@ integration should make the following focused changes:
    message handler, room count, and auth result branches. Never use room codes,
    access tokens, cookies, emails, or arbitrary user text as metric labels.
 
-4. **Moderation commands** — in `handleMessage`, after `currentMember(ws)` and
-   before room state changes, normalize incoming report/block/ban payloads with
-   `createReport`, `createBlock`, or `createBan`. Persist the resulting records
-   through the persistence layer owned by the account/storage work; this task
-   deliberately does not alter that layer. Enforce `isBlocked`/`isBanned`
-   before join, chat, control requests, and source changes. Record each action
-   with an `audit.record({ type: 'moderation.*', actorId, targetId, roomId })`.
+4. **Moderation commands** — authenticated HTTP report/block/ban endpoints
+   normalize with `createReport`, `createBlock`, and `createBan`, persist through
+   PostgreSQL or the offline adapter, and record redacted audit events. Ban and
+   room-host block checks run before room entry. An internal admin console is
+   still required before exposing administrator ban operations broadly.
 
 5. **HTTP status mapping** — liveness is `200` whenever the process can answer;
    readiness is `503` until `setReady(true)` and whenever a registered
@@ -115,5 +109,5 @@ integration should make the following focused changes:
    and redacted metadata; return generic failure codes rather than database
    URLs, credentials, or stack traces.
 
-These integration points deliberately do not change the media plane and do not
-introduce recording or a new dependency.
+These integrations deliberately do not change the media plane and do not
+introduce recording.

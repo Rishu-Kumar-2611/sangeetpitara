@@ -110,6 +110,18 @@ input:focus-visible {
 
 .hidden { display: none !important; }
 
+.site-footer { position: relative; z-index: 1; display: flex; justify-content: center; gap: 16px; margin: 0 auto; padding: 0 20px 24px; color: #a68e6c; font-size: 11px; }
+.site-footer a, .legal-page a { color: var(--brass-bright); text-decoration: none; }
+.site-footer a:hover, .legal-page a:hover { text-decoration: underline; }
+.legal-page { position: relative; z-index: 1; width: min(760px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 72px; color: #ead8b6; line-height: 1.7; }
+.legal-page h1, .legal-page h2 { color: var(--paper-bright); font-family: Georgia, "Times New Roman", serif; }
+.legal-page h1 { margin: 36px 0 20px; font-size: clamp(42px, 7vw, 68px); line-height: 1; }
+.legal-page h2 { margin: 32px 0 8px; font-size: 23px; }
+.legal-page p { color: #dbc9a9; }
+.legal-warning { padding: 14px 16px; border: 1px solid rgba(225, 162, 77, 0.45); border-radius: 10px; background: rgba(121, 71, 31, 0.28); }
+.legal-page code { color: #f0ca7a; }
+.legal-back { margin-top: 38px; }
+
 .brand-mark {
   display: inline-flex;
   align-items: center;
