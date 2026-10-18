@@ -410,7 +410,10 @@ public class WebRtcPcmPublisher(
         signalingExecutor.shutdown()
     }
 
-    private fun initializeMediaBackend(preferLowLatency: Boolean = true) {
+    // WebRtcAudioTrack is created lazily when the first peer starts playout.
+    // The ADM/factory construction below cannot catch a low-latency AudioTrack
+    // failure, so use the broadly compatible path by default on physical OEMs.
+    private fun initializeMediaBackend(preferLowLatency: Boolean = false) {
         var createdAdm: JavaAudioDeviceModule? = null
         var createdFactory: PeerConnectionFactory? = null
         var createdSource: AudioSource? = null
