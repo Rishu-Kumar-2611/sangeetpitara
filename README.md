@@ -24,6 +24,48 @@ npm install
 npm start
 ```
 
+`npm start` remains the simple local start path. For a local `.env` file (including TURN settings), use the restart-safe commands below instead of starting a second copy on port `4173`.
+
+### Local server and safe restarts
+
+Create the local environment file once:
+
+```powershell
+if (-not (Test-Path .env)) {
+  Copy-Item .env.example .env
+}
+```
+
+`.env` is ignored by Git. Keep real TURN usernames, credentials, and other secrets only in that local file or in your deployment secret store; never put them in `.env.example`, commit `.env`, or paste its contents into logs or issues.
+
+On Windows PowerShell, this stops only a Node process that is listening on RoomSound's port before starting the server with `.env` loaded:
+
+```powershell
+$ownerPids = @(Get-NetTCPConnection -LocalPort 4173 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -ExpandProperty OwningProcess -Unique)
+foreach ($ownerPid in $ownerPids) {
+  $process = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
+  if ($process -and $process.ProcessName -eq 'node') {
+    Stop-Process -Id $ownerPid -Force
+  }
+}
+node --env-file=.env server.mjs
+```
+
+On macOS, Linux, or PowerShell 7+, use the same cross-platform start command:
+
+```text
+npm start
+```
+
+The `.nvmrc` pins Node 22.14.0, which supports the optional env-file flag used by `npm start`. To restart on any platform, press `Ctrl+C`, wait for the process to exit, and run the same command again. If another program owns port `4173`, inspect it before stopping it rather than force-stopping an unrelated service.
+
+With the server running, use this safe verification command to confirm that `/config` contains at least one TURN server. It prints only the TURN status and count; it never prints the TURN credential:
+
+```sh
+node --input-type=module -e 'const response = await fetch("http://127.0.0.1:4173/config"); if (!response.ok) throw new Error(`HTTP ${response.status}`); const { iceServers = [] } = await response.json(); const turnServers = iceServers.filter(({ urls }) => [].concat(urls ?? []).some((url) => /^turns?:/i.test(String(url)))); console.log(turnServers.length ? `TURN present (${turnServers.length} server(s))` : "TURN not configured");'
+```
+
 Open `http://localhost:4173` in a current browser. To test the room flow, open the URL in two browser windows or on two devices that can reach the machine running the server.
 
 For audio capture, use a secure context (`localhost` is allowed by browsers) and expect a browser permission prompt. Desktop Chrome and Edge are the most useful first targets for browser-tab audio. RoomSound does not stream microphones; mobile browsers generally cannot capture audio from a separate native app, so use the native Android app for Android device playback.

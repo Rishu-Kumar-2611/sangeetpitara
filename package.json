@@ -5,7 +5,7 @@
   "description": "RoomSound private real-time audio room prototype",
   "type": "module",
   "scripts": {
-    "start": "node server.mjs",
+    "start": "node --env-file-if-exists=.env server.mjs",
     "check": "node --check server.mjs && node --check app.js",
     "test": "node --test",
     "smoke": "node smoke.mjs"
