@@ -31,6 +31,7 @@ class PlaybackCaptureController(
         private const val EMPTY_READ_TIMEOUT_MS = 5_000L
         private const val RECORD_RECOVERY_ATTEMPTS = 3
         private const val RECORD_RECOVERY_DELAY_MS = 250L
+        private const val CAPTURE_BUFFER_FRAME_MULTIPLIER = 2
     }
 
     private class CaptureRun(
@@ -322,7 +323,7 @@ class PlaybackCaptureController(
         check(minBuffer > 0) { "Android returned an invalid AudioRecord buffer size: $minBuffer" }
         return AudioRecord.Builder()
             .setAudioFormat(format)
-            .setBufferSizeInBytes(max(minBuffer, FRAME_SAMPLES * 2 * 4))
+            .setBufferSizeInBytes(max(minBuffer, FRAME_SAMPLES * 2 * CAPTURE_BUFFER_FRAME_MULTIPLIER))
             .setAudioPlaybackCaptureConfig(captureConfig)
             .build()
     }
