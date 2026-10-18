@@ -880,6 +880,7 @@ function removePeerTelemetry(peerId, entry) {
 
 function renderTelemetry() {
   const panel = $('#telemetry-panel');
+  // Telemetry is an optional diagnostics surface; RTC behavior must not depend on it.
   if (!panel) return;
   if (!state.room) {
     panel.classList.add('hidden');

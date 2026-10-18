@@ -62,11 +62,7 @@ class MainActivity : Activity() {
         private var crashHandlerInstalled = false
     }
 
-    private lateinit var capabilityText: TextView
     private lateinit var statusText: TextView
-    private lateinit var frameText: TextView
-    private lateinit var startButton: Button
-    private lateinit var stopButton: Button
     private lateinit var endpointInput: EditText
     private lateinit var endpointHintText: TextView
     private lateinit var displayNameInput: EditText
@@ -74,7 +70,6 @@ class MainActivity : Activity() {
     private lateinit var roomCodeInput: EditText
     private lateinit var roomConnectionText: TextView
     private lateinit var roomStateText: TextView
-    private lateinit var roomMembersText: TextView
     private lateinit var roomEventsText: TextView
     private lateinit var transportText: TextView
     private lateinit var approvalContainer: LinearLayout
@@ -353,12 +348,6 @@ class MainActivity : Activity() {
             setTypeface(android.graphics.Typeface.create("serif", android.graphics.Typeface.BOLD))
             setPadding(0, dp(7), 0, dp(5))
         }, matchWrap())
-        header.addView(TextView(this).apply {
-            text = "Share eligible playback from this phone with one room. RoomSound never selects a microphone source."
-            textSize = 14f
-            setTextColor(getColor(R.color.roomsound_cream_soft))
-            setLineSpacing(0f, 1.12f)
-        }, matchWrap())
         content.addView(header, panelLayout())
 
         val roomPanel = panelContainer()
@@ -367,11 +356,7 @@ class MainActivity : Activity() {
         endpointInput = inputText("WebSocket endpoint", preferences.getString(ENDPOINT_KEY, defaultRoomEndpoint()))
         roomPanel.addView(endpointInput, matchWrap())
         endpointHintText = labelText().apply {
-            text = if (BuildConfig.DEBUG) {
-                "Debug: emulator ws://10.0.2.2:4173 · phone ws://<laptop LAN IPv4>:4173 · localhost is the phone itself."
-            } else {
-                "Local testing: ws://<laptop LAN IPv4>:4173 · public servers require wss://."
-            }
+            text = "RoomSound server address: ws:// for local testing, wss:// for public servers."
             textSize = 11f
             setTextColor(getColor(R.color.roomsound_cream_muted))
             setLineSpacing(0f, 1.12f)
@@ -407,11 +392,12 @@ class MainActivity : Activity() {
             setPadding(0, 0, 0, dp(5))
         }
         roomStatusPanel.addView(roomStateText, matchWrap())
-        roomMembersText = labelText().apply {
-            setLineSpacing(0f, 1.12f)
-            setPadding(0, dp(3), 0, 0)
+        roomEventsText = diagnosticText().apply {
+            visibility = View.GONE
+            maxLines = 2
+            setPadding(dp(12), dp(9), dp(12), dp(9))
         }
-        roomStatusPanel.addView(roomMembersText, matchWrap())
+        roomStatusPanel.addView(roomEventsText, marginLayout())
         roomPanel.addView(roomStatusPanel, marginLayout())
 
         sourceButton = button("Share device audio") { handleSourceAction() }
@@ -451,12 +437,6 @@ class MainActivity : Activity() {
 
         val listeningPanel = panelContainer()
         listeningPanel.addView(sectionTitle("Local listening"), matchWrap())
-        listeningPanel.addView(labelText().apply {
-            text = "Tune playback for this phone. The brass dial controls local volume only."
-            textSize = 12.5f
-            setTextColor(getColor(R.color.roomsound_cream_muted))
-            setPadding(0, 0, 0, dp(8))
-        }, matchWrap())
         volumeSeekBar = SeekBar(this).apply {
             max = 100
             progress = 100
@@ -477,41 +457,17 @@ class MainActivity : Activity() {
         muteButton = button("Mute listening", ButtonTone.SECONDARY) { muted = !muted; updateMuteButton(); applyPlaybackVolume() }
         listeningPanel.addView(muteButton, marginLayout())
 
-        transportText = diagnosticText().apply { setPadding(dp(12), dp(11), dp(12), dp(11)) }
-        listeningPanel.addView(transportText, marginLayout())
-        roomEventsText = diagnosticText().apply {
-            text = "Room events will appear here."
-            setPadding(dp(12), dp(11), dp(12), dp(14))
-            minHeight = dp(60)
+        transportText = diagnosticText().apply {
+            visibility = View.GONE
+            setPadding(dp(12), dp(11), dp(12), dp(11))
         }
-        listeningPanel.addView(roomEventsText, marginLayout())
+        listeningPanel.addView(transportText, marginLayout())
         content.addView(listeningPanel, panelLayout())
 
         val capturePanel = panelContainer()
-        capturePanel.addView(sectionTitle("Playback capture status"), matchWrap())
-        capturePanel.addView(labelText().apply {
-            text = "System playback capture is kept separate from microphone input."
-            textSize = 12.5f
-            setTextColor(getColor(R.color.roomsound_cream_muted))
-            setPadding(0, 0, 0, dp(8))
-        }, matchWrap())
-        capabilityText = diagnosticText()
-        capturePanel.addView(capabilityText, matchWrap())
+        capturePanel.addView(sectionTitle("Playback sharing"), matchWrap())
         statusText = diagnosticText().apply { setPadding(dp(12), dp(11), dp(12), dp(7)) }
         capturePanel.addView(statusText, marginLayout())
-        frameText = diagnosticText().apply { setPadding(dp(12), dp(10), dp(12), dp(10)) }
-        capturePanel.addView(frameText, marginLayout())
-        startButton = button("Share device audio") { beginCapture(forRoomSource = true) }
-        capturePanel.addView(startButton, marginLayout())
-        stopButton = button("Stop capture", ButtonTone.DANGER) { stopCapture() }
-        capturePanel.addView(stopButton, marginLayout())
-        capturePanel.addView(TextView(this).apply {
-            text = "Android 10+ playback capture requires the system consent dialog and the RECORD_AUDIO permission that Android uses as a playback-capture gate. RoomSound configures AudioRecord for eligible device playback, not the microphone, and the native media backend disables microphone recording. Source apps may opt out and protected content may be unavailable, so silence only reports that no non-zero samples arrived; it does not identify a blocking app."
-            textSize = 12f
-            setTextColor(getColor(R.color.roomsound_cream_muted))
-            setLineSpacing(0f, 1.18f)
-            setPadding(0, dp(14), 0, 0)
-        }, matchWrap())
         content.addView(capturePanel, panelLayout())
 
         renderRoomState(null)
@@ -694,7 +650,6 @@ class MainActivity : Activity() {
         renderCaptureControls(state)
         if (state == null) {
             roomStateText.text = "No room state. Create or join a room to continue."
-            roomMembersText.text = "Members: —"
             takeoverButton.isEnabled = false
             requestAudioButton.text = "Request to share device audio"
             requestAudioButton.isEnabled = false
@@ -719,14 +674,7 @@ class MainActivity : Activity() {
         val sourceMember = state.members.firstOrNull { it.id == room.activeSourceId }
         roomStateText.text = buildString {
             append("Room ${room.code} · ${room.status}\n")
-            append("Source: ${sourceMember?.name ?: "none"} · ${room.sourceStatus} · epoch ${room.sourceEpoch}")
-            if (room.sourceStatus.equals("STARTING", ignoreCase = true)) append("\nAndroid consent/readiness is still required before this source goes live.")
-        }
-        roomMembersText.text = buildString {
-            append("Members (${state.members.size}): ")
-            append(state.members.joinToString { member ->
-                "${member.name} (${member.role.lowercase(Locale.US)})${if (member.id == room.activeSourceId) " · sharing" else ""}"
-            }.ifEmpty { "—" })
+            append("Source: ${sourceMember?.name ?: "none"} · ${room.sourceStatus}")
         }
 
         val ownPendingRequest = self != null && state.requests.any {
@@ -799,33 +747,18 @@ class MainActivity : Activity() {
     private fun renderTransport() {
         val snapshot = roomSession?.transportSnapshot()
         if (snapshot == null) {
-            transportText.text = "Transport: not attached to a room service."
+            transportText.text = "Audio sharing is unavailable."
             return
         }
-        transportText.text = buildString {
-            append("Transport: ")
-            append(if (snapshot.mediaBackendConfigured) "native WebRTC publisher configured" else "media backend unavailable")
-            append(" · ready=${snapshot.backendReady}")
-            append(" · accepted=${snapshot.acceptedFrames}")
-            append(" · dropped unauthorized=${snapshot.droppedUnauthorizedFrames}")
-            append(" · dropped not-live=${snapshot.droppedNotLiveFrames}")
-            append(" · dropped stale=${snapshot.droppedStaleEpochFrames}")
-            if (snapshot.authorization?.canPublishFrames == true) append("\nServer reports this phone as LIVE source.")
-            snapshot.publisherDiagnostics?.takeIf { it.isNotBlank() }?.let { append("\n").append(it) }
+        transportText.text = when {
+            !snapshot.mediaBackendConfigured -> "Audio sharing is unavailable."
+            snapshot.backendReady -> "Audio sharing is ready."
+            else -> "Audio sharing is preparing."
         }
     }
 
     /** Capture snapshots arrive frequently; only update the controls that depend on them. */
     private fun renderCaptureControls(state: RoomState?) {
-        if (!::startButton.isInitialized || !::stopButton.isInitialized) return
-        val active = latestSnapshot.status in setOf(
-            CaptureStatus.STARTING,
-            CaptureStatus.READY,
-            CaptureStatus.CAPTURING,
-            CaptureStatus.NO_ACTIVE_PLAYBACK,
-        )
-        startButton.isEnabled = !active && !projectionConsentInFlight
-        stopButton.isEnabled = active || projectionConsentInFlight || pendingCaptureStart
         renderSourceControl(state)
     }
 
@@ -1038,7 +971,7 @@ class MainActivity : Activity() {
         val capability = latestCapability ?: PlaybackCaptureCapabilities.inspect(this)
         if (!capability.apiSupported || !capability.mediaProjectionAvailable) {
             cancelPendingCapture(capability.summary)
-            renderSnapshot(CaptureSnapshot(CaptureStatus.UNSUPPORTED_API, message = capability.summary))
+            renderSnapshot(CaptureSnapshot(CaptureStatus.UNSUPPORTED_API, message = conciseCapabilityMessage(capability)))
             return
         }
         val missingPermissions = buildList {
@@ -1192,8 +1125,16 @@ class MainActivity : Activity() {
     private fun refreshCapability() {
         latestCapability = PlaybackCaptureCapabilities.inspect(this)
         val capability = latestCapability ?: return
-        capabilityText.text = "Capability: ${capability.summary}"
-        renderSnapshot(CaptureSnapshot(if (capability.apiSupported) CaptureStatus.IDLE else CaptureStatus.UNSUPPORTED_API))
+        renderSnapshot(
+            CaptureSnapshot(
+                if (capability.apiSupported && capability.mediaProjectionAvailable) {
+                    CaptureStatus.IDLE
+                } else {
+                    CaptureStatus.UNSUPPORTED_API
+                },
+                message = conciseCapabilityMessage(capability),
+            ),
+        )
     }
 
     private fun renderSnapshot(snapshot: CaptureSnapshot) {
@@ -1202,15 +1143,44 @@ class MainActivity : Activity() {
             pendingCaptureId = null
         }
         statusText.text = buildString {
-            append("Status: ${snapshot.status.name}")
-            if (snapshot.ready) append(" · ready to publish")
-        }
-        frameText.text = buildString {
-            append("Sample frames read: ${snapshot.framesCaptured} · non-silent sample frames: ${snapshot.nonSilentFrames}")
-            if (!snapshot.message.isNullOrBlank()) append("\n${snapshot.message}")
+            append(conciseCaptureStatus(snapshot))
+            conciseCaptureMessage(snapshot)?.let { append("\n").append(it) }
         }
         renderCaptureControls(latestRoomState ?: roomSession?.currentRoomState())
         requestTransportRender()
+    }
+
+    private fun conciseCapabilityMessage(capability: CaptureCapabilityReport): String? = when {
+        !capability.apiSupported -> "Playback sharing needs Android 10 or newer."
+        !capability.mediaProjectionAvailable -> "Android system capture is unavailable on this device."
+        else -> null
+    }
+
+    private fun conciseCaptureStatus(snapshot: CaptureSnapshot): String = when (snapshot.status) {
+        CaptureStatus.IDLE -> "Ready to share device audio."
+        CaptureStatus.UNSUPPORTED_API -> "Playback sharing is unavailable."
+        CaptureStatus.PERMISSION_REQUIRED -> "Audio permission is required."
+        CaptureStatus.PROJECTION_REQUIRED -> "Android capture approval is required."
+        CaptureStatus.STARTING -> "Starting device audio sharing…"
+        CaptureStatus.READY -> "Device audio sharing is ready."
+        CaptureStatus.CAPTURING -> "Sharing device audio."
+        CaptureStatus.NO_ACTIVE_PLAYBACK -> "Sharing device audio · no active playback detected."
+        CaptureStatus.STOPPED -> "Device audio sharing is stopped."
+        CaptureStatus.ERROR -> "Device audio sharing needs attention."
+    }
+
+    private fun conciseCaptureMessage(snapshot: CaptureSnapshot): String? = when (snapshot.status) {
+        CaptureStatus.PERMISSION_REQUIRED -> "Allow Android audio permission to continue."
+        CaptureStatus.PROJECTION_REQUIRED -> "Approve the Android playback-capture dialog to continue."
+        CaptureStatus.UNSUPPORTED_API -> snapshot.message ?: "Playback sharing is unavailable on this device."
+        CaptureStatus.NO_ACTIVE_PLAYBACK -> "Start playback in a supported app to send audio."
+        CaptureStatus.ERROR -> snapshot.message
+            ?.lineSequence()
+            ?.firstOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.take(180)
+        else -> null
     }
 
     private fun applyPlaybackVolume() {
@@ -1225,7 +1195,10 @@ class MainActivity : Activity() {
     private fun appendRoomEvent(message: String) {
         if (roomEvents.size >= 10) roomEvents.removeFirst()
         roomEvents.addLast(message)
-        if (::roomEventsText.isInitialized) roomEventsText.text = roomEvents.joinToString("\n")
+        if (::roomEventsText.isInitialized) {
+            roomEventsText.text = message
+            roomEventsText.visibility = View.VISIBLE
+        }
     }
 
     private enum class ButtonTone {

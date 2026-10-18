@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2b1a11" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-ancestors 'none'" />
     <title>RoomSound — listen together</title>
-    <link rel="stylesheet" href="/styles.css?v=20261018-antique-radio-1" />
+    <link rel="stylesheet" href="/styles.css?v=20261018-minimal-ui-1" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -16,17 +16,8 @@
         <div class="landing-copy">
           <div class="brand-mark"><span class="brand-dot"></span> RoomSound</div>
           <div class="eyebrow">PRIVATE LIVE AUDIO ROOMS</div>
-          <h1>Make the room hear what you hear.</h1>
-          <p class="hero-text">Share supported device or browser audio with friends in real time. One source at a time, with clear host control and no account required.</p>
-          <div class="hero-pills">
-            <span><i class="pill-dot green"></i> Up to 10 people</span>
-            <span><i class="pill-dot blue"></i> Private by default</span>
-            <span><i class="pill-dot orange"></i> WebRTC audio</span>
-          </div>
-          <div class="reality-note">
-            <div class="note-icon">i</div>
-            <div><strong>Capture is platform-dependent.</strong><br />Android and browsers only share audio when the operating system and source app allow it.</div>
-          </div>
+          <h1>Listen together.</h1>
+          <p class="landing-hint">Create a room or join with an invite code.</p>
         </div>
 
         <div class="entry-card">
@@ -35,7 +26,6 @@
               <div class="eyebrow">GET STARTED</div>
               <h2>Enter the listening room</h2>
             </div>
-            <span class="live-badge"><span></span> LIVE</span>
           </div>
           <label class="field-label" for="display-name">Your display name</label>
           <input id="display-name" class="text-input" maxlength="40" placeholder="e.g. Alex" autocomplete="nickname" />
@@ -109,18 +99,11 @@
               <button id="local-mute" class="mute-button" type="button"><span id="mute-icon">◒</span><span id="mute-label">Mute</span></button>
               <input id="local-volume" class="volume-slider" type="range" min="0" max="1" step="0.01" value="0.9" aria-label="Your room volume" />
               <span id="volume-label" class="volume-label">90%</span>
-              <span class="no-monitor-note">Your own shared audio is not played back to you.</span>
             </div>
-
-            <section class="panel telemetry-panel" id="telemetry-panel">
-              <div class="panel-heading"><div><span class="section-label">WEBRTC TELEMETRY</span><h3>Peer diagnostics</h3></div><span class="telemetry-state pending" id="telemetry-state">Waiting</span></div>
-              <div id="telemetry-summary" class="telemetry-summary">No active source · diagnostics will appear when audio starts.</div>
-              <div id="telemetry-list" class="telemetry-list" aria-live="off"></div>
-            </section>
 
             <div class="lower-grid">
               <section class="panel activity-panel">
-                <div class="panel-heading"><div><span class="section-label">ROOM ACTIVITY</span><h3>What is happening</h3></div><span class="live-mini"><span></span> LIVE</span></div>
+                <div class="panel-heading"><div><span class="section-label">ROOM ACTIVITY</span><h3>What is happening</h3></div></div>
                 <div id="activity-feed" class="activity-feed"></div>
               </section>
               <section class="panel chat-panel">
@@ -145,10 +128,6 @@
               <div id="request-list" class="request-list"></div>
             </section>
 
-            <section class="panel safety-panel">
-              <div class="safety-icon">⌁</div>
-              <div><strong>Private room</strong><p>Only people with your invite can try to join. Audio is not recorded.</p></div>
-            </section>
           </aside>
         </div>
       </section>
