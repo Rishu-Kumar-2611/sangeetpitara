@@ -11,7 +11,7 @@
     <meta name="roomsound-ad-consent" content="false" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'" />
     <title>RoomSound — listen together</title>
-    <link rel="stylesheet" href="/styles.css?v=20261018-account-ads-1" />
+    <link rel="stylesheet" href="/styles.css?v=20261018-anonymous-rewarded-1" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -41,30 +41,22 @@
           <div id="create-panel" class="entry-panel active-panel">
             <label class="field-label" for="room-name">Room name</label>
             <input id="room-name" class="text-input" maxlength="60" value="Late-night listening" placeholder="e.g. Movie Night" />
-            <button id="create-room" class="primary-button full-button" type="button"><span>＋</span> Create private room</button>
+            <button id="create-room" class="primary-button full-button" type="button" disabled aria-disabled="true"><span>＋</span> Create private room</button>
           </div>
           <div id="join-panel" class="entry-panel">
             <label class="field-label" for="room-code">Room code</label>
             <input id="room-code" class="text-input code-input" maxlength="6" placeholder="ABC123" autocomplete="one-time-code" />
-            <button id="join-room" class="primary-button full-button" type="button"><span>→</span> Join room</button>
+            <button id="join-room" class="primary-button full-button" type="button" disabled aria-disabled="true"><span>→</span> Join room</button>
           </div>
-          <p class="entry-footnote" id="entry-footnote">Guest rooms stay available when this server allows anonymous listening.</p>
-          <div class="account-panel" id="account-panel" aria-labelledby="account-kicker">
-            <div class="account-heading"><span class="section-label" id="account-kicker">ACCOUNT</span><span id="account-state" aria-live="polite">Checking session…</span></div>
-            <form id="account-form" novalidate>
-              <label class="field-label" for="account-email">Email</label>
-              <input id="account-email" class="text-input" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="you@example.com" required />
-              <label class="field-label account-password-label" for="account-password">Password</label>
-              <input id="account-password" class="text-input" type="password" autocomplete="current-password" minlength="12" maxlength="1024" placeholder="12+ characters" required />
-              <div class="account-actions">
-                <button id="account-login" class="secondary-button" type="submit" data-auth-action="login">Sign in</button>
-                <button id="account-register" class="secondary-button" type="submit" data-auth-action="register">Create account</button>
-              </div>
-            </form>
-            <div id="account-signed-in" class="hidden account-signed-in"><span><strong id="account-email-label"></strong><small id="account-session-note">Session active</small></span><button id="account-logout" class="ghost-button" type="button">Sign out</button></div>
-            <p class="account-help" id="account-help">Sign in to keep your room session tied to your account.</p>
-            <div id="account-error" class="inline-error hidden" role="alert"></div>
-          </div>
+          <p class="entry-footnote" id="entry-footnote">Room creation and joining are anonymous after local access is active.</p>
+          <section class="rewarded-access" id="rewarded-access" aria-labelledby="rewarded-access-title">
+            <div class="access-heading"><span class="section-label" id="rewarded-access-title">ROOM ACCESS</span><span id="rewarded-access-state" aria-live="polite">Access required</span></div>
+            <p id="rewarded-access-copy">Complete the 30-second demo/local rewarded preview to unlock 6 hours of anonymous room access.</p>
+            <button id="complete-rewarded-access" class="secondary-button full-button" type="button">Start 30-second demo reward</button>
+            <progress id="rewarded-access-progress" class="rewarded-access-progress" max="30" value="0" hidden aria-label="Reward completion progress"></progress>
+            <span id="rewarded-access-progress-label" class="rewarded-access-progress-label" aria-live="polite"></span>
+            <small class="rewarded-access-note">Demo/local provider · offline development only · no real ad network is loaded.</small>
+          </section>
           <div id="entry-error" class="inline-error hidden"></div>
           <div id="landing-ad-slot" class="ad-slot" data-ad-slot="" data-ad-placement="landing" hidden aria-hidden="true"></div>
           <div id="ad-consent-banner" class="ad-consent" hidden role="dialog" aria-labelledby="ad-consent-title" aria-describedby="ad-consent-copy">
@@ -84,7 +76,6 @@
           <div class="room-crumb"><span class="crumb-room-name" id="top-room-name">Listening room</span><span class="crumb-separator">/</span><span class="room-code-small" id="top-room-code">------</span></div>
           <div class="topbar-actions">
             <span class="connection-chip" id="connection-chip"><span class="connection-dot"></span><span id="connection-label">Connecting</span></span>
-            <span id="room-session" class="session-chip hidden"><span id="room-session-email"></span><button id="room-logout" class="session-logout" type="button">Sign out</button></span>
             <button id="share-room" class="ghost-button" type="button">↗ Share invite</button>
             <button id="leave-room" class="icon-button" type="button" aria-label="Leave room">×</button>
           </div>
@@ -169,6 +160,6 @@
     <footer class="site-footer"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="mailto:abuse@example.com">Report abuse</a></footer>
     <div id="toast-stack" class="toast-stack"></div>
     <div id="modal-root"></div>
-    <script type="module" src="/app.js?v=20261018-account-ads-1"></script>
+    <script type="module" src="/app.js?v=20261018-anonymous-rewarded-1"></script>
   </body>
 </html>

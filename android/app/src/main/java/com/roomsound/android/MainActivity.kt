@@ -15,7 +15,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
 import android.text.InputType
-import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -24,12 +23,12 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
-import com.roomsound.android.auth.EncryptedSessionStore
-import com.roomsound.android.auth.RoomAccountUser
-import com.roomsound.android.auth.RoomAuthClient
-import com.roomsound.android.auth.RoomAuthException
-import com.roomsound.android.auth.RoomAuthSession
-import com.roomsound.android.auth.RoomAuthEndpoint
+import com.roomsound.android.access.LocalDemoRewardedAccessProvider
+import com.roomsound.android.access.RewardedAccessGate
+import com.roomsound.android.access.RewardedAccessHandle
+import com.roomsound.android.access.RewardedAccessListener
+import com.roomsound.android.access.RewardedAccessProvider
+import com.roomsound.android.access.SharedPreferencesRewardedAccessStore
 import com.roomsound.android.capture.CaptureCapabilityReport
 import com.roomsound.android.capture.CaptureSnapshot
 import com.roomsound.android.capture.CaptureStatus
@@ -37,6 +36,7 @@ import com.roomsound.android.capture.PlaybackCaptureCapabilities
 import com.roomsound.android.capture.PlaybackCaptureService
 import com.roomsound.android.capture.RoomSessionCoordinator
 import com.roomsound.android.room.RoomConnectionState
+import com.roomsound.android.room.RoomEndpointValidator
 import com.roomsound.android.room.RoomSoundEvent
 import com.roomsound.android.room.RoomState
 import java.io.PrintWriter
@@ -44,7 +44,6 @@ import java.io.StringWriter
 import java.util.ArrayDeque
 import java.util.Locale
 import java.util.UUID
-import okhttp3.Call
 
 /** Native Android room controls. Media/signaling state is owned by the service. */
 class MainActivity : Activity() {
@@ -71,11 +70,8 @@ class MainActivity : Activity() {
     }
 
     private lateinit var statusText: TextView
-    private lateinit var authStatusText: TextView
-    private lateinit var authEmailInput: EditText
-    private lateinit var authPasswordInput: EditText
-    private lateinit var authSignInButton: Button
-    private lateinit var authSignOutButton: Button
+    private lateinit var accessStatusText: TextView
+    private lateinit var accessButton: Button
     private lateinit var endpointInput: EditText
     private lateinit var endpointHintText: TextView
     private lateinit var displayNameInput: EditText
@@ -116,16 +112,9 @@ class MainActivity : Activity() {
     private var latestRoomState: RoomState? = null
     private var latestSnapshot = CaptureSnapshot(CaptureStatus.IDLE)
     private var muted = false
-    private var authUser: RoomAccountUser? = null
-    private var authToken: String? = null
-    private var authHasStoredToken = false
-    private var authCall: Call? = null
-    private var authOperation = 0L
-    private var authBusy = false
-    private var authChecking = false
-    private var authMessage: String? = null
-    private val sessionStore by lazy { EncryptedSessionStore(applicationContext) }
-    private val authClient by lazy { RoomAuthClient() }
+    private var rewardedAccessHandle: RewardedAccessHandle? = null
+    private var rewardedAccessProvider: RewardedAccessProvider? = null
+    private var rewardedAccessExpiryRunnable: Runnable? = null
     private val roomEvents = ArrayDeque<String>()
     private val transportRenderHandler = Handler(Looper.getMainLooper())
     private var transportRenderPosted = false
@@ -136,6 +125,9 @@ class MainActivity : Activity() {
         renderTransport()
     }
     private val preferences by lazy { getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE) }
+    private val rewardedAccessGate by lazy {
+        RewardedAccessGate(SharedPreferencesRewardedAccessStore(preferences))
+    }
     private val guestId: String by lazy {
         preferences.getString(GUEST_ID_KEY, null)?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString().also {
             preferences.edit().putString(GUEST_ID_KEY, it).apply()
@@ -204,7 +196,6 @@ class MainActivity : Activity() {
         showPreviousCrashNotice()
         refreshCapability()
         ensureCaptureService()
-        restoreSavedSession()
     }
 
     override fun onResume() {
@@ -230,11 +221,12 @@ class MainActivity : Activity() {
         activityResumed = false
         transportRenderHandler.removeCallbacks(transportRenderRunnable)
         transportRenderPosted = false
-        authOperation += 1
-        authCall?.cancel()
-        authCall = null
-        authClient.cancelAll()
-        authToken = null
+        rewardedAccessHandle?.cancel()
+        rewardedAccessHandle = null
+        rewardedAccessProvider?.close()
+        rewardedAccessProvider = null
+        rewardedAccessExpiryRunnable?.let(transportRenderHandler::removeCallbacks)
+        rewardedAccessExpiryRunnable = null
         detachFromService()
         if (serviceBound || serviceBindingInFlight) {
             runCatching { unbindService(serviceConnection) }
@@ -333,9 +325,6 @@ class MainActivity : Activity() {
         roomSession = session
         serviceBound = true
         // A started service may outlive this Activity (including rotation).
-        // Do not clear its already-authenticated client before the encrypted
-        // session restore finishes; a successful restore reapplies the token.
-        authToken?.let(session::setBearerToken)
         session.addListener(roomListener)
         service.addListener(serviceListener)
         renderAttachedServiceState()
@@ -383,31 +372,16 @@ class MainActivity : Activity() {
         }, matchWrap())
         content.addView(header, panelLayout())
 
-        val accountPanel = panelContainer()
-        accountPanel.addView(sectionTitle("Account"), matchWrap())
-        authStatusText = labelText().apply {
-            text = "Guest mode (explicit fallback). Sign in to use an account."
+        val accessPanel = panelContainer()
+        accessPanel.addView(sectionTitle("Rewarded access"), matchWrap())
+        accessStatusText = labelText().apply {
             setTextColor(getColor(R.color.roomsound_cream_soft))
             setPadding(0, 0, 0, dp(8))
         }
-        accountPanel.addView(authStatusText, matchWrap())
-        authEmailInput = inputText("Email address", null).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
-        }
-        accountPanel.addView(authEmailInput, matchWrap())
-        authPasswordInput = inputText("Password", null).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            transformationMethod = PasswordTransformationMethod.getInstance()
-            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
-            isSaveEnabled = false
-        }
-        accountPanel.addView(authPasswordInput, marginLayout())
-        authSignInButton = button("Sign in") { signIn() }
-        accountPanel.addView(authSignInButton, marginLayout())
-        authSignOutButton = button("Sign out", ButtonTone.SECONDARY) { signOut() }
-        accountPanel.addView(authSignOutButton, marginLayout())
-        content.addView(accountPanel, panelLayout())
+        accessPanel.addView(accessStatusText, matchWrap())
+        accessButton = button("Start 30-second demo reward") { startRewardedAccess() }
+        accessPanel.addView(accessButton, marginLayout())
+        content.addView(accessPanel, panelLayout())
 
         val roomPanel = panelContainer()
         roomPanel.addView(sectionTitle("Room control"), matchWrap())
@@ -415,7 +389,7 @@ class MainActivity : Activity() {
         endpointInput = inputText("WebSocket endpoint", preferences.getString(ENDPOINT_KEY, defaultRoomEndpoint()))
         roomPanel.addView(endpointInput, matchWrap())
         endpointHintText = labelText().apply {
-            text = "RoomSound server address: ws:// for local testing, wss:// for public servers."
+            text = "LAN: ws:// or http:// with the computer's LAN IP on the same Wi-Fi. Public: wss:// or https:// with TLS."
             textSize = 11f
             setTextColor(getColor(R.color.roomsound_cream_muted))
             setLineSpacing(0f, 1.12f)
@@ -532,7 +506,7 @@ class MainActivity : Activity() {
         renderRoomState(null)
         renderTransportNow()
         updateMuteButton()
-        renderAuthState()
+        renderAccessState()
         return ScrollView(this).apply {
             isFillViewport = true
             isVerticalScrollBarEnabled = false
@@ -542,6 +516,7 @@ class MainActivity : Activity() {
     }
 
     private fun createRoom() {
+        if (!requireRewardedAccess()) return
         val session = roomClientForEndpoint() ?: return
         val displayName = displayNameInput.text.toString().trim().ifEmpty { "Android guest" }
         val roomName = roomNameInput.text.toString().trim().ifEmpty { "Listening room" }
@@ -556,6 +531,7 @@ class MainActivity : Activity() {
     }
 
     private fun joinRoom() {
+        if (!requireRewardedAccess()) return
         val session = roomClientForEndpoint() ?: return
         val displayName = displayNameInput.text.toString().trim().ifEmpty { "Android guest" }
         val roomCode = roomCodeInput.text.toString().trim().uppercase(Locale.US)
@@ -585,41 +561,26 @@ class MainActivity : Activity() {
 
     private fun roomClientForEndpoint(): RoomSessionCoordinator? {
         val rawEndpoint = endpointInput.text.toString().trim()
-        val endpoint = normalizeRoomEndpoint(rawEndpoint)
-        if (endpoint == null) {
-            appendRoomEvent(if (BuildConfig.DEBUG) {
-                "Enter a host endpoint such as ws://192.168.1.20:4173. Do not use localhost on a phone."
-            } else {
-                "Use ws://<laptop LAN IPv4>:4173 on the same Wi-Fi, or wss:// for a public server."
-            })
+        val endpointInfo = RoomEndpointValidator.parse(rawEndpoint)
+        if (endpointInfo == null) {
+            appendRoomEvent(RoomEndpointValidator.INVALID_ENDPOINT_MESSAGE)
             return null
         }
+        val endpoint = endpointInfo.webSocketUrl
         if (endpointInput.text.toString() != endpoint) endpointInput.setText(endpoint)
+        endpointHintText.text = RoomEndpointValidator.guidance(endpointInfo)
         val session = roomSession
         if (session == null || !session.configureEndpoint(endpoint)) {
-            appendRoomEvent("The room service is not ready or the endpoint is invalid.")
+            appendRoomEvent("The room service is not ready for that endpoint. Check the host, port, and Wi-Fi connection.")
             return null
         }
         preferences.edit().putString(ENDPOINT_KEY, endpoint).apply()
         return session
     }
 
-    private fun normalizeRoomEndpoint(value: String): String? {
-        if (value.isBlank()) return null
-        val withScheme = if ("://" in value) value else if (BuildConfig.DEBUG) "ws://$value" else "wss://$value"
-        val endpoint = when {
-            withScheme.startsWith("http://", ignoreCase = true) && BuildConfig.DEBUG -> "ws://${withScheme.substringAfter("://")}"
-            withScheme.startsWith("https://", ignoreCase = true) -> "wss://${withScheme.substringAfter("://")}"
-            withScheme.startsWith("ws://", ignoreCase = true) -> "ws://${withScheme.substringAfter("://")}"
-            withScheme.startsWith("wss://", ignoreCase = true) -> "wss://${withScheme.substringAfter("://")}"
-            else -> return null
-        }
-        return endpoint.trimEnd('/').takeIf { it.length > 6 }
-    }
-
     private fun defaultRoomEndpoint(): String {
         val saved = preferences.getString(ENDPOINT_KEY, null)?.trim()
-        if (!saved.isNullOrEmpty() && (BuildConfig.DEBUG || saved.startsWith("wss://"))) return saved
+        if (!saved.isNullOrEmpty()) RoomEndpointValidator.normalize(saved)?.let { return it }
         return if (BuildConfig.DEBUG && isProbablyEmulator()) DEFAULT_EMULATOR_ENDPOINT else ""
     }
 
@@ -632,225 +593,113 @@ class MainActivity : Activity() {
         preferences.edit().putString(DISPLAY_NAME_KEY, displayName).apply()
     }
 
-    private fun restoreSavedSession() {
-        val token = runCatching { sessionStore.readToken() }.getOrNull()
-        authHasStoredToken = !token.isNullOrBlank()
-        if (token.isNullOrBlank()) {
-            authMessage = null
-            renderAuthState()
-            return
-        }
-        val endpoint = authEndpoint()
-        if (endpoint == null) {
-            authMessage = "Saved sign-in is waiting for a valid server endpoint. Guest mode is an explicit fallback."
-            renderAuthState()
-            return
-        }
-
-        authChecking = true
-        authMessage = null
-        renderAuthState()
-        val operation = ++authOperation
-        authCall = authClient.currentUser(endpoint, token) { result ->
-            runOnUiThread {
-                if (operation != authOperation || isFinishing) return@runOnUiThread
-                authCall = null
-                authChecking = false
-                val user = result.getOrNull()
-                if (result.isSuccess && user != null) {
-                    authToken = token
-                    authUser = user
-                    authHasStoredToken = true
-                    roomSession?.setBearerToken(token)
-                    authMessage = null
-                } else if (result.isSuccess) {
-                    clearSignedInState("Your saved session expired. Guest mode is an explicit fallback.")
-                } else {
-                    // Keep the encrypted token for a later retry, but never
-                    // attach an unvalidated session to a room client.
-                    authToken = null
-                    authUser = null
-                    authMessage = "Saved sign-in could not be checked. Guest mode is an explicit fallback; try again when online."
-                }
-                renderAuthState()
-            }
-        }
+    private fun requireRewardedAccess(): Boolean {
+        if (rewardedAccessGate.hasAccess()) return true
+        renderAccessState()
+        appendRoomEvent("Complete the 30-second local rewarded demo before creating, joining, or sharing audio.")
+        return false
     }
 
-    private fun signIn() {
-        if (authBusy || authChecking || authUser != null) return
-        if (roomSession?.connectionState() == RoomConnectionState.JOINED ||
-            roomSession?.isRoomSelectionPending() == true
-        ) {
-            authMessage = "Leave the current room before signing in."
-            renderAuthState()
+    private fun startRewardedAccess() {
+        if (rewardedAccessGate.hasAccess()) {
+            renderAccessState()
             return
         }
-        val endpoint = authEndpoint()
-        if (endpoint == null) {
-            authMessage = "Enter a valid RoomSound endpoint before signing in."
-            renderAuthState()
-            return
+        if (rewardedAccessHandle != null) return
+        val provider = rewardedAccessProvider ?: LocalDemoRewardedAccessProvider().also {
+            rewardedAccessProvider = it
         }
-        val email = authEmailInput.text.toString().trim()
-        val password = authPasswordInput.text.toString()
-        if (email.isEmpty() || password.isEmpty()) {
-            authMessage = "Enter your email and password."
-            renderAuthState()
-            return
-        }
-        if (password.length < 12) {
-            authMessage = "Password must be at least 12 characters."
-            renderAuthState()
-            return
-        }
-
-        authBusy = true
-        authMessage = null
-        renderAuthState()
-        val operation = ++authOperation
-        authCall = authClient.signIn(endpoint, email, password) { result ->
-            runOnUiThread {
-                if (operation != authOperation || isFinishing) return@runOnUiThread
-                authCall = null
-                authBusy = false
-                // Do not keep the password in the view after the request.
-                authPasswordInput.setText("")
-                val session = result.getOrNull()
-                if (result.isSuccess && session != null && persistSession(session)) {
-                    authToken = session.token
-                    authUser = session.user
-                    authHasStoredToken = true
-                    roomSession?.setBearerToken(session.token)
-                    authMessage = null
-                } else if (result.isSuccess && session != null) {
-                    // A token that cannot be protected locally must not be used
-                    // for room traffic. Best-effort server invalidation avoids
-                    // leaving an otherwise inaccessible session active.
-                    authClient.signOut(endpoint, session.token) { }
-                    authToken = null
-                    authUser = null
-                    authMessage = "This device could not protect the session. Sign-in was not completed."
-                } else {
-                    authMessage = authFailureMessage(result)
-                }
-                renderAuthState()
-            }
-        }
-    }
-
-    private fun signOut() {
-        if (authBusy || authChecking) return
-        val token = authToken ?: runCatching { sessionStore.readToken() }.getOrNull()
-        if (token.isNullOrBlank()) {
-            clearSignedInState("Signed out on this device. Guest mode is an explicit fallback.")
-            return
-        }
-        val endpoint = authEndpoint()
-        if (endpoint == null) {
-            clearSignedInState("Signed out on this device. Guest mode is an explicit fallback.")
-            return
-        }
-
-        authBusy = true
-        authMessage = null
-        renderAuthState()
-        val operation = ++authOperation
-        authCall = authClient.signOut(endpoint, token) { result ->
-            runOnUiThread {
-                if (operation != authOperation || isFinishing) return@runOnUiThread
-                authCall = null
-                authBusy = false
-                if (result.isSuccess) {
-                    clearSignedInState("Signed out. Guest mode is an explicit fallback.")
-                } else {
-                    authMessage = "Could not sign out. Check the connection and try again."
-                    renderAuthState()
+        accessButton.isEnabled = false
+        accessStatusText.text = "${provider.displayName}: starting 30-second countdown…"
+        rewardedAccessHandle = provider.start(object : RewardedAccessListener {
+            override fun onCountdown(secondsRemaining: Int) {
+                runOnUiThread {
+                    if (!isFinishing) {
+                        accessStatusText.text =
+                            "${provider.displayName}: $secondsRemaining seconds remaining. Keep this demo open to earn six hours of local access."
+                    }
                 }
             }
-        }
-    }
 
-    private fun persistSession(session: RoomAuthSession): Boolean = runCatching {
-        sessionStore.saveToken(session.token)
-    }.isSuccess
-
-    private fun clearSignedInState(message: String) {
-        // Leave before clearing the client token so an active room can send its
-        // normal leave message. The started capture service itself remains
-        // alive; only its room session is released.
-        roomSession?.leaveRoom()
-        roomSession?.clearBearerToken()
-        pendingCaptureId = null
-        pendingCaptureStart = false
-        pendingRoomSourceStart = false
-        projectionConsentInFlight = false
-        notificationPermissionRequestInFlight = false
-        notificationPermissionRequestedRoomId = null
-        authToken = null
-        authUser = null
-        authHasStoredToken = false
-        authBusy = false
-        authChecking = false
-        runCatching { sessionStore.clear() }
-        authMessage = message
-        renderRoomState(null)
-        renderTransportNow()
-        renderAuthState()
-    }
-
-    private fun authEndpoint(): String? {
-        if (!::endpointInput.isInitialized) return null
-        val endpoint = normalizeRoomEndpoint(endpointInput.text.toString().trim()) ?: return null
-        return RoomAuthEndpoint.httpBase(endpoint)
-    }
-
-    private fun authFailureMessage(result: Result<*>): String {
-        val error = result.exceptionOrNull()
-        if (error is RoomAuthException) {
-            return when (error.statusCode) {
-                401 -> "Invalid email or password."
-                429 -> "Too many attempts. Try again later."
-                else -> error.message?.takeIf { it.isNotBlank() } ?: "Account request could not be completed."
+            override fun onCompleted() {
+                runOnUiThread {
+                    if (isFinishing) return@runOnUiThread
+                    rewardedAccessHandle = null
+                    rewardedAccessGate.grant()
+                    appendRoomEvent("Demo reward completed. Room creation, joining, and device-audio capture are unlocked for six hours on this device.")
+                    renderAccessState()
+                }
             }
-        }
-        return "Account request could not be completed."
+
+            override fun onFailed(message: String) {
+                runOnUiThread {
+                    if (isFinishing) return@runOnUiThread
+                    rewardedAccessHandle = null
+                    accessStatusText.text = message
+                    accessButton.isEnabled = true
+                }
+            }
+        })
     }
 
-    private fun renderAuthState() {
-        if (!::authStatusText.isInitialized) return
-        val user = authUser
-        val signedIn = user != null
-        val canSignOut = signedIn || authHasStoredToken
-        val status = when {
-            authChecking -> "Checking saved sign-in…"
-            authBusy -> if (signedIn) "Signing out…" else "Working…"
-            signedIn -> "Signed in as ${user?.email}."
-            !authMessage.isNullOrBlank() -> authMessage
-            else -> "Guest mode (explicit fallback). Sign in to use an account."
+    private fun renderAccessState() {
+        if (!::accessStatusText.isInitialized) return
+        rewardedAccessExpiryRunnable?.let(transportRenderHandler::removeCallbacks)
+        rewardedAccessExpiryRunnable = null
+        val remainingMillis = rewardedAccessGate.remainingMillis()
+        if (remainingMillis > 0L) {
+            accessStatusText.text = "Local access active for ${formatAccessDuration(remainingMillis)}. The grant lasts six hours on this device."
+            accessStatusText.setTextColor(getColor(R.color.roomsound_success))
+            accessButton.text = "Access active"
+            accessButton.isEnabled = false
+            rewardedAccessExpiryRunnable = Runnable { expireRewardedAccess() }.also {
+                transportRenderHandler.postDelayed(it, remainingMillis.coerceAtMost(Int.MAX_VALUE.toLong()))
+            }
+        } else if (rewardedAccessHandle != null) {
+            accessStatusText.setTextColor(getColor(R.color.roomsound_warning))
+            accessButton.text = "Demo countdown in progress"
+            accessButton.isEnabled = false
+        } else {
+            accessStatusText.text = "Access locked. Complete the local/demo 30-second countdown to unlock room creation, joining, and device-audio capture. No real ad SDK is integrated."
+            accessStatusText.setTextColor(getColor(R.color.roomsound_cream_soft))
+            accessButton.text = "Start 30-second demo reward"
+            accessButton.isEnabled = true
         }
-        authStatusText.text = status
-        authStatusText.setTextColor(
-            getColor(
-                when {
-                    signedIn -> R.color.roomsound_success
-                    !authMessage.isNullOrBlank() -> R.color.roomsound_warning
-                    else -> R.color.roomsound_cream_soft
-                },
-            ),
-        )
-        authEmailInput.visibility = if (signedIn) View.GONE else View.VISIBLE
-        authPasswordInput.visibility = if (signedIn) View.GONE else View.VISIBLE
-        authSignInButton.visibility = if (signedIn) View.GONE else View.VISIBLE
-        authSignOutButton.visibility = if (canSignOut) View.VISIBLE else View.GONE
-        authEmailInput.isEnabled = !authBusy && !authChecking
-        authPasswordInput.isEnabled = !authBusy && !authChecking
-        authSignInButton.isEnabled = !authBusy && !authChecking
-        authSignOutButton.isEnabled = !authBusy && !authChecking
-        if (::endpointInput.isInitialized) {
-            // A bearer session belongs to the server origin. Require an
-            // explicit sign-out before the origin can be changed.
-            endpointInput.isEnabled = !signedIn && !authBusy && !authChecking
+        updateRoomEntryControls()
+        renderRoomState(latestRoomState ?: roomSession?.currentRoomState())
+    }
+
+    private fun expireRewardedAccess() {
+        val hadRoom = roomSession?.currentRoomState() != null
+        val captureActive = latestSnapshot.status in setOf(
+            CaptureStatus.STARTING,
+            CaptureStatus.READY,
+            CaptureStatus.CAPTURING,
+            CaptureStatus.NO_ACTIVE_PLAYBACK,
+        ) || pendingCaptureId != null
+        if (captureActive) stopCapture()
+        if (hadRoom) leaveRoom()
+        appendRoomEvent("Your six-hour room access expired. Complete another rewarded ad to continue.")
+        renderAccessState()
+    }
+
+    private fun updateRoomEntryControls() {
+        if (!::createRoomButton.isInitialized) return
+        val accessGranted = rewardedAccessGate.hasAccess()
+        val joined = roomSession?.connectionState() == RoomConnectionState.JOINED
+        createRoomButton.isEnabled = accessGranted && !joined
+        joinRoomButton.isEnabled = accessGranted && !joined
+    }
+
+    private fun formatAccessDuration(remainingMillis: Long): String {
+        val totalSeconds = (remainingMillis + 999L) / 1_000L
+        val hours = totalSeconds / 3_600L
+        val minutes = (totalSeconds % 3_600L) / 60L
+        val seconds = totalSeconds % 60L
+        return if (hours > 0L) {
+            "${hours}h ${minutes}m"
+        } else {
+            "${minutes}m ${seconds}s"
         }
     }
 
@@ -915,8 +764,7 @@ class MainActivity : Activity() {
         try {
             roomConnectionText.text = "Connection: ${state.name.lowercase(Locale.US)}"
             val joined = state == RoomConnectionState.JOINED
-            createRoomButton.isEnabled = !joined
-            joinRoomButton.isEnabled = !joined
+            updateRoomEntryControls()
             testConnectionButton.isEnabled = state !in setOf(
             RoomConnectionState.CONNECTING,
             RoomConnectionState.JOINED,
@@ -929,6 +777,7 @@ class MainActivity : Activity() {
     private fun renderRoomState(state: RoomState?) {
         try {
         latestRoomState = state
+        updateRoomEntryControls()
         renderCaptureControls(state)
         if (state == null) {
             roomStateText.text = "No room state. Create or join a room to continue."
@@ -965,8 +814,9 @@ class MainActivity : Activity() {
         val sourceIsModerator = room.activeSourceId == null ||
             room.activeSourceId == room.hostId || room.activeSourceId == room.cohostId
         requestAudioButton.text = if (ownPendingRequest) "Audio request pending" else "Request to share device audio"
-        requestAudioButton.isEnabled = self != null && !isModerator && sourceIsModerator && !ownPendingRequest
-        takeoverButton.isEnabled = isModerator && room.activeSourceId != null && self?.id != room.activeSourceId
+        val accessGranted = rewardedAccessGate.hasAccess()
+        requestAudioButton.isEnabled = accessGranted && self != null && !isModerator && sourceIsModerator && !ownPendingRequest
+        takeoverButton.isEnabled = accessGranted && isModerator && room.activeSourceId != null && self?.id != room.activeSourceId
         leaveRoomButton.isEnabled = true
         endRoomButton.isEnabled = isHost
         runCatching { renderApprovalControls(state, isModerator) }
@@ -994,8 +844,12 @@ class MainActivity : Activity() {
                 text = "${request.requesterName}: ${request.note.ifBlank { "device audio" }}"
                 setPadding(0, dp(5), dp(6), dp(5))
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            row.addView(button("Approve") { approveRequest(request.id) }, LinearLayout.LayoutParams(dp(100), LinearLayout.LayoutParams.WRAP_CONTENT))
-            row.addView(button("Reject", ButtonTone.DANGER) { rejectRequest(request.id) }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT))
+            row.addView(button("Approve") { approveRequest(request.id) }.apply {
+                isEnabled = rewardedAccessGate.hasAccess()
+            }, LinearLayout.LayoutParams(dp(100), LinearLayout.LayoutParams.WRAP_CONTENT))
+            row.addView(button("Reject", ButtonTone.DANGER) { rejectRequest(request.id) }.apply {
+                isEnabled = rewardedAccessGate.hasAccess()
+            }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT))
             approvalContainer.addView(row, matchWrap())
         }
     }
@@ -1065,22 +919,24 @@ class MainActivity : Activity() {
         val consentPending = projectionConsentInFlight || pendingCaptureStart
         if (isSelfSource) {
             sourceButton.text = when {
+                !rewardedAccessGate.hasAccess() && !captureActive -> "Unlock access to share device audio"
                 consentPending -> "Awaiting Android consent…"
                 captureActive && room.sourceStatus.equals("STARTING", ignoreCase = true) -> "Preparing device audio…"
                 captureActive -> "Stop sharing device audio"
                 room.sourceStatus.equals("STARTING", ignoreCase = true) -> "Share approved device audio"
                 else -> "Resume device audio"
             }
-            sourceButton.isEnabled = !consentPending && (!captureActive || room.sourceStatus.equals("LIVE", ignoreCase = true) ||
+            sourceButton.isEnabled = (rewardedAccessGate.hasAccess() || captureActive) && !consentPending && (!captureActive || room.sourceStatus.equals("LIVE", ignoreCase = true) ||
                 room.sourceStatus.equals("STARTING", ignoreCase = true)
             )
         } else if (isModerator && room.activeSourceId == null) {
             sourceButton.text = when {
+                !rewardedAccessGate.hasAccess() -> "Unlock access to share device audio"
                 consentPending -> "Awaiting Android consent…"
                 captureActive -> "Preparing device audio…"
                 else -> "Share device audio"
             }
-            sourceButton.isEnabled = !consentPending && !captureActive
+            sourceButton.isEnabled = rewardedAccessGate.hasAccess() && !consentPending && !captureActive
         } else {
             sourceButton.text = "Wait for source control"
             sourceButton.isEnabled = false
@@ -1123,6 +979,7 @@ class MainActivity : Activity() {
         if (isSelfSource && captureActive) {
             stopCapture()
         } else if (isSelfSource || (isModerator && state.room.activeSourceId == null)) {
+            if (!requireRewardedAccess()) return
             beginCapture(forRoomSource = true)
         } else {
             appendRoomEvent("Refresh the room state before sharing; this phone is not the active source.")
@@ -1130,6 +987,7 @@ class MainActivity : Activity() {
     }
 
     private fun requestAudioControl() {
+        if (!requireRewardedAccess()) return
         val session = roomSession ?: return
         val state = session.currentRoomState()
         val self = state?.self
@@ -1145,6 +1003,7 @@ class MainActivity : Activity() {
     }
 
     private fun takeoverSource() {
+        if (!requireRewardedAccess()) return
         val session = roomSession ?: return
         val state = session.currentRoomState() ?: return
         if (!isCurrentModerator(state) || state.room.activeSourceId == null || state.self?.id == state.room.activeSourceId) {
@@ -1155,6 +1014,7 @@ class MainActivity : Activity() {
     }
 
     private fun approveRequest(requestId: String) {
+        if (!requireRewardedAccess()) return
         val session = roomSession ?: return
         val state = session.currentRoomState() ?: return
         if (!isCurrentModerator(state) || state.requests.none { it.id == requestId && it.status.equals("PENDING", true) }) {
@@ -1235,6 +1095,7 @@ class MainActivity : Activity() {
     }
 
     private fun beginCapture(forRoomSource: Boolean) {
+        if (!requireRewardedAccess()) return
         if (projectionConsentInFlight || pendingCaptureStart) {
             appendRoomEvent("Android capture consent is already in progress.")
             return

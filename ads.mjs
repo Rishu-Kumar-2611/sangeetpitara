@@ -10,7 +10,18 @@
  */
 
 const providerAdapters = new Map();
+const rewardedProviderAdapters = new Map();
 const AD_CONSENT_STORAGE_KEY = 'roomsound-ad-consent';
+
+export const REWARDED_ACCESS_STORAGE_KEY = 'roomsound-rewarded-access-expires-at';
+export const DEFAULT_REWARDED_ACCESS_CONFIG = Object.freeze({
+  enabled: true,
+  provider: 'demo-local',
+  mode: 'offline',
+  rewardDurationSeconds: 30,
+  accessDurationHours: 6,
+  accessDurationMs: 6 * 60 * 60 * 1000,
+});
 
 function metaValue(documentRef, name) {
   return documentRef.querySelector(`meta[name="${name}"]`)?.content?.trim() || '';
@@ -49,6 +60,126 @@ export function registerAdProvider(name, mount) {
   providerAdapters.set(provider, mount);
   return () => providerAdapters.delete(provider);
 }
+
+function positiveNumber(value, fallback, { integer = false, min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < min) return fallback;
+  const bounded = Math.min(max, number);
+  return integer ? Math.round(bounded) : bounded;
+}
+
+export function normalizeRewardedAccessConfig(config = {}) {
+  const source = config && typeof config === 'object' ? config : {};
+  const rewardDurationSeconds = positiveNumber(
+    source.rewardDurationSeconds ?? source.rewardedAdDurationSeconds ?? source.durationSeconds,
+    DEFAULT_REWARDED_ACCESS_CONFIG.rewardDurationSeconds,
+    { integer: true, min: 1, max: 10 * 60 },
+  );
+  const configuredHours = source.accessDurationHours
+    ?? (Number.isFinite(Number(source.accessDurationMs)) ? Number(source.accessDurationMs) / (60 * 60 * 1000) : undefined);
+  const accessDurationHours = positiveNumber(
+    configuredHours,
+    DEFAULT_REWARDED_ACCESS_CONFIG.accessDurationHours,
+    { min: 1 / 60, max: 24 * 365 },
+  );
+  return {
+    enabled: source.enabled !== false,
+    provider: String(source.provider || DEFAULT_REWARDED_ACCESS_CONFIG.provider).trim().toLowerCase(),
+    mode: String(source.mode || DEFAULT_REWARDED_ACCESS_CONFIG.mode).trim().toLowerCase(),
+    rewardDurationSeconds,
+    accessDurationHours,
+    accessDurationMs: Math.round(accessDurationHours * 60 * 60 * 1000),
+  };
+}
+
+export function readRewardedAccessExpiry(storage = globalThis.localStorage) {
+  try {
+    const expiry = Number(storage?.getItem(REWARDED_ACCESS_STORAGE_KEY));
+    return Number.isFinite(expiry) && expiry > 0 ? expiry : null;
+  } catch {
+    return null;
+  }
+}
+
+export function hasRewardedAccess({ storage = globalThis.localStorage, now = Date.now() } = {}) {
+  const expiry = readRewardedAccessExpiry(storage);
+  const nowMs = Number(now);
+  return expiry !== null && Number.isFinite(nowMs) && expiry > nowMs;
+}
+
+export function grantRewardedAccess({
+  storage = globalThis.localStorage,
+  now = Date.now(),
+  config = DEFAULT_REWARDED_ACCESS_CONFIG,
+  durationMs,
+} = {}) {
+  const normalized = normalizeRewardedAccessConfig(config);
+  const nowMs = Number(now);
+  const accessMs = Number.isFinite(Number(durationMs)) ? Number(durationMs) : normalized.accessDurationMs;
+  if (!Number.isFinite(nowMs) || !Number.isFinite(accessMs) || accessMs <= 0 || typeof storage?.setItem !== 'function') return null;
+  const expiresAt = nowMs + accessMs;
+  try {
+    storage?.setItem(REWARDED_ACCESS_STORAGE_KEY, String(expiresAt));
+    return expiresAt;
+  } catch {
+    return null;
+  }
+}
+
+export function clearRewardedAccess(storage = globalThis.localStorage) {
+  try { storage?.removeItem(REWARDED_ACCESS_STORAGE_KEY); } catch {}
+}
+
+export function formatRewardedAccessRemaining(expiresAt, now = Date.now()) {
+  const remainingMs = Number(expiresAt) - Number(now);
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return 'Access required';
+  const totalMinutes = Math.max(1, Math.ceil(remainingMs / (60 * 1000)));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours && minutes) return `${hours}h ${minutes}m remaining`;
+  if (hours) return `${hours}h remaining`;
+  return `${minutes}m remaining`;
+}
+
+export function registerRewardedProvider(name, start) {
+  const provider = String(name || '').trim().toLowerCase();
+  if (!provider || typeof start !== 'function') throw new TypeError('A rewarded provider name and start function are required.');
+  rewardedProviderAdapters.set(provider, start);
+  return () => rewardedProviderAdapters.delete(provider);
+}
+
+export function runRewardedAccess(config = DEFAULT_REWARDED_ACCESS_CONFIG, options = {}) {
+  const normalized = normalizeRewardedAccessConfig(config);
+  if (!normalized.enabled) return Promise.reject(new Error('Rewarded access is disabled.'));
+  const provider = rewardedProviderAdapters.get(normalized.provider);
+  if (!provider) return Promise.reject(new Error(`Rewarded provider "${normalized.provider}" is unavailable.`));
+  return Promise.resolve().then(() => provider({
+    config: normalized,
+    onTick: options.onTick,
+    documentRef: options.documentRef || globalThis.document,
+    timerApi: options.timerApi || globalThis,
+  }));
+}
+
+// This is deliberately a local/offline simulation. It does not load an ad
+// network, make an impression claim, or represent a production monetization
+// provider. A reviewed provider can be registered later without changing the
+// room-entry or local-expiry contract.
+registerRewardedProvider('demo-local', ({ config, onTick, timerApi }) => {
+  const setIntervalImpl = typeof timerApi?.setInterval === 'function' ? timerApi.setInterval.bind(timerApi) : setInterval;
+  const clearIntervalImpl = typeof timerApi?.clearInterval === 'function' ? timerApi.clearInterval.bind(timerApi) : clearInterval;
+  let remaining = config.rewardDurationSeconds;
+  onTick?.(remaining);
+  return new Promise((resolve) => {
+    const timer = setIntervalImpl(() => {
+      remaining -= 1;
+      onTick?.(Math.max(0, remaining));
+      if (remaining > 0) return;
+      clearIntervalImpl(timer);
+      resolve({ completed: true, provider: 'demo-local', mode: 'offline' });
+    }, 1000);
+  });
+});
 
 function placeholderContent(documentRef, provider) {
   const label = documentRef.createElement('span');

@@ -65,12 +65,20 @@ function socket(url, headers = {}) {
   };
 }
 
-test('production auth is required for WebSocket room entry and readiness is observable', async (t) => {
+test('legacy production auth settings do not gate anonymous rooms while internal APIs stay protected', async (t) => {
   const running = await startServer();
   t.after(() => running.server.kill());
 
   const config = await fetch(`${running.http}/config`).then((response) => response.json());
-  assert.equal(config.authRequired, true);
+  assert.equal(config.authRequired, false);
+  assert.deepEqual(config.rewardedAccess, {
+    enabled: true,
+    provider: 'demo-local',
+    mode: 'offline',
+    rewardDurationSeconds: 30,
+    accessDurationHours: 6,
+    accessDurationMs: 6 * 60 * 60 * 1000,
+  });
 
   const readiness = await fetch(`${running.http}/ready`);
   assert.equal(readiness.status, 200);
@@ -82,9 +90,21 @@ test('production auth is required for WebSocket room entry and readiness is obse
   const anonymous = socket(running.ws);
   t.after(() => anonymous.instance.close());
   await anonymous.open();
-  anonymous.instance.send(JSON.stringify({ type: 'create-room', name: 'Blocked', displayName: 'Guest', guestId: 'guest' }));
-  const denied = await anonymous.wait((message) => message.type === 'error');
-  assert.match(denied.message, /sign in/i);
+  anonymous.instance.send(JSON.stringify({ type: 'create-room', name: 'Anonymous', displayName: 'Guest', guestId: 'guest' }));
+  const anonymousJoined = await anonymous.wait((message) => message.type === 'joined');
+  assert.equal(anonymousJoined.state.room.name, 'Anonymous');
+
+  const anonymousJoiner = socket(running.ws);
+  t.after(() => anonymousJoiner.instance.close());
+  await anonymousJoiner.open();
+  anonymousJoiner.instance.send(JSON.stringify({
+    type: 'join-room',
+    code: anonymousJoined.state.room.code,
+    displayName: 'Second guest',
+    guestId: 'guest-2',
+  }));
+  const anonymousJoin = await anonymousJoiner.wait((message) => message.type === 'joined');
+  assert.equal(anonymousJoin.state.room.code, anonymousJoined.state.room.code);
 
   const registration = await fetch(`${running.http}/api/auth/register`, {
     method: 'POST',

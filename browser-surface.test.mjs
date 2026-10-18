@@ -4,19 +4,27 @@ import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
 
-test('browser surface keeps account controls and ad slots opt-in', async () => {
+test('browser surface is anonymous and exposes the local rewarded-access gate', async () => {
   const [html, app, ads] = await Promise.all([
     readFile(new URL('index.html', root), 'utf8'),
     readFile(new URL('app.js', root), 'utf8'),
     readFile(new URL('ads.mjs', root), 'utf8'),
   ]);
 
-  for (const id of ['account-form', 'account-login', 'account-register', 'account-logout']) {
-    assert.match(html, new RegExp(`id="${id}"`));
+  for (const id of ['account-form', 'account-login', 'account-register', 'account-logout', 'room-session', 'room-logout']) {
+    assert.doesNotMatch(html, new RegExp(`id="${id}"`));
   }
-  assert.match(app, /getCurrentUser/);
-  assert.match(app, /requestAuth/);
-  assert.match(app, /requestLogout/);
+  assert.match(html, /id="rewarded-access"/);
+  assert.match(html, /id="complete-rewarded-access"/);
+  assert.match(html, /30-second demo\/local rewarded preview/);
+  assert.match(html, /Demo\/local provider · offline development only/);
+  assert.match(html, /id="create-room"[^>]+disabled/);
+  assert.match(html, /id="join-room"[^>]+disabled/);
+  assert.doesNotMatch(`${html}\n${app}`, /Sign in|Create account|Sign out/);
+  assert.doesNotMatch(app, /getCurrentUser|requestAuth|requestLogout|authRequired/);
+  assert.match(app, /hasRewardedAccess/);
+  assert.match(app, /runRewardedAccess/);
+  assert.match(app, /grantRewardedAccess/);
   assert.match(html, /meta name="roomsound-ad-enabled" content="false"/);
   assert.match(html, /meta name="roomsound-ad-consent" content="false"/);
   assert.match(html, /id="ad-consent-banner"[^>]+hidden/);
@@ -24,6 +32,9 @@ test('browser surface keeps account controls and ad slots opt-in', async () => {
   assert.match(ads, /providerAdapters/);
   assert.match(ads, /setAdConsent/);
   assert.match(ads, /adsense/);
+  assert.match(ads, /demo-local/);
+  assert.match(ads, /rewardDurationSeconds: 30/);
+  assert.match(ads, /accessDurationHours: 6/);
   assert.match(ads, /no third-party ad script by default/);
   assert.doesNotMatch(html, /<script[^>]+src=["']https?:\/\//i);
   assert.doesNotMatch(`${html}\n${app}\n${ads}`, /ca-pub-\d+/i);

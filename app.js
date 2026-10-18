@@ -1,7 +1,16 @@
 import { createGuestId } from './guest-id.js';
 import { liveAudioTracks, prepareDisplayAudioStream } from './capture-tracks.js';
-import { getCurrentUser, logout as requestLogout, submitAuth as requestAuth } from './account-client.mjs';
-import { initializeAdSlots } from './ads.mjs';
+import {
+  DEFAULT_REWARDED_ACCESS_CONFIG,
+  clearRewardedAccess,
+  formatRewardedAccessRemaining,
+  grantRewardedAccess,
+  hasRewardedAccess,
+  initializeAdSlots,
+  normalizeRewardedAccessConfig,
+  readRewardedAccessExpiry,
+  runRewardedAccess,
+} from './ads.mjs';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -55,12 +64,10 @@ const state = {
   pendingNotificationActions: [],
   sentNotificationActions: new Set(),
   notificationUnavailableNotified: false,
-  user: null,
-  authRequired: false,
-  authLoading: true,
-  authBusy: false,
-  accountError: '',
-  signingOut: false,
+  rewardedAccessConfig: DEFAULT_REWARDED_ACCESS_CONFIG,
+  rewardedAccessExpiry: readRewardedAccessExpiry(),
+  rewardedBusy: false,
+  rewardedAccessTimer: null,
 };
 
 let rtcConfig = {
@@ -69,179 +76,123 @@ let rtcConfig = {
 let iceConfigLoaded = false;
 const telemetryPollMs = 1000;
 
-async function loadIceConfig() {
+async function loadClientConfig() {
   if (iceConfigLoaded) return;
   try {
     const r = await fetch('/config');
     if (!r.ok) throw new Error('config fetch failed');
     const j = await r.json();
     if (Array.isArray(j.iceServers) && j.iceServers.length) rtcConfig = { iceServers: j.iceServers };
-    state.authRequired = j.authRequired === true;
+    if (j.rewardedAccess) state.rewardedAccessConfig = normalizeRewardedAccessConfig(j.rewardedAccess);
     iceConfigLoaded = true;
-    renderAuthState();
+    renderRewardedAccess();
   } catch {
-    // keep default STUN
+    // Keep default STUN and the offline demo reward when config is unavailable.
   }
 }
-loadIceConfig();
+loadClientConfig();
 
-async function loadAuthState() {
-  try {
-    state.user = await getCurrentUser();
-  } catch {
-    // Guest mode remains usable when the optional account service is offline.
-    // A required deployment will still be guarded by the server and by the
-    // room-entry check below.
-  } finally {
-    state.authLoading = false;
-    renderAuthState();
-  }
+function rewardedAccessActive() {
+  state.rewardedAccessExpiry = readRewardedAccessExpiry();
+  return hasRewardedAccess({ now: Date.now() });
 }
 
-function setAccountError(message = '') {
-  state.accountError = String(message || '');
-  const element = $('#account-error');
-  if (!element) return;
-  element.textContent = state.accountError;
-  element.classList.toggle('hidden', !state.accountError);
-}
-
-function renderRoomSession() {
-  const element = $('#room-session');
-  const email = $('#room-session-email');
-  if (!element || !email) return;
-  const signedIn = Boolean(state.user);
-  element.classList.toggle('hidden', !signedIn);
-  email.textContent = state.user?.email || '';
-  element.title = signedIn ? `Signed in as ${state.user.email}` : '';
-}
-
-function renderAuthState() {
-  const form = $('#account-form');
-  const signedIn = $('#account-signed-in');
-  const stateLabel = $('#account-state');
-  const emailLabel = $('#account-email-label');
-  const accountKicker = $('#account-kicker');
-  const accountHelp = $('#account-help');
-  const entryFootnote = $('#entry-footnote');
-  const loginButton = $('#account-login');
-  const registerButton = $('#account-register');
-  const passwordInput = $('#account-password');
+function renderRewardedAccess() {
+  const gate = $('#rewarded-access');
+  const status = $('#rewarded-access-state');
+  const copy = $('#rewarded-access-copy');
+  const button = $('#complete-rewarded-access');
+  const progress = $('#rewarded-access-progress');
+  const progressLabel = $('#rewarded-access-progress-label');
   const createButton = $('#create-room');
   const joinButton = $('#join-room');
-  if (!form || !signedIn || !stateLabel || !emailLabel) {
-    renderRoomSession();
-    return;
-  }
+  if (!gate || !status || !button || !createButton || !joinButton) return;
 
-  const user = state.user;
-  const blocked = state.authRequired && !user;
-  const busy = state.authBusy;
-  const checking = state.authLoading;
-  form.classList.toggle('hidden', Boolean(user));
-  signedIn.classList.toggle('hidden', !user);
-  stateLabel.textContent = checking
-    ? 'Checking session…'
-    : user
-      ? (state.authRequired ? 'Signed in · required' : 'Signed in')
-      : state.authRequired ? 'Sign in required' : 'Guest mode';
-  stateLabel.classList.toggle('account-state-required', blocked);
-  emailLabel.textContent = user?.email || '';
-  if (accountKicker) accountKicker.textContent = state.authRequired ? 'ACCOUNT REQUIRED' : 'ACCOUNT';
-  if (accountHelp) accountHelp.textContent = state.authRequired
-    ? (blocked ? 'Sign in before creating or joining a room on this server.' : 'Your room session is tied to this signed-in account.')
-    : 'Guest rooms stay available when anonymous listening is enabled.';
-  if (entryFootnote) entryFootnote.textContent = state.authRequired
-    ? 'Your session is protected by a server-issued HttpOnly cookie.'
-    : 'Guest rooms stay available when this server allows anonymous listening.';
-
-  for (const button of [loginButton, registerButton, passwordInput]) if (button) button.disabled = busy;
-  if (loginButton) loginButton.textContent = busy ? 'Working…' : 'Sign in';
-  if (registerButton) registerButton.textContent = busy ? 'Working…' : 'Create account';
-  for (const button of [createButton, joinButton]) {
-    if (!button) continue;
-    button.disabled = blocked;
-    button.setAttribute('aria-disabled', String(blocked));
+  const active = rewardedAccessActive();
+  const config = state.rewardedAccessConfig;
+  const duration = config.rewardDurationSeconds;
+  if (state.rewardedAccessTimer) {
+    clearTimeout(state.rewardedAccessTimer);
+    state.rewardedAccessTimer = null;
   }
-  const error = $('#account-error');
-  if (error) {
-    error.textContent = state.accountError;
-    error.classList.toggle('hidden', !state.accountError);
+  if (active && state.rewardedAccessExpiry > Date.now()) {
+    state.rewardedAccessTimer = setTimeout(() => {
+      state.rewardedAccessTimer = null;
+      expireRewardedAccess();
+    }, Math.max(0, state.rewardedAccessExpiry - Date.now()) + 50);
   }
-  renderRoomSession();
+  gate.classList.toggle('access-active', active);
+  status.textContent = active
+    ? `Access active · ${formatRewardedAccessRemaining(state.rewardedAccessExpiry)}`
+    : state.rewardedBusy
+      ? 'Demo reward in progress…'
+      : 'Access required';
+  if (copy) copy.textContent = active
+    ? 'Your local access pass is active. You can enter rooms anonymously.'
+    : `Complete the ${duration}-second demo/local rewarded preview to unlock ${config.accessDurationHours} hours of room access.`;
+  button.disabled = state.rewardedBusy || active || config.enabled === false;
+  button.textContent = state.rewardedBusy
+    ? `Completing demo reward…`
+    : active
+      ? 'Room access active'
+      : `Start ${duration}-second demo reward`;
+  createButton.disabled = !active || state.rewardedBusy;
+  joinButton.disabled = !active || state.rewardedBusy;
+  createButton.setAttribute('aria-disabled', String(!active || state.rewardedBusy));
+  joinButton.setAttribute('aria-disabled', String(!active || state.rewardedBusy));
+  if (progress) {
+    progress.hidden = !state.rewardedBusy;
+    progress.max = duration;
+    progress.value = state.rewardedBusy ? Number(progress.dataset.remaining || duration) : 0;
+  }
+  if (progressLabel) progressLabel.textContent = state.rewardedBusy
+    ? `${Number(progress?.dataset.remaining || duration)} seconds remaining`
+    : '';
 }
 
-function accountInputValues() {
-  return {
-    email: $('#account-email')?.value.trim() || '',
-    password: $('#account-password')?.value || '',
-  };
-}
-
-async function submitAccount(mode) {
-  if (state.authBusy) return;
-  const credentials = accountInputValues();
-  if (!credentials.email || !credentials.password) {
-    setAccountError('Enter your email and password.');
-    return;
-  }
-  if (credentials.password.length < 12) {
-    setAccountError('Password must be at least 12 characters.');
-    return;
-  }
-
-  state.authBusy = true;
-  setAccountError('');
-  renderAuthState();
-  try {
-    const payload = await requestAuth(mode, credentials);
-    state.user = payload?.user || null;
-    if (!state.user) throw new Error('Account response was incomplete.');
-    const password = $('#account-password');
-    if (password) password.value = '';
-    setAccountError('');
-    renderAuthState();
-    toast(mode === 'register' ? 'Your RoomSound account is ready.' : `Signed in as ${state.user.email}.`, 'success');
-  } catch (error) {
-    setAccountError(error?.message || 'Account request could not be completed.');
-    renderAuthState();
-  } finally {
-    state.authBusy = false;
-    renderAuthState();
-  }
-}
-
-async function signOut() {
-  if (state.authBusy) return;
-  state.authBusy = true;
-  const hadSocket = Boolean(state.ws);
-  state.signingOut = hadSocket;
-  setAccountError('');
-  renderAuthState();
-  try {
-    await requestLogout();
-    state.user = null;
+function expireRewardedAccess() {
+  const hadRoom = Boolean(state.room || state.ws);
+  const expiryMessage = 'Your six-hour room access expired. Watch another rewarded ad to continue.';
+  clearRewardedAccess();
+  state.rewardedAccessExpiry = null;
+  if (hadRoom) {
     state.explicitLeave = true;
     state.lastRoomCode = null;
-    resetToLanding();
-    toast('Signed out.', 'success');
+    if (state.ws?.readyState === WebSocket.OPEN) send({ type: 'leave-room' });
+    else state.ws?.close();
+    window.setTimeout(() => {
+      if (state.room || state.ws) resetToLanding(expiryMessage);
+    }, 150);
+    toast(expiryMessage, 'error');
+  }
+  renderRewardedAccess();
+}
+
+async function completeRewardedAccess() {
+  if (state.rewardedBusy || rewardedAccessActive()) return;
+  state.rewardedBusy = true;
+  const duration = state.rewardedAccessConfig.rewardDurationSeconds;
+  const progress = $('#rewarded-access-progress');
+  if (progress) progress.dataset.remaining = String(duration);
+  renderRewardedAccess();
+  try {
+    const result = await runRewardedAccess(state.rewardedAccessConfig, {
+      onTick: (remaining) => {
+        if (progress) progress.dataset.remaining = String(remaining);
+        renderRewardedAccess();
+      },
+    });
+    if (!result?.completed) throw new Error('The rewarded preview did not complete.');
+    const expiresAt = grantRewardedAccess({ config: state.rewardedAccessConfig });
+    if (!expiresAt) throw new Error('This browser could not store local room access.');
+    state.rewardedAccessExpiry = expiresAt;
+    toast(`Room access is active for ${state.rewardedAccessConfig.accessDurationHours} hours.`, 'success');
   } catch (error) {
-    if (error?.status === 401) {
-      state.user = null;
-      state.explicitLeave = true;
-      state.lastRoomCode = null;
-      resetToLanding();
-      toast('Your session has expired. Sign in again.', 'error');
-    } else {
-      state.signingOut = false;
-      const message = error?.message || 'Could not sign out. Try again.';
-      setAccountError(message);
-      toast(message, 'error');
-    }
+    toast(error?.message || 'The rewarded preview could not be completed.', 'error');
   } finally {
-    state.authBusy = false;
-    if (!hadSocket) state.signingOut = false;
-    renderAuthState();
+    state.rewardedBusy = false;
+    if (progress) delete progress.dataset.remaining;
+    renderRewardedAccess();
   }
 }
 
@@ -576,10 +527,10 @@ function scheduleReconnect() {
 }
 
 function connectAnd(action, isReconnect = false) {
-  if (state.authRequired && !state.user) {
-    setAccountError('Sign in before entering a room.');
-    toast('Sign in is required for this deployment.', 'error');
-    $('#account-email')?.focus();
+  if (!rewardedAccessActive()) {
+    renderRewardedAccess();
+    showLanding('Complete the demo reward before entering a room.');
+    $('#complete-rewarded-access')?.focus();
     return;
   }
   const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -622,14 +573,11 @@ function connectAnd(action, isReconnect = false) {
     const code = event.code;
     const reason = event.reason || '';
     // Explicit leaves / removals should NOT reconnect
-    if (code === 1000 && state.signingOut) state.signingOut = false;
     if (code === 4003) {
-      const signingOut = state.signingOut;
-      state.signingOut = false;
       state.lastRoomCode = null;
       state.explicitLeave = true;
       resetToLanding(reason || 'You were removed from the room.');
-      if (!signingOut) toast(reason || 'You were removed from the room.', 'bad');
+      toast(reason || 'You were removed from the room.', 'bad');
       return;
     }
     if (code === 1000 && reason === 'Left room') {
@@ -1345,7 +1293,7 @@ async function createPublisherPeer(targetId) {
   const sourceEpoch = state.room?.sourceEpoch;
   const audioTracks = liveAudioTracks(captureStream);
   if (!audioTracks.length) { console.warn("[RoomSound] no live tracks for "+targetId); return; }
-  await loadIceConfig();
+  await loadClientConfig();
   if (state.captureStream !== captureStream || !isSelfSource() || state.room?.sourceEpoch !== sourceEpoch || state.peers.has(targetId)) return;
   const pc = new RTCPeerConnection(rtcConfig);
   const entry = { pc, role: 'publisher', sourceEpoch, captureStream, pendingCandidates: [], remoteDescSet: false };
@@ -1425,7 +1373,7 @@ async function handleRtcSignal(message) {
   }
   if (signal.type === 'offer') {
     if (isSelfSource()) return;
-    await loadIceConfig();
+    await loadClientConfig();
     if (!state.room?.activeSourceId || state.room.activeSourceId !== from || state.room.sourceEpoch !== sourceEpoch || isSelfSource()) return;
     const existing = state.peers.get(from);
     if (existing) removePeerConnection(from, existing);
@@ -1697,12 +1645,7 @@ function wireEvents() {
     if (!button) return;
     send({ type: button.dataset.requestAction === 'approve' ? 'approve-request' : 'reject-request', requestId: button.dataset.requestId });
   });
-  $('#account-form')?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    void submitAccount(event.submitter?.dataset.authAction || 'login');
-  });
-  $('#account-logout')?.addEventListener('click', () => { void signOut(); });
-  $('#room-logout')?.addEventListener('click', () => { void signOut(); });
+  $('#complete-rewarded-access')?.addEventListener('click', () => { void completeRewardedAccess(); });
 }
 
 wireEvents();
@@ -1712,8 +1655,7 @@ if (notificationSupportAvailable()) {
 }
 void registerNotificationServiceWorker();
 initializeAdSlots();
-renderAuthState();
-void loadAuthState();
+renderRewardedAccess();
 
 const locationParams = new URLSearchParams(location.search);
 const initialNotificationAction = normalizeNotificationAction({

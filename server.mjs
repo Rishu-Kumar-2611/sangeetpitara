@@ -29,6 +29,7 @@ import {
 import { createStructuredLogger, createHealthState, createMetricsRegistry } from './observability.mjs';
 import { createRepositoryFromEnv } from './persistence.mjs';
 import { readJsonBody as readSecureJsonBody, readRawBody, RequestBodyError as SecureRequestBodyError } from './security.mjs';
+import { DEFAULT_REWARDED_ACCESS_CONFIG, normalizeRewardedAccessConfig } from './ads.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const rootPath = resolve(root);
@@ -46,16 +47,24 @@ const RATE_LIMIT_MAX = 120;
 const TURN_URLS = process.env.TURN_URLS ? process.env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean) : [];
 const TURN_USERNAME = process.env.TURN_USERNAME || '';
 const TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || '';
+const rewardedAccess = normalizeRewardedAccessConfig({
+  enabled: !['0', 'false', 'off'].includes(String(process.env.REWARDED_ACCESS_ENABLED || '').trim().toLowerCase()),
+  provider: process.env.REWARDED_AD_PROVIDER || DEFAULT_REWARDED_ACCESS_CONFIG.provider,
+  mode: process.env.REWARDED_AD_MODE || DEFAULT_REWARDED_ACCESS_CONFIG.mode,
+  rewardDurationSeconds: process.env.REWARDED_AD_DURATION_SECONDS || DEFAULT_REWARDED_ACCESS_CONFIG.rewardDurationSeconds,
+  accessDurationHours: process.env.REWARDED_ACCESS_DURATION_HOURS || DEFAULT_REWARDED_ACCESS_CONFIG.accessDurationHours,
+});
 const repository = await createRepositoryFromEnv(process.env);
 const auth = createAuthService({
   repository,
   sessionTtlMs: process.env.SESSION_TTL_MS,
 });
 const secureSessionCookie = sessionCookieSecure(process.env);
-const explicitRequireAuth = process.env.REQUIRE_AUTH === '1' || process.env.REQUIRE_AUTH === 'true';
-const explicitGuestMode = process.env.REQUIRE_AUTH === '0' || process.env.REQUIRE_AUTH === 'false'
-  || process.env.ALLOW_ANONYMOUS === '1' || process.env.ALLOW_ANONYMOUS === 'true';
-const requireAuth = explicitRequireAuth || (!explicitGuestMode && process.env.NODE_ENV === 'production');
+// Browser room access is intentionally anonymous. Keep the old environment
+// variables accepted by deployments, but never let them turn room create/join
+// into an account-gated flow. HTTP account, moderation, billing, and admin
+// routes below continue to authenticate independently.
+const roomAuthRequired = false;
 const billing = createBillingService({ env: process.env });
 const logger = createStructuredLogger({
   service: 'roomsound',
@@ -653,7 +662,6 @@ function attachRoom(ws, room, member) {
 }
 
 async function createRoom(ws, message) {
-  if (requireAuth && !ws.authenticatedUser) return sendError(ws, 'Sign in is required to create a room.');
   if (await moderationBlocksEntry(ws)) return;
   let code = randomCode();
   while (findRoomByCode(code)) code = randomCode();
@@ -696,7 +704,6 @@ async function createRoom(ws, message) {
 }
 
 async function joinRoom(ws, message) {
-  if (requireAuth && !ws.authenticatedUser) return sendError(ws, 'Sign in is required to join a room.');
   const room = findRoomByCode(message.code);
   if (!room || room.status !== 'ACTIVE') return sendError(ws, 'That room is unavailable or has ended.');
   if (await moderationBlocksEntry(ws, room)) return;
@@ -1149,7 +1156,8 @@ const server = http.createServer(async (req, res) => {
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...(turn ? [turn] : [])],
       maxMembers: 10,
       requestTtlMs,
-      authRequired: requireAuth,
+      authRequired: roomAuthRequired,
+       rewardedAccess,
     }));
     return;
   }
@@ -1296,12 +1304,12 @@ try {
   await restorePersistedRooms();
   server.listen(port, host, () => {
     health.setReady(true);
-    audit.record({ type: 'server.ready', severity: 'info', metadata: { repository: repository.kind, requireAuth } });
+    audit.record({ type: 'server.ready', severity: 'info', metadata: { repository: repository.kind, roomAuthRequired } });
     logger.info('RoomSound is ready', {
       host,
       port,
       repository: repository.kind,
-      requireAuth,
+      roomAuthRequired,
       turnConfigured: TURN_URLS.length > 0,
     });
     for (const address of lanAddresses()) logger.info('RoomSound LAN address', { address, port });

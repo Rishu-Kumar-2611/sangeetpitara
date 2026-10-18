@@ -35,8 +35,16 @@ opens or publishes a microphone input.
   name, create-room, join-room, connection state, room roster, source state,
   and leave-room. The guest ID is generated once and persisted locally so a
   reconnect can reattach to the same server-side member.
+- Android room creation, joining, and device-audio capture use anonymous guest
+  identity only. There is no account UI, account client, encrypted session
+  restore, or bearer token on the native room socket.
 - It includes a connection probe and accepts `ws://`, `wss://`, `http://`, or
-  `https://` endpoint input (HTTP schemes are converted to WebSocket schemes).
+  `https://` endpoint input. `http://` becomes `ws://`, and `https://` becomes
+  `wss://`, with a visible LAN/public endpoint hint.
+- A local six-hour rewarded-access gate blocks room creation, joining, and
+  capture until a 30-second completion callback. Offline builds use the
+  explicit `LocalDemoRewardedAccessProvider` countdown; this is provider-neutral
+  plumbing and **does not integrate a real ad SDK**.
   Emulator builds default to `ws://10.0.2.2:4173`; physical devices start with
   an empty endpoint so they do not accidentally try to connect to the
   emulator-only address.
@@ -101,6 +109,15 @@ Once the toolchain and dependency access are available, run from this folder:
 ./gradlew :app:assembleDebug --no-daemon --console=plain
 ```
 
+The offline unit-test, debug-assemble, and lint check used for this Android
+slice is:
+
+```sh
+export ROOMSOUND_BUILD_DIR="${TMPDIR:-/tmp}/roomsound-android-build"
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug \
+  --offline --no-daemon --console=plain
+```
+
 The build declares OkHttp `4.12.0` and the WebRTC SDK from Maven Central. If
 the checkout is under OneDrive or another synchronised folder, generated
 output can be locked while Gradle replaces it. Use the project-supported
@@ -121,11 +138,13 @@ export ROOMSOUND_BUILD_DIR="${TMPDIR:-/tmp}/roomsound-android-build"
 `ROOMSOUND_BUILD_DIR` (or `-Proomsound.buildDir=...`) moves generated project
 output only; source files and the Gradle wrapper remain in this checkout.
 
-Debug APKs accept `ws://` endpoints for private/local addresses such as
-`10.x.x.x`, `172.16.x.x`–`172.31.x.x`, and `192.168.x.x`, which makes same-Wi-Fi
-laptop testing possible. Release builds should use `wss://`; the release
-manifest does not enable Android cleartext traffic and non-local insecure
-endpoints are rejected by the app.
+For a LAN endpoint, enter `ws://` or `http://` followed by the computer's
+reachable LAN address, for example `ws://192.168.1.20:4173`; the device must be
+on the same Wi-Fi. For a public endpoint, enter `wss://` or `https://` and the
+app converts it to a TLS WebSocket. The app shows the selected LAN/public
+guidance below the endpoint field. The local prototype still needs Android
+cleartext networking for `ws://`/`http://`; production deployments should use
+`wss://`/`https://` and remove broad cleartext allowances.
 
 ### Signed release APK
 
@@ -181,7 +200,9 @@ Do not commit `local.properties`; it contains a machine-specific SDK path.
 
 Install the debug APK on a physical Android 10+ device. An emulator can
 validate the permission and service UI, but a physical device with an eligible
-media app is needed to validate real playback capture.
+media app is needed to validate real playback capture. A real rewarded-ad
+provider has not been connected; the current 30-second local/demo countdown is
+only an offline-access stand-in.
 
 For a local RoomSound server, construct the client with the server's reachable
 WebSocket endpoint, for example `ws://192.168.1.20:4173`. The activity starts

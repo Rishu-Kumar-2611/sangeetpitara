@@ -125,14 +125,18 @@ timeout longer than the expected room session.
 
 ## Account, moderation, and legal launch requirements
 
-Set `NODE_ENV=production` and leave `REQUIRE_AUTH` unset (or set it to `1`) for
-a public SaaS deployment. `REQUIRE_AUTH=0` or `ALLOW_ANONYMOUS=1` is an explicit
-guest-mode override and should be limited to local/beta use. The browser
-provides same-origin email/password registration and login; WebSocket
-connections use the HttpOnly session cookie. The current Android client remains
-guest-compatible until native account/token UX is enabled, so a deployment
-serving Android must either retain the explicit guest override or complete that
-native login flow before requiring auth for every client.
+Browser room create/join is anonymous in every deployment. Older
+`REQUIRE_AUTH` and `ALLOW_ANONYMOUS` values are accepted for configuration
+compatibility but no longer gate WebSocket room entry. The browser does not
+render account controls. The protected HTTP account, moderation, billing, and
+administrator APIs remain available for internal workflows and continue to
+require their own authenticated session.
+
+Browser room entry also requires the rewarded-access gate published by `/config`.
+The default `demo-local` provider runs a 30-second offline simulation and stores
+a six-hour local expiry. It is not a real ad network. Do not enable a production
+rewarded provider until its adapter, consent flow, privacy notice, and
+verification/fulfillment contract have been reviewed.
 
 Administrators can revoke an account through the protected
 `POST /api/admin/accounts/:userId/revoke` endpoint. Revocation marks the account

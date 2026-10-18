@@ -3,9 +3,8 @@ package com.roomsound.android.capture
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import com.roomsound.android.BuildConfig
 import com.roomsound.android.room.RoomConnectionState
-import com.roomsound.android.room.RoomAuthTokenAware
+import com.roomsound.android.room.RoomEndpointValidator
 import com.roomsound.android.room.RoomSoundEvent
 import com.roomsound.android.room.RoomSoundWebSocketClient
 import com.roomsound.android.room.RoomState
@@ -13,7 +12,6 @@ import com.roomsound.android.transport.RoomAudioTransport
 import com.roomsound.android.transport.RoomAudioTransportSnapshot
 import com.roomsound.android.transport.WebRtcPcmPublisher
 import java.io.Closeable
-import java.net.URI
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
 
@@ -55,8 +53,6 @@ class RoomSessionCoordinator(
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArraySet<Listener>()
     private var endpoint: String? = null
-    /** Bearer token retained by the service so endpoint changes keep auth. */
-    private var bearerToken: String? = null
     private var client: RoomSoundWebSocketClient? = null
     private var clientListener: RoomSoundWebSocketClient.Listener? = null
     private var publisher: WebRtcPcmPublisher? = null
@@ -82,39 +78,6 @@ class RoomSessionCoordinator(
     fun connectionState(): RoomConnectionState = client?.connectionState() ?: RoomConnectionState.IDLE
     fun currentRoomState(): RoomState? = joinedState()
     fun currentEndpoint(): String? = endpoint
-    /**
-     * Updates the token used by newly-created or reconnected signaling clients.
-     *
-     * The client owns the actual Authorization header. Keeping this hand-off in
-     * the coordinator means the service remains the single owner of room state
-     * while the Activity can sign in or out without replacing the service.
-     */
-    fun setBearerToken(token: String?) {
-        if (closed) return
-        val previousToken = bearerToken
-        bearerToken = token?.trim()?.takeIf { it.isNotEmpty() }
-        val active = client
-        // WebSocket authentication is fixed at upgrade time. Never let a
-        // socket authenticated as one account continue into a different
-        // account (or guest mode); discard the room transaction so the next
-        // action upgrades with the new token.
-        if (previousToken != bearerToken && active != null) {
-            val hasRoomTransaction = active.currentRoomState() != null || roomSelectionPending || attempt != null
-            if (hasRoomTransaction) {
-                abortAttempt("Authentication changed; capture stopped.", releaseOwnSlot = true)
-                active.leaveRoom()
-                disposeRoom()
-            } else {
-                active.disconnect()
-                roomSelectionPending = false
-                requestPending = false
-            }
-        }
-        applyBearerToken(client)
-    }
-
-    fun clearBearerToken() = setBearerToken(null)
-
     fun pendingCapture(): PendingCapture? = attempt?.let { PendingCapture(it.id, it.phase) }
     fun isTakeoverPending(): Boolean = takeover != null
     fun isRoomSelectionPending(): Boolean = roomSelectionPending
@@ -123,12 +86,7 @@ class RoomSessionCoordinator(
 
     fun configureEndpoint(rawEndpoint: String): Boolean {
         if (closed) return false
-        val next = rawEndpoint.trim()
-        val uri = runCatching { URI(next) }.getOrNull() ?: return false
-        if (uri.scheme !in setOf("ws", "wss") || uri.host.isNullOrBlank() ||
-            uri.userInfo != null || uri.fragment != null || uri.port !in -1..65535 ||
-            (!BuildConfig.DEBUG && uri.scheme != "wss" && !isLocalNetworkHost(uri.host))
-        ) return false
+        val next = RoomEndpointValidator.normalize(rawEndpoint) ?: return false
         if (endpoint == next && client != null) return true
         if (client?.currentRoomState() != null || roomSelectionPending || attempt != null) {
             status("Leave the current room before changing its endpoint.")
@@ -138,7 +96,6 @@ class RoomSessionCoordinator(
         val nextClient = RoomSoundWebSocketClient(next)
         client = nextClient
         endpoint = next
-        applyBearerToken(nextClient)
         try {
             val nextPublisher = WebRtcPcmPublisher(
                 context = appContext,
@@ -179,20 +136,6 @@ class RoomSessionCoordinator(
         nextClient.addListener(listener)
         changed()
         return true
-    }
-
-    /** Allow plain ws:// only for a laptop/server on the local network. */
-    private fun isLocalNetworkHost(host: String?): Boolean {
-        val value = host?.trim()?.lowercase() ?: return false
-        if (value == "localhost" || value == "127.0.0.1" || value == "::1" || value.endsWith(".local")) return true
-        val octets = value.split('.')
-        if (octets.size != 4 || octets.any { it.toIntOrNull() == null }) return false
-        val numbers = octets.map { it.toInt() }
-        if (numbers.any { it !in 0..255 }) return false
-        return numbers[0] == 10 ||
-            (numbers[0] == 172 && numbers[1] in 16..31) ||
-            (numbers[0] == 192 && numbers[1] == 168) ||
-            (numbers[0] == 169 && numbers[1] == 254)
     }
 
     fun createRoom(name: String, displayName: String, guestId: String) {
@@ -596,10 +539,6 @@ class RoomSessionCoordinator(
         releasedSlots.clear()
     }
 
-    private fun applyBearerToken(target: RoomSoundWebSocketClient?) {
-        (target as? RoomAuthTokenAware)?.setBearerToken(bearerToken)
-    }
-
     private fun status(message: String) { listeners.forEach { it.onPublisherStatus(message) } }
     private fun changed() { listeners.forEach { it.onSessionChanged() } }
 
@@ -608,7 +547,6 @@ class RoomSessionCoordinator(
         abortAttempt("The room service stopped.", true)
         closed = true
         disposeRoom()
-        bearerToken = null
         listeners.clear()
         main.removeCallbacksAndMessages(null)
     }

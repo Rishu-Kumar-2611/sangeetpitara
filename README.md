@@ -14,10 +14,11 @@ RoomSound is a small, runnable web prototype for the private audio-room idea. It
 - Host takeover and participant-to-host source resumption
 - Co-host promotion after host disconnect
 - Text chat, roster presence, local mute, and volume controls
-- Optional PostgreSQL-backed email/password accounts with server-issued HttpOnly sessions
+- Internal PostgreSQL-backed email/password accounts with server-issued HttpOnly sessions
 - Durable room directory, moderation records, billing events, and subscription entitlements when PostgreSQL is enabled
 - Production health (`/health`, `/ready`), bounded Prometheus metrics, structured redacted logs, and abuse-report APIs
 - Privacy-gated, opt-in advertising boundary with a Google AdSense adapter that is disabled until deployment configuration and consent exist
+- Provider-neutral rewarded-access gate: a completed 30-second offline demo reward grants six hours of browser room access in local storage
 - No audio recording
 
 ## Run it
@@ -39,20 +40,45 @@ explicit migration command is:
 npm run migrate
 ```
 
-The account API is same-origin and does not return session tokens in JSON. A
-successful registration or login sets the `roomsound_session` HttpOnly cookie:
+The account API is same-origin and does not return session tokens in JSON. It is
+kept for internal/admin workflows and protected moderation/billing operations;
+the browser room surface does not display sign-in, sign-up, or account controls.
+A successful registration or login sets the `roomsound_session` HttpOnly cookie:
 
 - `POST /api/auth/register` with `{ "email": "...", "password": "..." }` returns `201`.
 - `POST /api/auth/login` with the same shape returns `200` or a generic `401` for invalid credentials.
 - `GET /api/auth/me` (also `/api/auth/current-user`) returns the current public user or `401`.
 - `POST /api/auth/logout` invalidates the server-side session and clears the cookie.
 
-For public SaaS mode, set `REQUIRE_AUTH=1`. The browser account panel signs in
-before room entry and the WebSocket uses the same-origin HttpOnly session cookie.
-Guest mode remains available for local development and the current Android build
-until native Android account/token UX is added.
+Browser room create/join is always anonymous. Older deployments may still have
+`REQUIRE_AUTH=1` or `ALLOW_ANONYMOUS` settings, but those settings no longer gate
+WebSocket room create/join; the internal HTTP account/admin APIs remain
+authenticated.
 
-Advertising is disabled by default. To enable a reviewed Google AdSense deployment,
+Before a browser can create or join a room, it must complete the configured
+rewarded-access flow. The current `/config` response publishes:
+
+```json
+{
+  "rewardedAccess": {
+    "enabled": true,
+    "provider": "demo-local",
+    "mode": "offline",
+    "rewardDurationSeconds": 30,
+    "accessDurationHours": 6,
+    "accessDurationMs": 21600000
+  }
+}
+```
+
+`demo-local` is an explicitly named offline development simulation. It does not
+load a real ad network, make a production ad-impression claim, or provide
+production monetization. The browser stores only an access expiry timestamp in
+`localStorage`; access is inactive at or after the six-hour expiry. A reviewed
+provider adapter and consent/legal review are still required before using a real
+rewarded-ad network.
+
+Sponsored display advertising is disabled by default. To enable a reviewed Google AdSense deployment,
 configure the `roomsound-ad-provider=adsense`, `roomsound-ad-client`, and
 `roomsound-ad-enabled=true` meta values at deploy time, provide non-empty
 `data-ad-slot` values, and obtain user consent through the in-app banner. Never
