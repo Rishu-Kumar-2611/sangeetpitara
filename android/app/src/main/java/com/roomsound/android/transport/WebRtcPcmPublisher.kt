@@ -280,6 +280,8 @@ public class WebRtcPcmPublisher(
             append(" activeEpoch=").append(epoch ?: "none")
             append(" roomEpoch=").append(roomEpoch ?: "none")
             append(" queuedSamples=").append(pcmQueue.queuedSamples())
+            append(" queueCapacitySamples=").append(pcm.capacitySamples)
+            append(" queuePeakSamples=").append(pcm.peakQueuedSamples)
             append(" enqueuedSamples=").append(pcmQueue.enqueuedSamples())
             append(" injectedSamples=").append(pcmQueue.drainedSamples())
             append(" droppedSamples=").append(pcmQueue.droppedSamples())
@@ -297,6 +299,9 @@ public class WebRtcPcmPublisher(
             append(" pcmAdmMax=").append(pcm.admBuffer.maxSample ?: "n/a")
             append(" pcmAdmRms=").append(pcm.admBuffer.rms ?: "n/a")
             append(" pcmAdmLastNonZero=").append(pcm.lastAdmBuffer.nonZeroSamples)
+            pcm.lastAdmCallbackIntervalNanos?.let {
+                append(" admCallbackIntervalMs=").append(it / 1_000_000.0)
+            }
             pcm.lastAdmReportedBytes?.let { append(" admReportedBytes=").append(it) }
             pcm.lastAdmBufferBytes?.let { append(" admBufferBytes=").append(it) }
             pcm.lastAdmAudioFormat?.let { append(" admAudioFormat=").append(it) }

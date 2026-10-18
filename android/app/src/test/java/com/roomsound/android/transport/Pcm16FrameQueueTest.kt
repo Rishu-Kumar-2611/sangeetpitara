@@ -35,6 +35,8 @@ class Pcm16FrameQueueTest {
         ))
 
         val diagnostics = queue.pcmDiagnostics()
+        assertEquals(8, diagnostics.capacitySamples)
+        assertEquals(4, diagnostics.peakQueuedSamples)
         assertEquals(4L, diagnostics.offered.samples)
         assertEquals(3L, diagnostics.offered.nonZeroSamples)
         assertEquals(-1_000, diagnostics.offered.minSample)
@@ -71,6 +73,8 @@ class Pcm16FrameQueueTest {
         queue.fillAudioBuffer(buffer)
 
         val diagnostics = queue.pcmDiagnostics()
+        assertEquals(4, diagnostics.capacitySamples)
+        assertEquals(2, diagnostics.peakQueuedSamples)
         assertEquals(8L, diagnostics.admBuffer.samples)
         assertEquals(2L, diagnostics.admBuffer.nonZeroSamples)
         assertEquals(0L, diagnostics.lastAdmBuffer.nonZeroSamples)

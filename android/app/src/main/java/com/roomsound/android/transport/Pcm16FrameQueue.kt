@@ -18,6 +18,9 @@ internal data class Pcm16BoundaryDiagnostics(
     val admBuffer: Pcm16SignalStats,
     val lastOffered: Pcm16SignalStats,
     val lastAdmBuffer: Pcm16SignalStats,
+    val capacitySamples: Int = 0,
+    val peakQueuedSamples: Int = 0,
+    val lastAdmCallbackIntervalNanos: Long? = null,
     val lastAdmReportedBytes: Int? = null,
     val lastAdmBufferBytes: Int? = null,
     val lastAdmAudioFormat: Int? = null,
@@ -110,6 +113,9 @@ internal class Pcm16FrameQueue(
     private var drainedSamples = 0L
     private var callbackCount = 0L
     private var revocationCount = 0L
+    private var peakQueuedSamples = 0
+    private var lastAdmCallbackStartedAtNanos: Long? = null
+    private var lastAdmCallbackIntervalNanos: Long? = null
     private val offeredSignal = Pcm16SignalAccumulator()
     private val admBufferSignal = Pcm16SignalAccumulator()
     private var lastAdmReportedBytes: Int? = null
@@ -145,6 +151,7 @@ internal class Pcm16FrameQueue(
                 lastOfferedAccumulator.reset()
                 lastOfferedAccumulator.add(frame.samples, 0, frame.sampleCount)
                 offerLocked(frame.samples, frame.sampleCount)
+                peakQueuedSamples = maxOf(peakQueuedSamples, size)
                 Pcm16PublishResult.PUBLISHED
             }
         }
@@ -163,7 +170,12 @@ internal class Pcm16FrameQueue(
         sampleRate: Int? = null,
     ): Int = try {
         val requestedSamples = buffer.capacity() / BYTES_PER_SAMPLE
+        val callbackStartedAtNanos = System.nanoTime()
         val shouldPace = synchronized(lock) {
+            lastAdmCallbackIntervalNanos = lastAdmCallbackStartedAtNanos?.let {
+                (callbackStartedAtNanos - it).coerceAtLeast(0L)
+            }
+            lastAdmCallbackStartedAtNanos = callbackStartedAtNanos
             callbackCount += 1
             lastAdmReportedBytes = reportedBytes
             lastAdmBufferBytes = buffer.capacity()
@@ -241,6 +253,9 @@ internal class Pcm16FrameQueue(
             admBuffer = admBufferSignal.snapshot(),
             lastOffered = lastOfferedAccumulator.snapshot(),
             lastAdmBuffer = lastAdmBufferAccumulator.snapshot(),
+            capacitySamples = capacitySamples,
+            peakQueuedSamples = peakQueuedSamples,
+            lastAdmCallbackIntervalNanos = lastAdmCallbackIntervalNanos,
             lastAdmReportedBytes = lastAdmReportedBytes,
             lastAdmBufferBytes = lastAdmBufferBytes,
             lastAdmAudioFormat = lastAdmAudioFormat,
