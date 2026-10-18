@@ -78,6 +78,9 @@ npm run smoke
 
 It exercises room creation, guest joining, rejection and approval, blocked competing requests, host takeover, co-host assignment, and immediate co-host promotion after the host leaves.
 
+The physical-device validation matrix is in [`QA_CHECKLIST.md`](QA_CHECKLIST.md).
+Run it with TURN enabled before evaluating a replacement relay provider.
+
 The offline regression test and syntax check are:
 
 ```powershell
