@@ -44,7 +44,10 @@ const MAX_MESSAGE_KEEP = 100;
 const MAX_PAYLOAD_BYTES = 64 * 1024;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
-const TURN_URLS = process.env.TURN_URLS ? process.env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean) : [];
+const turnEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.TURN_ENABLED || '').trim().toLowerCase());
+const TURN_URLS = turnEnabled && process.env.TURN_URLS
+  ? process.env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean)
+  : [];
 const TURN_USERNAME = process.env.TURN_USERNAME || '';
 const TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || '';
 const rewardedAccess = normalizeRewardedAccessConfig({

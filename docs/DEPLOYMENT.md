@@ -14,7 +14,9 @@ needed to run the web service.
 - The reverse proxy forwards HTTP and WebSocket upgrade requests and sets
   `X-Forwarded-For` only when `TRUST_PROXY=1` is enabled.
 - `ALLOWED_ORIGINS` contains the browser's exact HTTPS origin.
-- TURN values are present when participants may be on different networks.
+- The default `TURN_ENABLED=0` STUN-only mode is tested on reachable networks;
+  if cross-network validation requires a relay, explicitly set `TURN_ENABLED=1`
+  and inject TURN values from the secret store.
 - Secrets are injected by the platform and are absent from the image, Compose
   file, Render blueprint, and tracked environment examples.
 
@@ -163,12 +165,14 @@ origin (replace the URL; do not print response headers containing cookies):
 
 ```sh
 curl --fail --silent --show-error https://roomsound.example/health
-# Discard /config because its TURN response can contain a credential.
+# Discard /config because an explicitly enabled TURN response can contain a credential.
 curl --fail --silent --show-error -o /dev/null https://roomsound.example/config
 npm run smoke
 ```
 
-The browser room flow still requires WSS through the proxy and a valid TURN
-configuration for cross-network audio. Check the application logs for startup,
+The browser room flow still requires WSS through the proxy. In the default
+STUN-only mode, direct audio works when the peers' networks permit it; restrictive
+NAT/CGNAT/firewall cases require an explicitly enabled relay, an overlay network,
+or a different media architecture. Check the application logs for startup,
 health, migration, and graceful-shutdown messages without logging environment
 values or webhook payloads.

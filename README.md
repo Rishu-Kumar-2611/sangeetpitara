@@ -92,7 +92,7 @@ or reverse proxy; it defaults on automatically for `NODE_ENV=production`. Keep
 `DATABASE_URL` and any database credentials out of `.env.example` and source
 them from the deployment secret manager.
 
-`npm start` remains the simple local start path. For a local `.env` file (including TURN settings), use the restart-safe commands below instead of starting a second copy on port `4173`.
+`npm start` remains the simple local start path. For a local `.env` file (including optional relay settings), use the restart-safe commands below instead of starting a second copy on port `4173`.
 
 ### Local server and safe restarts
 
@@ -128,7 +128,7 @@ npm start
 
 The `.nvmrc` pins Node 22.14.0, which supports the optional env-file flag used by `npm start`. To restart on any platform, press `Ctrl+C`, wait for the process to exit, and run the same command again. If another program owns port `4173`, inspect it before stopping it rather than force-stopping an unrelated service.
 
-With the server running, use this safe verification command to confirm that `/config` contains at least one TURN server. It prints only the TURN status and count; it never prints the TURN credential:
+With the server running, use this safe verification command to confirm whether `/config` is STUN-only or contains an explicitly enabled TURN relay. It prints only the relay status and count; it never prints the TURN credential:
 
 ```sh
 node --input-type=module -e 'const response = await fetch("http://127.0.0.1:4173/config"); if (!response.ok) throw new Error(`HTTP ${response.status}`); const { iceServers = [] } = await response.json(); const turnServers = iceServers.filter(({ urls }) => [].concat(urls ?? []).some((url) => /^turns?:/i.test(String(url)))); console.log(turnServers.length ? `TURN present (${turnServers.length} server(s))` : "TURN not configured");'
@@ -149,7 +149,8 @@ npm run smoke
 It exercises room creation, guest joining, rejection and approval, blocked competing requests, host takeover, co-host assignment, and immediate co-host promotion after the host leaves.
 
 The physical-device validation matrix is in [`QA_CHECKLIST.md`](QA_CHECKLIST.md).
-Run it with TURN enabled before evaluating a replacement relay provider.
+Run it with the default STUN-only configuration first. Enable a relay only when a
+measured network test shows that direct peer connectivity is insufficient.
 
 The offline regression test and syntax check are:
 
@@ -179,14 +180,17 @@ docker build --target android-build -t roomsound-android:local .
 ```
 
 Create `.env` from `.env.example` first. For a deployment, use HTTPS/WSS at a reverse
-proxy, set `ALLOWED_ORIGINS`, and provide TURN values (`TURN_URLS`, `TURN_USERNAME`,
-and `TURN_CREDENTIAL`) when clients may be behind restrictive NATs. The Android
+proxy, set `ALLOWED_ORIGINS`, and leave `TURN_ENABLED=0` for the free STUN-only
+mode. If a measured network test later requires a relay, set `TURN_ENABLED=1`
+and provide `TURN_URLS`, `TURN_USERNAME`, and `TURN_CREDENTIAL`. The Android
 client fetches the same `/config` ICE settings before creating native peers.
 
 For provider-neutral production deployment, use the Android-free
 [`Dockerfile.runtime`](Dockerfile.runtime), [`compose.yaml`](compose.yaml), or
 [`render.yaml`](render.yaml). Health/readiness, migration, reverse-proxy, and
 secret-store procedures are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). The
+STUN-only cost-reduction decision and network validation plan are in
+[`docs/ICE-COST-PLAN.md`](docs/ICE-COST-PLAN.md). The
 disabled-by-default billing and entitlement contract is documented in
 [`docs/BILLING.md`](docs/BILLING.md).
 Legal and abuse-launch templates are in [`docs/PRIVACY.md`](docs/PRIVACY.md),
@@ -228,8 +232,8 @@ directory below `ROOMSOUND_BUILD_DIR` when that option is set. The keystore
 file pattern is ignored by git; do not commit signing material.
 
 ## Server hardening and production foundations
-- `GET /config` returns `iceServers` (STUN + TURN when env set). Web + Android should fetch it.
-- `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL` env wire TURN for symmetric NAT/CGNAT.
+- `GET /config` returns `iceServers` (STUN-only by default; TURN only when explicitly enabled). Web + Android should fetch it.
+- `TURN_ENABLED=1` plus `TURN_URLS`, `TURN_USERNAME`, and `TURN_CREDENTIAL` wires an optional relay for symmetric NAT/CGNAT. Keep it `0` to avoid relay charges.
 - `ALLOWED_ORIGINS` optional allowlist for WebSocket handshake.
 - Rate limiting: 120 req/min/IP + 30 msg/5s per socket; `maxPayload 64k`.
 - Message/history bounded: `messages >200 splice 100`; requests auto-prune after cancel/expire/approve.
@@ -244,6 +248,10 @@ Client hardening: 1 → 30s exponential backoff reconnect (mirrors `RoomSoundWeb
 
 Live WebSocket membership and WebRTC media remain single-process and mesh-based;
 durable PostgreSQL metadata survives restarts but live sockets and audio do not.
+The default STUN-only mode is free but cannot guarantee connectivity through
+restrictive NATs, CGNAT, enterprise firewalls, or networks that block direct
+UDP. Those cases need a relay, a VPN/overlay network, or a different media
+architecture; there is no free STUN setting that replaces TURN universally.
 The production target is 100 total concurrent users and at most 10 users per
 room. Larger rooms or multiple live instances require shared room state and an
 SFU such as LiveKit, mediasoup, or Janus. Do not promise 100 listeners in one

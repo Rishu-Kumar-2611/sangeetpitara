@@ -1316,7 +1316,9 @@ async function createPublisherPeer(targetId) {
     console.log("[RoomSound][pub->"+targetId+"] iceConn="+pc.iceConnectionState);
     if (pc.iceConnectionState === 'failed') {
       try { pc.restartIce(); } catch {}
-      const msg = hasTurnServer(rtcConfig) ? 'Audio relay failed — retrying ICE…' : 'No relay candidate — add TURN for internet/cross-NAT audio.';
+      const msg = hasTurnServer(rtcConfig)
+        ? 'Audio relay failed — retrying ICE…'
+        : 'Direct audio connection failed — retrying ICE. Try the same Wi-Fi or another reachable network.';
       toast(msg, 'error');
       setTimeout(() => {
         if (isCurrentPeerEntry(targetId, entry) && entry.pc.iceConnectionState === 'failed') {
@@ -1396,7 +1398,12 @@ async function handleRtcSignal(message) {
         try { pc.restartIce(); } catch {}
         setTimeout(() => {
           if (isCurrentPeerEntry(from, entry) && pc.iceConnectionState === 'failed') {
-            toast(hasTurnServer(rtcConfig) ? 'Audio relay failed — retrying ICE…' : 'No relay candidate — add TURN for internet/cross-NAT audio.', 'error');
+            toast(
+              hasTurnServer(rtcConfig)
+                ? 'Audio relay failed — retrying ICE…'
+                : 'Direct audio connection failed. Try the same Wi-Fi or another reachable network.',
+              'error',
+            );
           }
         }, 2000);
       }
@@ -1406,7 +1413,7 @@ async function handleRtcSignal(message) {
       renderTelemetry();
       console.log("[RoomSound][lis<-"+from+"] conn="+pc.connectionState+" ice="+pc.iceConnectionState);
       if (pc.connectionState === 'failed') {
-        toast('Audio connection failed. Check network or TURN config.', 'error');
+       toast('Audio connection failed. Direct peer connections need reachable networks; try the same Wi-Fi.', 'error');
         try { pc.restartIce(); } catch {}
         state.audioNeedsGesture = true;
         renderControls();

@@ -44,8 +44,9 @@ async function startServer(extraEnv = {}) {
   throw new Error(`RoomSound server did not start: ${output.join('')}`);
 }
 
-test('config publishes configured TURN servers for web and Android clients', async (t) => {
+test('config publishes configured TURN servers only when the relay is explicitly enabled', async (t) => {
   const { server, http } = await startServer({
+    TURN_ENABLED: '1',
     TURN_URLS: 'turn:relay.example.test:3478,turns:relay.example.test:5349?transport=tcp',
     TURN_USERNAME: 'test-user',
     TURN_CREDENTIAL: 'test-credential',
@@ -66,6 +67,21 @@ test('config publishes configured TURN servers for web and Android clients', asy
       credential: 'test-credential',
     },
   ]);
+});
+
+test('config stays STUN-only when relay credentials exist but TURN is disabled', async (t) => {
+  const { server, http } = await startServer({
+    TURN_ENABLED: '0',
+    TURN_URLS: 'turn:relay.example.test:3478',
+    TURN_USERNAME: 'test-user',
+    TURN_CREDENTIAL: 'test-credential',
+  });
+  t.after(() => server.kill());
+
+  const response = await fetch(`${http}/config`);
+  assert.equal(response.status, 200);
+  const config = await response.json();
+  assert.deepEqual(config.iceServers, [{ urls: 'stun:stun.l.google.com:19302' }]);
 });
 
 function client(url) {
