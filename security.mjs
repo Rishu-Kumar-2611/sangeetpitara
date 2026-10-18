@@ -256,6 +256,27 @@ export async function readJsonBody(request, options = {}) {
   return parseJsonBody(Buffer.concat(chunks), options);
 }
 
+export async function readRawBody(request, { maxBytes = DEFAULT_MAX_BODY_BYTES } = {}) {
+  const limit = optionLimit(maxBytes, DEFAULT_MAX_BODY_BYTES, 'maxBytes');
+  if (!request || typeof request[Symbol.asyncIterator] !== 'function') {
+    throw new TypeError('request must be an async iterable.');
+  }
+  const chunks = [];
+  let totalBytes = 0;
+  for await (const chunk of request) {
+    const bytes = bodyBytes(chunk);
+    totalBytes += bytes.byteLength;
+    if (totalBytes > limit) {
+      throw new RequestBodyError('Request body is too large.', {
+        status: 413,
+        code: 'REQUEST_BODY_TOO_LARGE',
+      });
+    }
+    chunks.push(bytes);
+  }
+  return Buffer.concat(chunks);
+}
+
 function comparableBytes(value) {
   if (typeof value === 'string') return Buffer.from(value, 'utf8');
   if (Buffer.isBuffer(value)) return value;

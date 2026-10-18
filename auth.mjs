@@ -146,6 +146,7 @@ function publicUser(user) {
   return {
     id: user.id,
     email: user.email,
+    isAdmin: Boolean(user.isAdmin),
     createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt,
   };
 }

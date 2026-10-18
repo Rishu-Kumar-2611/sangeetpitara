@@ -17,9 +17,18 @@ import {
 } from './auth.mjs';
 import { createAuditRecorder } from './audit.mjs';
 import { createBillingService } from './billing.mjs';
+import { entitlementAllows, normalizeEntitlement } from './billing.mjs';
+import {
+  createBan,
+  createBlock,
+  createReport,
+  isBanActive,
+  isBlockActive,
+  transitionReport,
+} from './moderation.mjs';
 import { createStructuredLogger, createHealthState, createMetricsRegistry } from './observability.mjs';
 import { createRepositoryFromEnv } from './persistence.mjs';
-import { readJsonBody as readSecureJsonBody, RequestBodyError as SecureRequestBodyError } from './security.mjs';
+import { readJsonBody as readSecureJsonBody, readRawBody, RequestBodyError as SecureRequestBodyError } from './security.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const rootPath = resolve(root);
@@ -276,6 +285,145 @@ function sessionCookieMaxAgeSeconds(expiresAt) {
   return Number.isFinite(remaining) ? Math.max(0, remaining) : Math.ceil(auth.sessionTtlMs / 1000);
 }
 
+async function requestUser(req) {
+  return auth.currentUser(sessionTokenFromRequest(req));
+}
+
+function configuredAdminEmails() {
+  return new Set(String(process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean));
+}
+
+function isAdminUser(user) {
+  return Boolean(user?.isAdmin || configuredAdminEmails().has(String(user?.email || '').toLowerCase()));
+}
+
+async function handleProductApiRequest(req, res, requestPath) {
+  const path = requestPath.replace(/\/+$/, '') || '/';
+  const isReports = path === '/api/moderation/reports';
+  const isBlocks = path === '/api/moderation/blocks';
+  const blockMatch = path.match(/^\/api\/moderation\/blocks\/([^/]+)$/);
+  const isBans = path === '/api/moderation/bans';
+  const isBillingWebhook = path === '/api/billing/webhook';
+  if (!isReports && !isBlocks && !blockMatch && !isBans && !isBillingWebhook) return false;
+
+  try {
+    if (isBillingWebhook) {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { error: 'Method not allowed.' }, { Allow: 'POST' });
+        return true;
+      }
+      if (!billing.enabled) {
+        sendJson(res, 503, { error: 'Billing is not configured.', code: 'BILLING_DISABLED' });
+        return true;
+      }
+      const rawBody = await readRawBody(req, { maxBytes: 256 * 1024 });
+      const signature = req.headers['stripe-signature'];
+      const verification = billing.verifyWebhook(rawBody, signature);
+      if (!verification.ok) {
+        audit.record({ type: 'security.request_rejected', severity: 'warn', metadata: { route: 'billing_webhook', reason: verification.code } });
+        sendJson(res, 400, { error: 'Invalid billing signature.', code: verification.code });
+        return true;
+      }
+      let event;
+      try { event = JSON.parse(rawBody.toString('utf8')); } catch { sendJson(res, 400, { error: 'Invalid webhook JSON.' }); return true; }
+      const eventId = String(event?.id || '').trim();
+      if (!eventId) { sendJson(res, 400, { error: 'Webhook event id is required.' }); return true; }
+      const fresh = await repository.recordBillingEvent('stripe', eventId);
+      if (!fresh) { sendJson(res, 200, { ok: true, duplicate: true }); return true; }
+      const object = event?.data?.object || {};
+      const metadata = object.metadata || {};
+      const subjectId = String(metadata.userId || metadata.subjectId || '').trim();
+      if (!subjectId) { sendJson(res, 200, { ok: true, ignored: true }); return true; }
+      const status = event.type?.endsWith('.deleted') ? 'canceled' : String(object.status || 'inactive').toLowerCase();
+      const entitlement = normalizeEntitlement({
+        subjectId,
+        provider: 'stripe',
+        customerId: object.customer || object.customer_id,
+        subscriptionId: object.id,
+        priceId: object.items?.data?.[0]?.price?.id || metadata.priceId,
+        plan: metadata.plan || 'pro',
+        status,
+        currentPeriodEnd: object.current_period_end,
+        cancelAtPeriodEnd: object.cancel_at_period_end,
+        updatedAt: new Date(),
+      });
+      await repository.upsertEntitlement(entitlement);
+      audit.record({ type: 'custom.billing.entitlement_updated', severity: 'info', actorId: subjectId, metadata: { provider: 'stripe', eventType: event.type } });
+      sendJson(res, 200, { ok: true });
+      return true;
+    }
+
+    const user = await requestUser(req);
+    if (!user) {
+      sendJson(res, 401, { error: 'Authentication required.', code: 'AUTHENTICATION_REQUIRED' });
+      return true;
+    }
+
+    if (isReports) {
+      if (req.method === 'GET') {
+        const reports = await repository.listReports({ reporterId: isAdminUser(user) ? null : user.id });
+        sendJson(res, 200, { reports });
+        return true;
+      }
+      if (req.method !== 'POST') { sendJson(res, 405, { error: 'Method not allowed.' }, { Allow: 'GET, POST' }); return true; }
+      const body = await readJsonBody(req);
+      const report = createReport({ ...body, reporterId: user.id });
+      const stored = await repository.createReport(report);
+      audit.record({ type: 'moderation.report.created', severity: 'info', actorId: user.id, targetId: report.targetId, roomId: report.roomId || undefined });
+      sendJson(res, 201, { report: stored });
+      return true;
+    }
+
+    if (isBlocks) {
+      if (req.method !== 'POST') { sendJson(res, 405, { error: 'Method not allowed.' }, { Allow: 'POST' }); return true; }
+      const body = await readJsonBody(req);
+      const block = createBlock({ ...body, blockerId: user.id });
+      const stored = await repository.createBlock(block);
+      audit.record({ type: 'moderation.block.created', severity: 'info', actorId: user.id, targetId: block.blockedId, roomId: block.roomId || undefined });
+      sendJson(res, 201, { block: stored });
+      return true;
+    }
+
+    if (blockMatch) {
+      if (req.method !== 'DELETE') { sendJson(res, 405, { error: 'Method not allowed.' }, { Allow: 'DELETE' }); return true; }
+      const blocks = await repository.listBlocks({ blockerId: user.id });
+      const block = blocks.find((candidate) => candidate.id === blockMatch[1]);
+      if (!block) { sendJson(res, 404, { error: 'Block not found.' }); return true; }
+      await repository.deactivateBlock(block.id);
+      audit.record({ type: 'moderation.block.removed', severity: 'info', actorId: user.id, targetId: block.blockedId, roomId: block.roomId || undefined });
+      sendJson(res, 200, { ok: true });
+      return true;
+    }
+
+    if (isBans) {
+      if (!isAdminUser(user)) { sendJson(res, 403, { error: 'Administrator access required.' }); return true; }
+      if (req.method !== 'POST') { sendJson(res, 405, { error: 'Method not allowed.' }, { Allow: 'POST' }); return true; }
+      const body = await readJsonBody(req);
+      const ban = createBan({ ...body, issuedBy: user.id });
+      const stored = await repository.createBan(ban);
+      audit.record({ type: 'moderation.ban.created', severity: 'warn', actorId: user.id, targetId: ban.subjectId, roomId: ban.roomId || undefined });
+      sendJson(res, 201, { ban: stored });
+      return true;
+    }
+  } catch (error) {
+    if (error instanceof SecureRequestBodyError) {
+      sendJson(res, error.status, { error: error.message, code: error.code });
+      return true;
+    }
+    if (error?.status && error?.code) {
+      sendJson(res, error.status, { error: error.message, code: error.code, ...(error.field ? { field: error.field } : {}) });
+      return true;
+    }
+    logger.error('Product API request failed', { error, route: requestPath });
+    sendJson(res, 500, { error: 'Service unavailable.', code: 'PRODUCT_API_ERROR' });
+    return true;
+  }
+  return true;
+}
+
 async function handleAuthRequest(req, res, requestPath) {
   const path = requestPath.replace(/\/+$/, '') || '/';
   const isRegister = path === '/api/auth/register';
@@ -419,6 +567,27 @@ function makeMember({ guestId, name, ws, role = 'PARTICIPANT' }) {
   };
 }
 
+async function moderationBlocksEntry(ws, room = null) {
+  const userId = ws.authenticatedUser?.id;
+  if (!userId) return false;
+  const bans = await repository.listBans?.({ subjectId: userId, activeOnly: true }) || [];
+  if (bans.some((ban) => isBanActive(ban, { roomId: room?.id || null }))) {
+    sendError(ws, 'This account is not allowed to enter this room.');
+    return true;
+  }
+  if (!room) return false;
+  const blocks = await repository.listBlocks?.({ blockedId: userId, activeOnly: true }) || [];
+  const blockedByHost = blocks.some((block) => (
+    isBlockActive(block, { roomId: room.id })
+      && (!room.hostUserId || block.blockerId === room.hostUserId)
+  ));
+  if (blockedByHost) {
+    sendError(ws, 'The room host has blocked this account.');
+    return true;
+  }
+  return false;
+}
+
 function attachRoom(ws, room, member) {
   if (room.hostFailoverTimer && member.id === room.hostId) {
     clearTimeout(room.hostFailoverTimer);
@@ -437,6 +606,7 @@ function attachRoom(ws, room, member) {
 
 async function createRoom(ws, message) {
   if (requireAuth && !ws.authenticatedUser) return sendError(ws, 'Sign in is required to create a room.');
+  if (await moderationBlocksEntry(ws)) return;
   let code = randomCode();
   while (findRoomByCode(code)) code = randomCode();
 
@@ -477,10 +647,11 @@ async function createRoom(ws, message) {
   attachRoom(ws, room, member);
 }
 
-function joinRoom(ws, message) {
+async function joinRoom(ws, message) {
   if (requireAuth && !ws.authenticatedUser) return sendError(ws, 'Sign in is required to join a room.');
   const room = findRoomByCode(message.code);
   if (!room || room.status !== 'ACTIVE') return sendError(ws, 'That room is unavailable or has ended.');
+  if (await moderationBlocksEntry(ws, room)) return;
 
   const guestIdClean = safeText(message.guestId, 80);
   const existing = [...room.members.values()].find((member) => (
@@ -633,7 +804,7 @@ function isValidType(value) {
   return typeof value === 'string' && /^[a-z-]+$/.test(value);
 }
 
-function handleMessage(ws, message) {
+async function handleMessage(ws, message) {
   const type = message?.type;
   if (typeof type !== 'string' || !isValidType(type)) return sendError(ws, 'Invalid message type.');
   if (type === 'create-room') return createRoom(ws, message);
@@ -884,6 +1055,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (await handleAuthRequest(req, res, requestPath)) return;
+  if (await handleProductApiRequest(req, res, requestPath)) return;
 
   if (requestPath === '/health') {
     activeRooms.set(rooms.size);
@@ -912,8 +1084,14 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 401, { error: 'Authentication required.', code: 'AUTHENTICATION_REQUIRED' });
       return;
     }
+    const entitlement = await repository.getEntitlement?.(user.id) || null;
     httpRequests.inc(1, { route: 'billing_status', status: 200 });
-    sendJson(res, 200, { userId: user.id, billing: billing.status() }, { Vary: 'Cookie, Authorization' });
+    sendJson(res, 200, {
+      userId: user.id,
+      billing: billing.status(),
+      entitlement,
+      canUsePro: Boolean(entitlement && entitlementAllows(entitlement, 'pro')),
+    }, { Vary: 'Cookie, Authorization' });
     return;
   }
   if (requestPath === '/config') {
@@ -998,6 +1176,12 @@ const wss = new WebSocketServer({
     cb(true);
   },
 });
+function dispatchMessage(ws, data) {
+  void handleMessage(ws, data).catch((error) => {
+    logger.error('WebSocket message handling failed', { error });
+    sendError(ws, 'The server could not process that action.');
+  });
+}
 wss.on('connection', (ws, req) => {
   ws._ip = getClientIp(req);
   ws.authenticatedUser = null;
@@ -1008,12 +1192,12 @@ wss.on('connection', (ws, req) => {
     ws.authenticatedUser = user;
     ws.authReady = true;
     const pending = ws.pendingMessages.splice(0);
-    for (const data of pending) handleMessage(ws, data);
+    for (const data of pending) dispatchMessage(ws, data);
   }).catch((error) => {
     logger.warn('WebSocket authentication lookup failed', { error });
     ws.authReady = true;
     const pending = ws.pendingMessages.splice(0);
-    for (const data of pending) handleMessage(ws, data);
+    for (const data of pending) dispatchMessage(ws, data);
   });
   ws.on('message', (raw) => {
     if (Buffer.byteLength(raw) > MAX_PAYLOAD_BYTES) return sendError(ws, 'Message too large.');
@@ -1037,7 +1221,7 @@ wss.on('connection', (ws, req) => {
       ws.pendingMessages.push(data);
       return;
     }
-    handleMessage(ws, data);
+    dispatchMessage(ws, data);
   });
   ws.on('close', () => { websocketConnections.set(Math.max(0, wss.clients.size)); handleDisconnect(ws); });
   ws.on('error', () => { websocketConnections.set(Math.max(0, wss.clients.size)); handleDisconnect(ws); });

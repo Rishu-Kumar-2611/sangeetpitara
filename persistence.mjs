@@ -45,6 +45,7 @@ function mapUser(row) {
     id: row.id,
     email: row.email,
     passwordHash: row.passwordHash ?? row.password_hash,
+    isAdmin: Boolean(row.isAdmin ?? row.is_admin),
     createdAt: isoDate(row.createdAt ?? row.created_at),
   };
 }
@@ -79,6 +80,68 @@ function mapRoom(row) {
   };
 }
 
+function mapReport(row) {
+  if (!row) return null;
+  return {
+    kind: 'REPORT',
+    id: row.id,
+    roomId: row.room_id ?? row.roomId ?? null,
+    reporterId: row.reporter_id ?? row.reporterId,
+    targetId: row.target_id ?? row.targetId,
+    category: row.category,
+    description: row.description || '',
+    status: row.status,
+    createdAt: isoDate(row.created_at ?? row.createdAt),
+    updatedAt: isoDate(row.updated_at ?? row.updatedAt),
+  };
+}
+
+function mapBlock(row) {
+  if (!row) return null;
+  return {
+    kind: 'BLOCK',
+    id: row.id,
+    roomId: row.room_id ?? row.roomId ?? null,
+    blockerId: row.blocker_id ?? row.blockerId,
+    blockedId: row.blocked_id ?? row.blockedId,
+    reason: row.reason || '',
+    active: row.active !== false,
+    createdAt: isoDate(row.created_at ?? row.createdAt),
+    expiresAt: (row.expires_at ?? row.expiresAt) ? isoDate(row.expires_at ?? row.expiresAt) : null,
+  };
+}
+
+function mapBan(row) {
+  if (!row) return null;
+  return {
+    kind: 'BAN',
+    id: row.id,
+    roomId: row.room_id ?? row.roomId ?? null,
+    subjectId: row.subject_id ?? row.subjectId,
+    issuedBy: row.issued_by ?? row.issuedBy,
+    reason: row.reason,
+    status: row.status,
+    createdAt: isoDate(row.created_at ?? row.createdAt),
+    expiresAt: (row.expires_at ?? row.expiresAt) ? isoDate(row.expires_at ?? row.expiresAt) : null,
+  };
+}
+
+function mapEntitlement(row) {
+  if (!row) return null;
+  return {
+    subjectId: row.subject_id ?? row.subjectId,
+    provider: row.provider,
+    customerId: row.customer_id ?? row.customerId ?? null,
+    subscriptionId: row.subscription_id ?? row.subscriptionId ?? null,
+    priceId: row.price_id ?? row.priceId ?? null,
+    plan: row.plan,
+    status: row.status,
+    currentPeriodEnd: (row.current_period_end ?? row.currentPeriodEnd) ? isoDate(row.current_period_end ?? row.currentPeriodEnd) : null,
+    cancelAtPeriodEnd: Boolean(row.cancel_at_period_end ?? row.cancelAtPeriodEnd),
+    updatedAt: isoDate(row.updated_at ?? row.updatedAt),
+  };
+}
+
 function isUniqueViolation(error) {
   return error?.code === '23505';
 }
@@ -97,6 +160,11 @@ export class InMemoryRepository {
     this.userIdsByEmail = new Map();
     this.sessionsByTokenHash = new Map();
     this.roomsById = new Map();
+    this.reportsById = new Map();
+    this.blocksById = new Map();
+    this.bansById = new Map();
+    this.entitlementsBySubject = new Map();
+    this.billingEvents = new Set();
   }
 
   async migrate() {
@@ -110,6 +178,7 @@ export class InMemoryRepository {
       id: this.idGenerator(),
       email: normalizedEmail,
       passwordHash,
+      isAdmin: false,
       createdAt: isoDate(createdAt, this.clock()),
     };
     this.usersById.set(user.id, user);
@@ -212,6 +281,74 @@ export class InMemoryRepository {
     return true;
   }
 
+  async createReport(record) {
+    this.reportsById.set(record.id, clone(record));
+    return clone(record);
+  }
+
+  async listReports({ reporterId = null, status = null, limit = 100 } = {}) {
+    return [...this.reportsById.values()]
+      .filter((record) => !reporterId || record.reporterId === reporterId)
+      .filter((record) => !status || record.status === status)
+      .slice(-limit)
+      .map(clone);
+  }
+
+  async updateReport(record) {
+    this.reportsById.set(record.id, clone(record));
+    return clone(record);
+  }
+
+  async createBlock(record) {
+    this.blocksById.set(record.id, clone(record));
+    return clone(record);
+  }
+
+  async listBlocks({ blockerId = null, blockedId = null, roomId = null, activeOnly = false } = {}) {
+    return [...this.blocksById.values()]
+      .filter((record) => !blockerId || record.blockerId === blockerId)
+      .filter((record) => !blockedId || record.blockedId === blockedId)
+      .filter((record) => !roomId || record.roomId === roomId)
+      .filter((record) => !activeOnly || record.active !== false)
+      .map(clone);
+  }
+
+  async deactivateBlock(id) {
+    const record = this.blocksById.get(id);
+    if (!record) return false;
+    record.active = false;
+    return true;
+  }
+
+  async createBan(record) {
+    this.bansById.set(record.id, clone(record));
+    return clone(record);
+  }
+
+  async listBans({ subjectId = null, roomId = null, activeOnly = false } = {}) {
+    return [...this.bansById.values()]
+      .filter((record) => !subjectId || record.subjectId === subjectId)
+      .filter((record) => !roomId || record.roomId === roomId)
+      .filter((record) => !activeOnly || record.status === 'ACTIVE')
+      .map(clone);
+  }
+
+  async getEntitlement(subjectId) {
+    return clone(this.entitlementsBySubject.get(subjectId));
+  }
+
+  async upsertEntitlement(record) {
+    this.entitlementsBySubject.set(record.subjectId, clone(record));
+    return clone(record);
+  }
+
+  async recordBillingEvent(provider, providerEventId) {
+    const key = `${provider}:${providerEventId}`;
+    if (this.billingEvents.has(key)) return false;
+    this.billingEvents.add(key);
+    return true;
+  }
+
   async close() {}
 }
 
@@ -245,7 +382,7 @@ export class PostgresRepository {
 
   async findUserByEmail(email) {
     const result = await this.pool.query(
-      `SELECT id, email, password_hash, created_at
+        `SELECT id, email, password_hash, is_admin, created_at
        FROM users
        WHERE email = $1
        LIMIT 1`,
@@ -256,7 +393,7 @@ export class PostgresRepository {
 
   async findUserById(id) {
     const result = await this.pool.query(
-      `SELECT id, email, password_hash, created_at
+      `SELECT id, email, password_hash, is_admin, created_at
        FROM users
        WHERE id = $1
        LIMIT 1`,
@@ -375,6 +512,123 @@ export class PostgresRepository {
        SET status = 'ENDED', ended_at = $2::timestamptz, updated_at = $2::timestamptz
        WHERE id = $1`,
       [roomId, isoDate(endedAt)],
+    );
+    return result.rowCount > 0;
+  }
+
+  async createReport(record) {
+    const result = await this.pool.query(
+      `INSERT INTO moderation_reports (id, room_id, reporter_id, target_id, category, description, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::timestamptz)
+       RETURNING *`,
+      [record.id, record.roomId || null, record.reporterId, record.targetId, record.category, record.description, record.status, isoDate(record.createdAt), isoDate(record.updatedAt)],
+    );
+    return mapReport(result.rows[0]);
+  }
+
+  async listReports({ reporterId = null, status = null, limit = 100 } = {}) {
+    const result = await this.pool.query(
+      `SELECT * FROM moderation_reports
+       WHERE ($1::text IS NULL OR reporter_id = $1)
+         AND ($2::text IS NULL OR status = $2)
+       ORDER BY created_at DESC LIMIT $3`,
+      [reporterId, status, Math.min(500, Math.max(1, limit))],
+    );
+    return result.rows.map(mapReport);
+  }
+
+  async updateReport(record) {
+    const result = await this.pool.query(
+      `UPDATE moderation_reports
+       SET status = $2, updated_at = $3::timestamptz, description = $4
+       WHERE id = $1
+       RETURNING *`,
+      [record.id, record.status, isoDate(record.updatedAt), record.description || ''],
+    );
+    return mapReport(result.rows[0]);
+  }
+
+  async createBlock(record) {
+    const result = await this.pool.query(
+      `INSERT INTO moderation_blocks (id, room_id, blocker_id, blocked_id, reason, active, created_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz)
+       RETURNING *`,
+      [record.id, record.roomId || null, record.blockerId, record.blockedId, record.reason || '', record.active !== false, isoDate(record.createdAt), record.expiresAt ? isoDate(record.expiresAt) : null],
+    );
+    return mapBlock(result.rows[0]);
+  }
+
+  async listBlocks({ blockerId = null, blockedId = null, roomId = null, activeOnly = false } = {}) {
+    const result = await this.pool.query(
+      `SELECT * FROM moderation_blocks
+       WHERE ($1::text IS NULL OR blocker_id = $1)
+         AND ($2::text IS NULL OR blocked_id = $2)
+         AND ($3::text IS NULL OR room_id = $3)
+         AND ($4::boolean = FALSE OR active = TRUE)`,
+      [blockerId, blockedId, roomId, activeOnly],
+    );
+    return result.rows.map(mapBlock);
+  }
+
+  async deactivateBlock(id) {
+    const result = await this.pool.query('UPDATE moderation_blocks SET active = FALSE WHERE id = $1', [id]);
+    return result.rowCount > 0;
+  }
+
+  async createBan(record) {
+    const result = await this.pool.query(
+      `INSERT INTO moderation_bans (id, room_id, subject_id, issued_by, reason, status, created_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz)
+       RETURNING *`,
+      [record.id, record.roomId || null, record.subjectId, record.issuedBy, record.reason, record.status, isoDate(record.createdAt), record.expiresAt ? isoDate(record.expiresAt) : null],
+    );
+    return mapBan(result.rows[0]);
+  }
+
+  async listBans({ subjectId = null, roomId = null, activeOnly = false } = {}) {
+    const result = await this.pool.query(
+      `SELECT * FROM moderation_bans
+       WHERE ($1::text IS NULL OR subject_id = $1)
+         AND ($2::text IS NULL OR room_id = $2)
+         AND ($3::boolean = FALSE OR status = 'ACTIVE')`,
+      [subjectId, roomId, activeOnly],
+    );
+    return result.rows.map(mapBan);
+  }
+
+  async getEntitlement(subjectId) {
+    const result = await this.pool.query('SELECT * FROM entitlements WHERE subject_id = $1 LIMIT 1', [subjectId]);
+    return mapEntitlement(result.rows[0]);
+  }
+
+  async upsertEntitlement(record) {
+    const result = await this.pool.query(
+      `INSERT INTO entitlements (
+         subject_id, provider, customer_id, subscription_id, price_id, plan, status,
+         current_period_end, cancel_at_period_end, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9, $10::timestamptz)
+       ON CONFLICT (subject_id) DO UPDATE SET
+         provider = EXCLUDED.provider,
+         customer_id = EXCLUDED.customer_id,
+         subscription_id = EXCLUDED.subscription_id,
+         price_id = EXCLUDED.price_id,
+         plan = EXCLUDED.plan,
+         status = EXCLUDED.status,
+         current_period_end = EXCLUDED.current_period_end,
+         cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+         updated_at = EXCLUDED.updated_at
+       RETURNING *`,
+      [record.subjectId, record.provider, record.customerId, record.subscriptionId, record.priceId, record.plan, record.status, record.currentPeriodEnd ? isoDate(record.currentPeriodEnd) : null, Boolean(record.cancelAtPeriodEnd), isoDate(record.updatedAt || new Date())],
+    );
+    return mapEntitlement(result.rows[0]);
+  }
+
+  async recordBillingEvent(provider, providerEventId) {
+    const result = await this.pool.query(
+      `INSERT INTO billing_events (provider, provider_event_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [provider, providerEventId],
     );
     return result.rowCount > 0;
   }

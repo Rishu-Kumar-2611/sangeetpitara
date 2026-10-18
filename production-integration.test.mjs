@@ -95,6 +95,20 @@ test('production auth is required for WebSocket room entry and readiness is obse
   const cookie = registration.headers.get('set-cookie');
   assert.match(cookie, /roomsound_session=/);
 
+  const reportResponse = await fetch(`${running.http}/api/moderation/reports`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie.split(';', 1)[0] },
+    body: JSON.stringify({ targetId: 'member-2', category: 'ABUSE', description: 'Test report' }),
+  });
+  assert.equal(reportResponse.status, 201);
+  assert.equal((await reportResponse.json()).report.reporterId.length > 0, true);
+
+  const billingStatus = await fetch(`${running.http}/api/billing/status`, {
+    headers: { Cookie: cookie.split(';', 1)[0] },
+  });
+  assert.equal(billingStatus.status, 200);
+  assert.equal((await billingStatus.json()).billing.enabled, false);
+
   const authenticated = socket(running.ws, { Cookie: cookie.split(';', 1)[0] });
   t.after(() => authenticated.instance.close());
   await authenticated.open();
