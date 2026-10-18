@@ -16,3 +16,6 @@ oracleJdk-*/
 
 .DS_Store
 Thumbs.db
+
+# OmniRush local session state and attachments; never commit private workspace data.
+.opencode/

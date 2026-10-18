@@ -1,6 +1,7 @@
 .PHONY: test check run docker-build
 
 test:
+	npm run check
 	npm test
 
 check:

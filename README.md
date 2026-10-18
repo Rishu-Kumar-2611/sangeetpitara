@@ -17,10 +17,10 @@ RoomSound is a small, runnable web prototype for the private audio-room idea. It
 
 ## Run it
 
-Requirements: Node.js 18 or newer.
+Requirements: Node.js 22.14.0 (the exact version is pinned in `.nvmrc`).
 
 ```powershell
-npm install
+npm ci
 npm start
 ```
 

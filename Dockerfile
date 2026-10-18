@@ -6,7 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY . .
-RUN npm run check
+RUN npm test && npm run check
 
 ENV NODE_ENV=production
 EXPOSE 4173
