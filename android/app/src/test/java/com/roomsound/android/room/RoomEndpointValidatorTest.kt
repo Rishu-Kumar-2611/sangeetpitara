@@ -24,6 +24,18 @@ class RoomEndpointValidatorTest {
     }
 
     @Test
+    fun mapsWebSocketEndpointToItsServerConfigOrigin() {
+        assertEquals(
+            "http://192.168.1.20:4173/config",
+            RoomEndpointValidator.configUrl("ws://192.168.1.20:4173/rooms?transport=ws"),
+        )
+        assertEquals(
+            "https://rooms.example.test/config",
+            RoomEndpointValidator.configUrl("wss://rooms.example.test/rooms"),
+        )
+    }
+
+    @Test
     fun rejectsCredentialsFragmentsUnsupportedSchemesAndMalformedHosts() {
         assertNull(RoomEndpointValidator.normalize("wss://user:password@rooms.example.test"))
         assertNull(RoomEndpointValidator.normalize("https://rooms.example.test/room#fragment"))

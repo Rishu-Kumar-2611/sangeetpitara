@@ -2,10 +2,12 @@ package com.roomsound.android.transport
 
 import com.roomsound.android.capture.Pcm16Sink
 import com.roomsound.android.room.RoomConnectionState
+import com.roomsound.android.room.Pcm16RelayPacketCodec
 import com.roomsound.android.room.RoomSoundEvent
 import com.roomsound.android.room.RoomSoundWebSocketClient
 import com.roomsound.android.room.RoomState
 import com.roomsound.android.room.SourceAuthorization
+import okio.ByteString
 import java.io.Closeable
 
 data class RoomAudioTransportSnapshot(
@@ -21,6 +23,12 @@ data class RoomAudioTransportSnapshot(
     val droppedUnavailableFrames: Long,
     val lastResult: Pcm16PublishResult?,
     val publisherDiagnostics: String?,
+    val mediaRelayEnabled: Boolean = false,
+    val receivedRelayFrames: Long = 0L,
+    val droppedRelayUnauthorizedFrames: Long = 0L,
+    val droppedRelayStaleEpochFrames: Long = 0L,
+    val droppedRelayMalformedFrames: Long = 0L,
+    val droppedRelayUnavailableFrames: Long = 0L,
 )
 
 /**
@@ -32,15 +40,21 @@ data class RoomAudioTransportSnapshot(
  * publisher is bound to that same source epoch. State transitions stop the
  * publisher before a new epoch can be started. The default backend is
  * intentionally unavailable until a real native WebRTC audio-device adapter
- * is supplied.
+ * is supplied. A relay player, when supplied, accepts binary PCM only for a
+ * different live source in the current source epoch.
  */
 class RoomAudioTransport(
     private val roomClient: RoomSoundWebSocketClient,
     private val framePublisher: Pcm16FramePublisher = UnavailablePcm16FramePublisher(),
+    private val relayPlayer: Pcm16RelayPlayerSink? = null,
 ) : Pcm16Sink, RoomSoundWebSocketClient.Listener, Closeable {
     companion object {
         const val CAPTURE_SAMPLE_RATE = 48_000
         const val CAPTURE_CHANNELS = 1
+        private val RELAY_FORMAT = Pcm16AudioFormat(
+            Pcm16RelayPacketCodec.SAMPLE_RATE,
+            Pcm16RelayPacketCodec.CHANNELS,
+        )
     }
 
     private val lock = Any()
@@ -55,6 +69,11 @@ class RoomAudioTransport(
     private var droppedStaleEpochFrames = 0L
     private var droppedUnavailableFrames = 0L
     private var lastResult: Pcm16PublishResult? = null
+    private var receivedRelayFrames = 0L
+    private var droppedRelayUnauthorizedFrames = 0L
+    private var droppedRelayStaleEpochFrames = 0L
+    private var droppedRelayMalformedFrames = 0L
+    private var droppedRelayUnavailableFrames = 0L
 
     init {
         roomClient.addListener(this)
@@ -71,6 +90,7 @@ class RoomAudioTransport(
             // socket is unavailable. Reconnect must deliver a fresh state
             // before media can be published again.
             stopPublisherLocked()
+            relayPlayer?.stop()
             authorization = null
             roomId = null
         }
@@ -85,6 +105,38 @@ class RoomAudioTransport(
             is RoomSoundEvent.RoomEnded,
             -> revoke()
             else -> Unit
+        }
+    }
+
+    override fun onBinaryFrame(frame: ByteString) {
+        if (relayPlayer == null) return
+        val packet = runCatching { Pcm16RelayPacketCodec.decode(frame) }.getOrElse {
+            synchronized(lock) {
+                if (!closed) droppedRelayMalformedFrames += 1
+            }
+            return
+        }
+        synchronized(lock) {
+            val player = relayPlayer ?: return
+            if (closed) return
+            val currentAuthorization = authorization
+            if (currentAuthorization == null || !currentAuthorization.canReceiveRelayFrames) {
+                droppedRelayUnauthorizedFrames += 1
+                return
+            }
+            if (packet.sourceEpoch != currentAuthorization.sourceEpoch) {
+                droppedRelayStaleEpochFrames += 1
+                return
+            }
+            if (player.currentEpoch() != currentAuthorization.sourceEpoch) {
+                droppedRelayUnavailableFrames += 1
+                return
+            }
+            if (player.play(packet)) {
+                receivedRelayFrames += 1
+            } else {
+                droppedRelayUnavailableFrames += 1
+            }
         }
     }
 
@@ -113,7 +165,7 @@ class RoomAudioTransport(
         RoomAudioTransportSnapshot(
             roomId = roomId,
             authorization = authorization,
-            mediaBackendConfigured = framePublisher !is UnavailablePcm16FramePublisher,
+            mediaBackendConfigured = framePublisher !is UnavailablePcm16FramePublisher || relayPlayer != null,
             backendReady = backendReady,
             publisherEpoch = publisherEpoch,
             acceptedFrames = acceptedFrames,
@@ -123,6 +175,12 @@ class RoomAudioTransport(
             droppedUnavailableFrames = droppedUnavailableFrames,
             lastResult = lastResult,
             publisherDiagnostics = framePublisher.diagnostics(),
+            mediaRelayEnabled = relayPlayer != null,
+            receivedRelayFrames = receivedRelayFrames,
+            droppedRelayUnauthorizedFrames = droppedRelayUnauthorizedFrames,
+            droppedRelayStaleEpochFrames = droppedRelayStaleEpochFrames,
+            droppedRelayMalformedFrames = droppedRelayMalformedFrames,
+            droppedRelayUnavailableFrames = droppedRelayUnavailableFrames,
         )
     }
 
@@ -136,14 +194,20 @@ class RoomAudioTransport(
             if (closed) return
             closed = true
             stopPublisherLocked()
+            relayPlayer?.stop()
         }
         roomClient.removeListener(this)
         runCatching { framePublisher.close() }
+        runCatching { relayPlayer?.close() }
     }
 
     private fun applyRoomState(state: RoomState) {
         synchronized(lock) {
             if (closed) return
+            if (!state.room.status.equals("ACTIVE", true) || state.self == null) {
+                revokeLocked()
+                return
+            }
 
             val previousAuthorization = authorization
             val sameRoom = roomId == state.room.id
@@ -160,10 +224,25 @@ class RoomAudioTransport(
             val leaseChanged = !sameRoom || previousAuthorization != nextAuthorization
             roomId = state.room.id
             authorization = nextAuthorization
-            if (leaseChanged) stopPublisherLocked()
+            if (leaseChanged) {
+                stopPublisherLocked()
+                // Room/member changes can reuse the same numeric epoch.
+                relayPlayer?.stop()
+            }
 
             if (nextAuthorization.canPublishFrames) {
                 startPublisherLocked(nextAuthorization.sourceEpoch)
+            }
+
+            if (relayPlayer != null) {
+                if (nextAuthorization.canReceiveRelayFrames) {
+                    if (relayPlayer.currentEpoch() != nextAuthorization.sourceEpoch) {
+                        relayPlayer.stop()
+                        relayPlayer.start(RELAY_FORMAT, nextAuthorization.sourceEpoch)
+                    }
+                } else {
+                    relayPlayer.stop()
+                }
             }
         }
     }
@@ -184,6 +263,7 @@ class RoomAudioTransport(
 
     private fun revokeLocked() {
         stopPublisherLocked()
+        relayPlayer?.stop()
         authorization = null
         roomId = null
     }

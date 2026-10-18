@@ -34,4 +34,12 @@ class SourceAuthorizationTest {
         assertFalse(SourceAuthorization(null, "self", "LIVE", 8L).isAuthorized)
         assertFalse(SourceAuthorization("self", "self", "NONE", 8L).isAuthorized)
     }
+
+    @Test
+    fun relayPlaybackRequiresAnotherLiveSourceInTheCurrentLease() {
+        assertTrue(SourceAuthorization("listener", "source", "live", 9L).canReceiveRelayFrames)
+        assertFalse(SourceAuthorization("source", "source", "LIVE", 9L).canReceiveRelayFrames)
+        assertFalse(SourceAuthorization("listener", "source", "STARTING", 9L).canReceiveRelayFrames)
+        assertFalse(SourceAuthorization("listener", null, "LIVE", 9L).canReceiveRelayFrames)
+    }
 }

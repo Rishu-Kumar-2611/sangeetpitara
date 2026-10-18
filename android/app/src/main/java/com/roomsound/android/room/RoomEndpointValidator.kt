@@ -65,6 +65,14 @@ object RoomEndpointValidator {
 
     fun normalize(rawEndpoint: String): String? = parse(rawEndpoint)?.webSocketUrl
 
+    /** Config belongs to the server origin, never a WebSocket path or query. */
+    fun configUrl(rawEndpoint: String): String? {
+        val endpoint = normalize(rawEndpoint) ?: return null
+        val uri = URI(endpoint)
+        val scheme = if (uri.scheme == "wss") "https" else "http"
+        return URI(scheme, null, uri.host, uri.port, "/config", null, null).toString()
+    }
+
     fun guidance(rawEndpoint: String): String = parse(rawEndpoint)?.let(::guidance) ?: INVALID_ENDPOINT_MESSAGE
 
     fun guidance(endpoint: RoomEndpointInfo): String = when (endpoint.kind) {

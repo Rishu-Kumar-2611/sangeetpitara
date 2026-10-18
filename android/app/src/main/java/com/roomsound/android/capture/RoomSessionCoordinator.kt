@@ -5,11 +5,16 @@ import android.os.Handler
 import android.os.Looper
 import com.roomsound.android.room.RoomConnectionState
 import com.roomsound.android.room.RoomEndpointValidator
+import com.roomsound.android.room.RoomMediaRelayConfig
+import com.roomsound.android.room.RoomServerConfig
 import com.roomsound.android.room.RoomSoundEvent
 import com.roomsound.android.room.RoomSoundWebSocketClient
 import com.roomsound.android.room.RoomState
 import com.roomsound.android.transport.RoomAudioTransport
 import com.roomsound.android.transport.RoomAudioTransportSnapshot
+import com.roomsound.android.transport.Pcm16FramePublisher
+import com.roomsound.android.transport.Pcm16RelayPlayer
+import com.roomsound.android.transport.Pcm16RelayPublisher
 import com.roomsound.android.transport.WebRtcPcmPublisher
 import java.io.Closeable
 import java.util.UUID
@@ -55,8 +60,13 @@ class RoomSessionCoordinator(
     private var endpoint: String? = null
     private var client: RoomSoundWebSocketClient? = null
     private var clientListener: RoomSoundWebSocketClient.Listener? = null
-    private var publisher: WebRtcPcmPublisher? = null
+    private var publisher: Pcm16FramePublisher? = null
+    private var relayPlayer: Pcm16RelayPlayer? = null
     private var transport: RoomAudioTransport? = null
+    private var mediaRelayConfig = RoomMediaRelayConfig.DEFAULT
+    private var mediaConfigured = false
+    private var pendingRoomAction: ((RoomSoundWebSocketClient) -> Unit)? = null
+    private var connectPending = false
     private var attempt: Attempt? = null
     private var takeover: Takeover? = null
     private val consumedConsents = mutableSetOf<String>()
@@ -78,6 +88,7 @@ class RoomSessionCoordinator(
     fun connectionState(): RoomConnectionState = client?.connectionState() ?: RoomConnectionState.IDLE
     fun currentRoomState(): RoomState? = joinedState()
     fun currentEndpoint(): String? = endpoint
+    fun currentMediaRelayConfig(): RoomMediaRelayConfig = mediaRelayConfig
     fun pendingCapture(): PendingCapture? = attempt?.let { PendingCapture(it.id, it.phase) }
     fun isTakeoverPending(): Boolean = takeover != null
     fun isRoomSelectionPending(): Boolean = roomSelectionPending
@@ -96,27 +107,6 @@ class RoomSessionCoordinator(
         val nextClient = RoomSoundWebSocketClient(next)
         client = nextClient
         endpoint = next
-        try {
-            val nextPublisher = WebRtcPcmPublisher(
-                context = appContext,
-                roomClient = nextClient,
-                onStatus = { message ->
-                    main.post { if (!closed && client === nextClient) status(message) }
-                },
-                onDiagnosticsChanged = {
-                    main.post { if (!closed && client === nextClient) changed() }
-                },
-            )
-            publisher = nextPublisher
-            nextPublisher.setPlaybackVolume(volume)
-            transport = RoomAudioTransport(nextClient, nextPublisher)
-        } catch (error: Throwable) {
-            disposeRoom()
-            val why = error.message ?: error.javaClass.simpleName
-            status("Native audio could not initialize: $why")
-            android.util.Log.e("RoomSound", "configureEndpoint init failed", error)
-            return false
-        }
         val listener = object : RoomSoundWebSocketClient.Listener {
             override fun onConnectionStateChanged(state: RoomConnectionState) {
                 // Revoke frame forwarding immediately on the socket thread.
@@ -134,8 +124,76 @@ class RoomSessionCoordinator(
         }
         clientListener = listener
         nextClient.addListener(listener)
+        // UI entry points may immediately queue create/join. They are held
+        // until config and the selected media backend are ready, so no offer
+        // or binary frame can arrive before its listener has been installed.
+        nextClient.fetchServerConfigAsync { fetchedConfig ->
+            main.post {
+                if (!closed && client === nextClient) configureMedia(nextClient, fetchedConfig)
+            }
+        }
         changed()
         return true
+    }
+
+    private fun configureMedia(nextClient: RoomSoundWebSocketClient, fetchedConfig: RoomServerConfig) {
+        var nextPublisher: Pcm16FramePublisher? = null
+        var nextRelayPlayer: Pcm16RelayPlayer? = null
+        try {
+            // The server's fail-safe default is the no-TURN PCM16 relay. Only
+            // an explicit enabled=false config selects direct WebRTC; an
+            // unknown enabled relay shape must not silently re-enable TURN.
+            mediaRelayConfig = fetchedConfig.mediaRelay
+            val relayEnabled = fetchedConfig.mediaRelay.enabled
+            if (relayEnabled) {
+                require(fetchedConfig.mediaRelay.isPcm16Enabled) {
+                    "Unsupported relay config: ${fetchedConfig.mediaRelay.mode}/" +
+                        "${fetchedConfig.mediaRelay.sampleRate} Hz/${fetchedConfig.mediaRelay.channels} ch."
+                }
+                nextRelayPlayer = Pcm16RelayPlayer(
+                    onStatus = { message ->
+                        main.post { if (!closed && client === nextClient) status(message) }
+                    },
+                )
+                nextPublisher = Pcm16RelayPublisher(nextClient)
+            } else {
+                nextPublisher = WebRtcPcmPublisher(
+                    context = appContext,
+                    roomClient = nextClient,
+                    onStatus = { message ->
+                        main.post { if (!closed && client === nextClient) status(message) }
+                    },
+                    onDiagnosticsChanged = {
+                        main.post { if (!closed && client === nextClient) changed() }
+                    },
+                )
+            }
+            val createdPublisher = requireNotNull(nextPublisher)
+            publisher = createdPublisher
+            relayPlayer = nextRelayPlayer
+            if (createdPublisher is WebRtcPcmPublisher) createdPublisher.setPlaybackVolume(volume)
+            nextRelayPlayer?.setVolume(volume)
+            transport = RoomAudioTransport(nextClient, createdPublisher, nextRelayPlayer)
+        } catch (error: Throwable) {
+            runCatching { nextPublisher?.close() }
+            runCatching { nextRelayPlayer?.close() }
+            disposeRoom()
+            val why = error.message ?: error.javaClass.simpleName
+            status("Native audio could not initialize: $why")
+            android.util.Log.e("RoomSound", "configureEndpoint init failed", error)
+            changed()
+            return
+        }
+        mediaConfigured = true
+        val action = pendingRoomAction
+        pendingRoomAction = null
+        if (action != null) {
+            dispatchRoomAction(nextClient, action)
+        } else if (connectPending) {
+            nextClient.connect()
+        }
+        connectPending = false
+        changed()
     }
 
     fun createRoom(name: String, displayName: String, guestId: String) {
@@ -151,6 +209,15 @@ class RoomSessionCoordinator(
             return
         }
         roomSelectionPending = true
+        if (!mediaConfigured) {
+            pendingRoomAction = action
+            changed()
+            return
+        }
+        dispatchRoomAction(active, action)
+    }
+
+    private fun dispatchRoomAction(active: RoomSoundWebSocketClient, action: (RoomSoundWebSocketClient) -> Unit) {
         try { action(active) } catch (error: Throwable) {
             roomSelectionPending = false
             val msg = error.message ?: error.javaClass.simpleName
@@ -161,7 +228,10 @@ class RoomSessionCoordinator(
         }
         changed()
     }
-    fun connect() { if (!roomSelectionPending) client?.connect() }
+    fun connect() {
+        if (roomSelectionPending) return
+        if (mediaConfigured) client?.connect() else connectPending = true
+    }
 
     fun sendChat(text: String): Boolean {
         if (joinedState() == null || text.isBlank()) return false
@@ -323,7 +393,8 @@ class RoomSessionCoordinator(
 
     fun setPlaybackVolume(value: Double) {
         volume = value.coerceIn(0.0, 1.0)
-        publisher?.setPlaybackVolume(volume)
+        (publisher as? WebRtcPcmPublisher)?.setPlaybackVolume(volume)
+        relayPlayer?.setVolume(volume)
     }
 
     fun leaveRoom() {
@@ -338,7 +409,9 @@ class RoomSessionCoordinator(
         val binding = mediaBinding
         if (binding != null && binding.captureId == captureId && binding.client.connectionState() == RoomConnectionState.JOINED) {
             val state = binding.client.currentRoomState()
-            if (state != null && matches(binding.slot, state) && state.room.sourceStatus == "LIVE") {
+            if (state != null && matches(binding.slot, state) &&
+                state.room.sourceStatus.equals("LIVE", ignoreCase = true)
+            ) {
                 binding.transport.onFrame(samples, count, rate, channels)
             }
         }
@@ -529,9 +602,14 @@ class RoomSessionCoordinator(
         transport?.close()
         client?.close()
         publisher = null
+        relayPlayer = null
         transport = null
         client = null
         endpoint = null
+        mediaRelayConfig = RoomMediaRelayConfig.DEFAULT
+        mediaConfigured = false
+        pendingRoomAction = null
+        connectPending = false
         takeover = null
         roomSelectionPending = false
         requestPending = false

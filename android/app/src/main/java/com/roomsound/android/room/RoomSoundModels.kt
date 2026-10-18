@@ -78,6 +78,39 @@ data class RoomIceServer(
 )
 
 /**
+ * The server-selected media plane. The defaults intentionally select the
+ * bounded PCM16 relay so an Android client remains safe when an older server
+ * omits the optional object from /config.
+ */
+data class RoomMediaRelayConfig(
+    val enabled: Boolean = true,
+    val mode: String = MODE_PCM16,
+    val sampleRate: Int = PCM16_SAMPLE_RATE,
+    val channels: Int = PCM16_CHANNELS,
+) {
+    val isPcm16Enabled: Boolean
+        get() = enabled && mode.equals(MODE_PCM16, ignoreCase = true) &&
+            sampleRate == PCM16_SAMPLE_RATE && channels == PCM16_CHANNELS
+
+    companion object {
+        const val MODE_PCM16 = "pcm16"
+        const val PCM16_SAMPLE_RATE = 48_000
+        const val PCM16_CHANNELS = 1
+        val DEFAULT = RoomMediaRelayConfig()
+    }
+}
+
+/** The complete response returned by the RoomSound server's /config endpoint. */
+data class RoomServerConfig(
+    val iceServers: List<RoomIceServer> = emptyList(),
+    val mediaRelay: RoomMediaRelayConfig = RoomMediaRelayConfig.DEFAULT,
+) {
+    companion object {
+        val DEFAULT = RoomServerConfig()
+    }
+}
+
+/**
  * A snapshot of the server's source lease as seen by this client.
  *
  * `sourceEpoch` changes every time the server changes the active source. A
@@ -100,6 +133,11 @@ data class SourceAuthorization(
     /** Frames are accepted only after the server reports the source as LIVE. */
     val canPublishFrames: Boolean
         get() = isSelfActiveSource && sourceStatus.equals("LIVE", ignoreCase = true)
+
+    /** Relay playout is allowed only for a different live source in this epoch. */
+    val canReceiveRelayFrames: Boolean
+        get() = !selfMemberId.isNullOrBlank() && !activeSourceId.isNullOrBlank() && !isSelfActiveSource &&
+            sourceStatus.equals("LIVE", ignoreCase = true)
 }
 
 sealed interface RoomSoundEvent {
@@ -241,3 +279,20 @@ internal fun parseIceServers(json: JSONObject): List<RoomIceServer> = buildList 
         )
     }
 }
+
+internal fun parseMediaRelayConfig(json: JSONObject): RoomMediaRelayConfig {
+    val relay = json.optJSONObject("mediaRelay") ?: return RoomMediaRelayConfig.DEFAULT
+    return RoomMediaRelayConfig(
+        // Missing enabled must stay fail-safe: relay is enabled unless the
+        // server explicitly opts into direct WebRTC with false.
+        enabled = relay.optBoolean("enabled", true),
+        mode = relay.stringOrNull("mode") ?: RoomMediaRelayConfig.MODE_PCM16,
+        sampleRate = relay.optInt("sampleRate", RoomMediaRelayConfig.PCM16_SAMPLE_RATE),
+        channels = relay.optInt("channels", RoomMediaRelayConfig.PCM16_CHANNELS),
+    )
+}
+
+internal fun parseRoomServerConfig(json: JSONObject): RoomServerConfig = RoomServerConfig(
+    iceServers = parseIceServers(json),
+    mediaRelay = parseMediaRelayConfig(json),
+)

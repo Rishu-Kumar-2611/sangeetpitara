@@ -24,6 +24,13 @@ opens or publishes a microphone input.
   room code and the same `guestId`; it does not create a second room.
 - Tracks the server's `activeSourceId`, `sourceStatus`, and monotonically
   increasing `sourceEpoch`. Stale lower-epoch state is ignored.
+- Fetches and stores `/config` ICE servers together with `mediaRelay`. A
+  missing or unreachable relay configuration defaults to enabled PCM16 for
+  safety; only `mediaRelay.enabled = false` selects direct WebRTC.
+- Sends authorized 48 kHz mono PCM16 frames as bounded `RSR1` binary
+  WebSocket packets when the relay is enabled. Relay listeners validate the
+  packet, source epoch, and live-source authorization before AudioTrack
+  playout.
 - Provides `RoomAudioTransport`, which implements the capture `Pcm16Sink` seam
   and accepts frames only when this member is the live source for the current
   epoch.
@@ -49,33 +56,42 @@ opens or publishes a microphone input.
   an empty endpoint so they do not accidentally try to connect to the
   emulator-only address.
 - The activity binds `RoomAudioTransport` to the capture service when the
-  service is available. Capture start is rejected if native WebRTC
-  initialization fails, instead of allowing a session that can only drop its
-  PCM frames; the transport status explains the failure.
+  service is available. Relay mode does not initialize native WebRTC peers or
+  require a native WebRTC audio backend for capture. The direct WebRTC opt-out
+  still reports initialization failures instead of allowing a session that can
+  only drop its PCM frames.
 - Hosts and co-hosts can approve or reject participant audio-control requests
   from Android system notifications while the Activity is backgrounded. Android
   13+ requests notification permission separately from playback-capture audio
   permission; the in-room approval controls remain available if notifications
   are denied.
 
-The WebSocket client is control/signaling only. Its `rtc` events carry the
-same JSON signaling envelopes used by the web prototype; they do not carry
-PCM audio.
+The WebSocket client carries JSON control/signaling and the binary relay
+fallback. Its `rtc` events carry the same JSON signaling envelopes used by the
+web prototype. Relay PCM is never routed through the microphone.
 
 ## PCM/WebRTC boundary
 
-`Pcm16FramePublisher` is the media-plane seam for the native WebRTC audio
-backend. `RoomAudioTransport` stamps accepted frames with the authorized room
-source epoch, stops the publisher on an epoch/source transition, and reports
-unauthorized, not-live, stale-epoch, invalid-format, and unavailable-backend
-frames separately.
+`Pcm16FramePublisher` is the media-plane seam shared by the PCM16 relay and the
+direct native WebRTC backend. `RoomAudioTransport` stamps accepted frames with
+the authorized room source epoch, stops the publisher on an epoch/source
+transition, and reports unauthorized, not-live, stale-epoch, invalid-format,
+and unavailable-backend frames separately.
 
-The default `UnavailablePcm16FramePublisher` intentionally drops frames with
-an explicit `BACKEND_UNAVAILABLE` result. The active native publisher accepts
-only Android playback PCM; there is no microphone fallback, generated test
-source in the Android UI, fake publisher, or PCM-over-WebSocket path. The
-native WebRTC audio-device integration is backed by the pinned WebRTC SDK and
-its diagnostics expose queue, ADM callback, playout, and peer state.
+The relay publisher builds the exact 20-byte `RSR1` header followed by
+little-endian PCM16 samples, uses a bounded uint32 sequence, and sends only
+while the current room state authorizes this member as the live source. The
+relay player uses a bounded single-thread queue and Android `AudioTrack` in
+`STREAM_MUSIC`/streaming mode with per-player volume control. It never opens a
+microphone. The default `UnavailablePcm16FramePublisher` still reports an
+explicit `BACKEND_UNAVAILABLE` result when direct WebRTC is selected but its
+native backend cannot initialize.
+
+When `mediaRelay.enabled` is true, the coordinator creates
+`Pcm16RelayPublisher` and `Pcm16RelayPlayer`; native WebRTC peer creation is
+not attempted. When it is false, the existing `WebRtcPcmPublisher` path,
+including `/config` ICE/TURN handling and JSON `rtc` signaling, remains the
+media backend.
 
 Typical wiring for a future media backend is:
 
@@ -85,11 +101,10 @@ val transport = RoomAudioTransport(client, verifiedNativePublisher)
 controller.start(resultCode, projectionData, sink = transport)
 ```
 
-The room UI can still be used for create/join and server-state validation with
-the default publisher; its transport snapshot shows `backendReady = false`
-and source controls remain disabled until a real publisher is supplied. The
+The room UI can still be used for create/join and server-state validation. In
+relay mode the transport snapshot exposes `mediaRelayEnabled = true`; the
 separate capture-probe control continues to validate Android capture without
-sending media.
+starting a native peer.
 
 `PlaybackCaptureService.LocalBinder.setPcm16Sink(...)` can install the
 `RoomAudioTransport` before the next `ACTION_START`; if no sink is installed,

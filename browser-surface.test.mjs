@@ -5,10 +5,11 @@ import { readFile } from 'node:fs/promises';
 const root = new URL('.', import.meta.url);
 
 test('browser surface is anonymous and exposes the local rewarded-access gate', async () => {
-  const [html, app, ads] = await Promise.all([
+  const [html, app, ads, relay] = await Promise.all([
     readFile(new URL('index.html', root), 'utf8'),
     readFile(new URL('app.js', root), 'utf8'),
     readFile(new URL('ads.mjs', root), 'utf8'),
+    readFile(new URL('media-relay.mjs', root), 'utf8'),
   ]);
 
   for (const id of ['account-form', 'account-login', 'account-register', 'account-logout', 'room-session', 'room-logout']) {
@@ -27,6 +28,7 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(app, /grantRewardedAccess/);
   assert.match(html, /meta name="roomsound-ad-enabled" content="false"/);
   assert.match(html, /meta name="roomsound-ad-consent" content="false"/);
+  assert.match(html, /meta name="roomsound-media-relay" content="server-configured-pcm16"/);
   assert.match(html, /id="ad-consent-banner"[^>]+hidden/);
   assert.match(html, /data-ad-slot=""[^>]+hidden/);
   assert.match(ads, /providerAdapters/);
@@ -38,6 +40,18 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(ads, /no third-party ad script by default/);
   assert.doesNotMatch(html, /<script[^>]+src=["']https?:\/\//i);
   assert.doesNotMatch(`${html}\n${app}\n${ads}`, /ca-pub-\d+/i);
+  assert.match(app, /mediaRelay/);
+  assert.match(app, /decodePcm16Frame/);
+  assert.match(app, /encodePcm16Frame/);
+  assert.match(app, /createScriptProcessor/);
+  assert.match(app, /muted sink/);
+  assert.match(app, /event\.data instanceof Blob|handleRelayFrame\(event\.data\)/);
+  assert.match(app, /sourceEpoch/);
+  assert.match(relay, /0x52, 0x53, 0x52, 0x31/);
+  assert.match(relay, /MEDIA_RELAY_SAMPLE_RATE = 48_000/);
+  assert.match(relay, /MEDIA_RELAY_CHANNELS = 1/);
+  assert.match(relay, /sampleCount <= 0/);
+  assert.match(relay, /payloadBytes !== sampleCount \* 2/);
 });
 
 test('browser RTC keeps transiently disconnected peers for ICE recovery', async () => {

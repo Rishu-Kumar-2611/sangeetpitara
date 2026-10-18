@@ -5,8 +5,8 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okio.ByteString
 import org.json.JSONObject
-import java.net.URI
 import java.io.Closeable
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArraySet
@@ -27,11 +27,8 @@ enum class RoomConnectionState {
 }
 
 /**
- * OkHttp client for the existing RoomSound JSON WebSocket protocol.
- *
- * The client owns signaling/control only. It deliberately does not send PCM
- * over the WebSocket: the server's `rtc` messages are signaling envelopes and
- * the media plane remains a separate transport seam.
+ * OkHttp client for RoomSound JSON control/signaling and bounded binary PCM16
+ * media. Source authorization is checked again at the binary send boundary.
  */
 class RoomSoundWebSocketClient(
     endpoint: String,
@@ -41,6 +38,14 @@ class RoomSoundWebSocketClient(
     interface Listener {
         fun onConnectionStateChanged(state: RoomConnectionState)
         fun onEvent(event: RoomSoundEvent)
+
+        /** Receives immutable binary data on the WebSocket callback thread. */
+        fun onBinaryFrame(frame: ByteString) {
+            onBinaryMessage(frame)
+        }
+
+        /** Compatibility alias for integrations that call binary data a message. */
+        fun onBinaryMessage(frame: ByteString) = Unit
     }
 
     private data class RoomIntent(
@@ -67,6 +72,8 @@ class RoomSoundWebSocketClient(
     private var reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS
     private var stopRequested = false
     private var permanentlyClosed = false
+    @Volatile private var serverConfig = RoomServerConfig.DEFAULT
+    @Volatile private var serverConfigLoaded = false
 
     fun addListener(listener: Listener) {
         listeners += listener
@@ -85,26 +92,52 @@ class RoomSoundWebSocketClient(
         roomState?.sourceAuthorization()
     }
 
-    /** Fetches the HTTP ICE configuration that belongs to this WebSocket endpoint. */
-    fun fetchIceServers(): List<RoomIceServer> {
-        val uri = runCatching { URI(endpoint) }.getOrNull() ?: return emptyList()
-        val scheme = if (uri.scheme.equals("wss", ignoreCase = true)) "https" else "http"
-        val host = uri.host ?: return emptyList()
-        val configUrl = runCatching {
-            URI(scheme, null, host, uri.port, "/config", null, null).toString()
-        }.getOrNull() ?: return emptyList()
-        val request = runCatching {
-            Request.Builder()
+    /** Returns the last fetched server configuration, using fail-safe defaults. */
+    fun currentServerConfig(): RoomServerConfig = synchronized(lock) { serverConfig }
+
+    /** Fetches /config, including ICE servers and the media-relay selection. */
+    fun fetchServerConfig(): RoomServerConfig {
+        synchronized(lock) {
+            if (serverConfigLoaded) return serverConfig
+        }
+
+        val fetched = runCatching {
+            val configUrl = RoomEndpointValidator.configUrl(endpoint) ?: return@runCatching RoomServerConfig.DEFAULT
+            val request = Request.Builder()
                 .url(configUrl)
                 .get()
                 .build()
-        }.getOrNull() ?: return emptyList()
-        return runCatching {
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use emptyList()
-                parseIceServers(JSONObject(response.body?.string().orEmpty()))
+            val call = okHttpClient.newCall(request)
+            call.timeout().timeout(CONFIG_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            call.execute().use { response ->
+                if (!response.isSuccessful) return@use RoomServerConfig.DEFAULT
+                parseRoomServerConfig(JSONObject(response.body?.string().orEmpty()))
             }
-        }.getOrDefault(emptyList())
+        }.getOrDefault(RoomServerConfig.DEFAULT)
+
+        synchronized(lock) {
+            if (!serverConfigLoaded) {
+                serverConfig = fetched
+                serverConfigLoaded = true
+            }
+            return serverConfig
+        }
+    }
+
+    /** Fetches the HTTP ICE configuration that belongs to this WebSocket endpoint. */
+    fun fetchIceServers(): List<RoomIceServer> = fetchServerConfig().iceServers
+
+    fun fetchMediaRelayConfig(): RoomMediaRelayConfig = fetchServerConfig().mediaRelay
+
+    /** Uses the client's worker; HTTP must never run on Android's UI thread. */
+    fun fetchServerConfigAsync(onLoaded: (RoomServerConfig) -> Unit) {
+        if (reconnectExecutor.isShutdown) return
+        runCatching {
+            reconnectExecutor.execute {
+                val config = fetchServerConfig()
+                if (!isStopped()) onLoaded(config)
+            }
+        }
     }
 
     /** Connect without selecting a room. Usually createRoom or joinRoom is preferred. */
@@ -361,6 +394,13 @@ class RoomSoundWebSocketClient(
             handleMessage(text)
         }
 
+        override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+            if (!isCurrentSocket(webSocket)) return
+            listeners.forEach { listener ->
+                runCatching { listener.onBinaryFrame(bytes) }
+            }
+        }
+
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
             if (!isCurrentSocket(webSocket)) return
             setConnectionState(RoomConnectionState.CLOSING)
@@ -518,6 +558,30 @@ class RoomSoundWebSocketClient(
         return socket.send(message.toString())
     }
 
+    fun sendBinary(frame: ByteString): Boolean = sendPcm16Frame(frame)
+
+    /** Explicit alias used by media-plane callers. */
+    fun sendBinaryFrame(frame: ByteString): Boolean = sendBinary(frame)
+
+    /**
+     * Validate and send atomically against the latest accepted source lease.
+     * OkHttp's general queue limit is far too large for live PCM; drop new
+     * frames above a 250 ms wire window instead of accumulating old audio.
+     */
+    fun sendPcm16Frame(frame: ByteString): Boolean {
+        val packet = runCatching { Pcm16RelayPacketCodec.decode(frame) }.getOrNull() ?: return false
+        return synchronized(lock) {
+            val state = roomState ?: return@synchronized false
+            val socket = webSocket ?: return@synchronized false
+            if (permanentlyClosed || stopRequested || connectionState != RoomConnectionState.JOINED ||
+                !serverConfig.mediaRelay.isPcm16Enabled || !state.room.status.equals("ACTIVE", true) ||
+                !state.sourceAuthorization().canPublishFrames || state.room.sourceEpoch != packet.sourceEpoch ||
+                socket.queueSize() + frame.size > MAX_RELAY_QUEUED_BYTES
+            ) return@synchronized false
+            socket.send(frame)
+        }
+    }
+
     private fun scheduleReconnectIfNeeded() {
         val shouldSchedule = synchronized(lock) {
             autoReconnect && !permanentlyClosed && !stopRequested && roomIntent != null &&
@@ -593,6 +657,8 @@ class RoomSoundWebSocketClient(
         private const val NORMAL_CLOSE = 1000
         private const val INITIAL_RECONNECT_DELAY_MS = 1_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
+        private const val CONFIG_TIMEOUT_SECONDS = 5L
+        private const val MAX_RELAY_QUEUED_BYTES = 24_000L
 
         private fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
             .pingInterval(20, TimeUnit.SECONDS)

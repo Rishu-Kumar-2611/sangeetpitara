@@ -30,6 +30,13 @@ import { createStructuredLogger, createHealthState, createMetricsRegistry } from
 import { createRepositoryFromEnv } from './persistence.mjs';
 import { readJsonBody as readSecureJsonBody, readRawBody, RequestBodyError as SecureRequestBodyError } from './security.mjs';
 import { DEFAULT_REWARDED_ACCESS_CONFIG, normalizeRewardedAccessConfig } from './ads.mjs';
+import {
+  decodePcm16Frame,
+  MEDIA_RELAY_CHANNELS,
+  MEDIA_RELAY_MAX_FRAME_BYTES,
+  MEDIA_RELAY_MAX_PAYLOAD_BYTES,
+  MEDIA_RELAY_SAMPLE_RATE,
+} from './media-relay.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const rootPath = resolve(root);
@@ -44,12 +51,23 @@ const MAX_MESSAGE_KEEP = 100;
 const MAX_PAYLOAD_BYTES = 64 * 1024;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
+const BINARY_FRAME_WINDOW_MS = 5_000;
+// Android playback capture emits 10 ms PCM frames (100 frames/sec). Keep a
+// little headroom above that cadence while still bounding a client's relay
+// work; browser packetizers use 20 ms frames and remain well below this cap.
+const BINARY_FRAME_RATE_MAX = 600;
 const turnEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.TURN_ENABLED || '').trim().toLowerCase());
 const TURN_URLS = turnEnabled && process.env.TURN_URLS
   ? process.env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean)
   : [];
 const TURN_USERNAME = process.env.TURN_USERNAME || '';
 const TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || '';
+const mediaRelay = {
+  enabled: !['0', 'false', 'off', 'no'].includes(String(process.env.MEDIA_RELAY_ENABLED ?? '1').trim().toLowerCase()),
+  mode: 'pcm16',
+  sampleRate: MEDIA_RELAY_SAMPLE_RATE,
+  channels: MEDIA_RELAY_CHANNELS,
+};
 const rewardedAccess = normalizeRewardedAccessConfig({
   enabled: !['0', 'false', 'off'].includes(String(process.env.REWARDED_ACCESS_ENABLED || '').trim().toLowerCase()),
   provider: process.env.REWARDED_AD_PROVIDER || DEFAULT_REWARDED_ACCESS_CONFIG.provider,
@@ -862,6 +880,29 @@ function isValidType(value) {
   return typeof value === 'string' && /^[a-z-]+$/.test(value);
 }
 
+function handleBinaryFrame(ws, raw) {
+  if (!mediaRelay.enabled) return sendError(ws, 'Binary media relay is disabled.');
+  const { room, member } = currentMember(ws);
+  if (!room || !member || member.ws !== ws) return sendError(ws, 'Join or create a room first.');
+  if (room.activeSourceId !== member.id) return sendError(ws, 'You are not authorized to publish audio right now.');
+
+  let frame;
+  try {
+    frame = decodePcm16Frame(raw, { maxPayloadBytes: MEDIA_RELAY_MAX_PAYLOAD_BYTES });
+  } catch (error) {
+    return sendError(ws, `Invalid media relay frame: ${error.message}`);
+  }
+  if (frame.sourceEpoch !== room.sourceEpoch) return sendError(ws, 'Stale source epoch.');
+
+  // Forward the original bytes, not a re-encoded frame. This preserves the
+  // protocol boundary and keeps the relay's CPU work limited to validation.
+  const bytes = Buffer.from(raw);
+  for (const target of room.members.values()) {
+    if (target.id === member.id || !target.ws || target.ws.readyState !== WebSocket.OPEN) continue;
+    target.ws.send(bytes);
+  }
+}
+
 async function handleMessage(ws, message) {
   const type = message?.type;
   if (typeof type !== 'string' || !isValidType(type)) return sendError(ws, 'Invalid message type.');
@@ -1157,10 +1198,11 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...(turn ? [turn] : [])],
+      mediaRelay,
       maxMembers: 10,
       requestTtlMs,
       authRequired: roomAuthRequired,
-       rewardedAccess,
+      rewardedAccess,
     }));
     return;
   }
@@ -1241,6 +1283,41 @@ function dispatchMessage(ws, data) {
     sendError(ws, 'The server could not process that action.');
   });
 }
+
+function dispatchBinaryFrame(ws, data) {
+  try {
+    handleBinaryFrame(ws, data);
+  } catch (error) {
+    logger.error('WebSocket binary frame handling failed', { error });
+    sendError(ws, 'The server could not process that media frame.');
+  }
+}
+
+function dispatchPending(ws, pending) {
+  if (pending?.binary) dispatchBinaryFrame(ws, pending.data);
+  else dispatchMessage(ws, pending?.data ?? pending);
+}
+
+function checkJsonMessageRate(ws) {
+  const now = Date.now();
+  if (!ws._msgReset || now > ws._msgReset) {
+    ws._msgReset = now + 5000;
+    ws._msgCount = 0;
+  }
+  ws._msgCount = (ws._msgCount || 0) + 1;
+  return ws._msgCount <= 30;
+}
+
+function checkBinaryFrameRate(ws) {
+  const now = Date.now();
+  if (!ws._binaryFrameReset || now > ws._binaryFrameReset) {
+    ws._binaryFrameReset = now + BINARY_FRAME_WINDOW_MS;
+    ws._binaryFrameCount = 0;
+  }
+  ws._binaryFrameCount = (ws._binaryFrameCount || 0) + 1;
+  return ws._binaryFrameCount <= BINARY_FRAME_RATE_MAX;
+}
+
 wss.on('connection', (ws, req) => {
   ws._ip = getClientIp(req);
   ws.authenticatedUser = null;
@@ -1251,33 +1328,37 @@ wss.on('connection', (ws, req) => {
     ws.authenticatedUser = user;
     ws.authReady = true;
     const pending = ws.pendingMessages.splice(0);
-    for (const data of pending) dispatchMessage(ws, data);
+    for (const data of pending) dispatchPending(ws, data);
   }).catch((error) => {
     logger.warn('WebSocket authentication lookup failed', { error });
     ws.authReady = true;
     const pending = ws.pendingMessages.splice(0);
-    for (const data of pending) dispatchMessage(ws, data);
+    for (const data of pending) dispatchPending(ws, data);
   });
-  ws.on('message', (raw) => {
-    if (Buffer.byteLength(raw) > MAX_PAYLOAD_BYTES) return sendError(ws, 'Message too large.');
+  ws.on('message', (raw, isBinary) => {
+    const byteLength = Buffer.byteLength(raw);
+    const maxBytes = isBinary ? MEDIA_RELAY_MAX_FRAME_BYTES : MAX_PAYLOAD_BYTES;
+    if (byteLength > maxBytes) return sendError(ws, isBinary ? 'Media relay frame too large.' : 'Message too large.');
+    if (isBinary) {
+      if (!checkBinaryFrameRate(ws)) return sendError(ws, 'You are sending binary audio frames too quickly.');
+      const data = Buffer.from(raw);
+      if (!ws.authReady) {
+        if (ws.pendingMessages.length >= 8) return sendError(ws, 'Authentication is still loading; try again.');
+        ws.pendingMessages.push({ binary: true, data });
+        return;
+      }
+      return dispatchBinaryFrame(ws, data);
+    }
     let data;
     try {
       data = JSON.parse(raw.toString());
     } catch (error) {
       return sendError(ws, `Invalid message: ${error.message}`);
     }
-    ws._msgCount = (ws._msgCount || 0) + 1;
-    if (!ws._msgReset) {
-      ws._msgReset = Date.now() + 5000;
-      ws._msgCount = 1;
-    } else if (Date.now() > ws._msgReset) {
-      ws._msgReset = Date.now() + 5000;
-      ws._msgCount = 1;
-    }
-    if (ws._msgCount > 30) return sendError(ws, 'You are sending messages too quickly.');
+    if (!checkJsonMessageRate(ws)) return sendError(ws, 'You are sending messages too quickly.');
     if (!ws.authReady) {
       if (ws.pendingMessages.length >= 8) return sendError(ws, 'Authentication is still loading; try again.');
-      ws.pendingMessages.push(data);
+      ws.pendingMessages.push({ binary: false, data });
       return;
     }
     dispatchMessage(ws, data);

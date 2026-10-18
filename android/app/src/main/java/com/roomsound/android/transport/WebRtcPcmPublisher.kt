@@ -225,7 +225,10 @@ public class WebRtcPcmPublisher(
     init {
         latestRoomState = roomClient.currentRoomState()
         roomClient.addListener(roomListener)
-        initializeMediaBackend()
+        // Relay playout is owned by RoomAudioTransport/Pcm16RelayPlayer. Even
+        // an accidental direct-publisher construction must not open native
+        // peers or depend on the native library when relay is enabled.
+        if (!roomClient.currentServerConfig().mediaRelay.enabled) initializeMediaBackend()
         roomClient.currentRoomState()?.let(::acceptRoomState)
         statsPollFuture = signalingExecutor.scheduleWithFixedDelay(
             { runCatching { pollPeerStats() } },
@@ -328,6 +331,7 @@ public class WebRtcPcmPublisher(
     public fun lastTerminalPeerDiagnostics(): WebRtcPeerDiagnostics? = lastTerminalPeerDiagnostics
 
     override fun start(format: Pcm16AudioFormat, sourceEpoch: Long): Boolean {
+        if (roomClient.currentServerConfig().mediaRelay.enabled) return false
         if (format != Pcm16AudioFormat(CAPTURE_SAMPLE_RATE, CAPTURE_CHANNELS)) {
             reportStatus("WebRTC publisher rejected format ${format.sampleRate} Hz/${format.channels} ch.")
             return false
@@ -355,7 +359,9 @@ public class WebRtcPcmPublisher(
         return true
     }
 
-    override fun isAvailable(): Boolean = synchronized(stateLock) { !closed && backendReady }
+    override fun isAvailable(): Boolean = synchronized(stateLock) {
+        !closed && backendReady && !roomClient.currentServerConfig().mediaRelay.enabled
+    }
 
     override fun publish(frame: Pcm16Frame): Pcm16PublishResult {
         return try {
@@ -601,6 +607,10 @@ public class WebRtcPcmPublisher(
     }
 
     private fun reconcilePeers() {
+        if (roomClient.currentServerConfig().mediaRelay.enabled) {
+            disposeAllPeers()
+            return
+        }
         val state = synchronized(stateLock) { latestRoomState } ?: run {
             disposeAllPeers()
             return
@@ -650,6 +660,7 @@ public class WebRtcPcmPublisher(
     }
 
     private fun handleRtc(event: RoomSoundEvent.Rtc) {
+        if (roomClient.currentServerConfig().mediaRelay.enabled) return
         val from = event.from?.trim()?.takeIf { it.isNotEmpty() } ?: return
         val state = synchronized(stateLock) { latestRoomState } ?: return
         if (event.sourceEpoch != null && event.sourceEpoch != state.room.sourceEpoch) return

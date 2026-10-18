@@ -6,7 +6,10 @@ RoomSound is a small, runnable web prototype for the private audio-room idea. It
 - Device-local guest identity
 - Up to 10 people in a room
 - Host, co-host, participant, and active-source state
-- WebRTC audio publishing with a lightweight WebSocket signaling server
+- Binary PCM16 WebSocket media relay for browser audio, enabled by default for
+  cross-NAT phone-to-laptop playback
+- Direct WebRTC audio publishing as an explicit opt-out path with lightweight
+  WebSocket signaling
 - Browser display/tab-audio capture where supported
 - Device/browser playback audio and a generated test-audio diagnostic source
 - Host approval/rejection of participant source requests
@@ -67,9 +70,31 @@ rewarded-access flow. The current `/config` response publishes:
     "rewardDurationSeconds": 30,
     "accessDurationHours": 6,
     "accessDurationMs": 21600000
+  },
+  "mediaRelay": {
+    "enabled": true,
+    "mode": "pcm16",
+    "sampleRate": 48000,
+    "channels": 1
   }
 }
 ```
+
+Browser audio uses the `/config` `mediaRelay` setting by default. The enabled
+path captures a browser/device stream through Web Audio, sends validated
+PCM16/48 kHz mono frames over the room WebSocket, and schedules received
+frames through an AudioContext. This avoids relying on STUN-only WebRTC for
+cross-NAT connectivity. Set `MEDIA_RELAY_ENABLED=0` to opt back into the
+existing direct WebRTC peer path. The relay is a server bandwidth path: every
+source frame is uploaded to the RoomSound server and fanned out to listeners,
+so it is not free at scale and should be sized and metered accordingly.
+
+The relay frame is binary and starts with the 20-byte little-endian header
+`RSR1`, version `1`, channels, sample rate, source epoch, sequence, and
+sample count, followed by the exact PCM16 mono payload. The server accepts only
+48,000 Hz, one channel, non-empty frames whose payload length matches
+`sampleCount * 2`; it authorizes the current active source and source epoch
+before forwarding the original bytes to online room members.
 
 `demo-local` is an explicitly named offline development simulation. It does not
 load a real ad network, make a production ad-impression claim, or provide
@@ -149,8 +174,9 @@ npm run smoke
 It exercises room creation, guest joining, rejection and approval, blocked competing requests, host takeover, co-host assignment, and immediate co-host promotion after the host leaves.
 
 The physical-device validation matrix is in [`QA_CHECKLIST.md`](QA_CHECKLIST.md).
-Run it with the default STUN-only configuration first. Enable a relay only when a
-measured network test shows that direct peer connectivity is insufficient.
+Run it with the default PCM16 WebSocket relay when validating phone-to-laptop
+playback across different networks. Set `MEDIA_RELAY_ENABLED=0` only when
+deliberately testing the direct STUN/WebRTC opt-out path.
 
 The offline regression test and syntax check are:
 
@@ -180,10 +206,13 @@ docker build --target android-build -t roomsound-android:local .
 ```
 
 Create `.env` from `.env.example` first. For a deployment, use HTTPS/WSS at a reverse
-proxy, set `ALLOWED_ORIGINS`, and leave `TURN_ENABLED=0` for the free STUN-only
-mode. If a measured network test later requires a relay, set `TURN_ENABLED=1`
-and provide `TURN_URLS`, `TURN_USERNAME`, and `TURN_CREDENTIAL`. The Android
-client fetches the same `/config` ICE settings before creating native peers.
+proxy and set `ALLOWED_ORIGINS`. Browser PCM16 relay is enabled by default and
+moves media bandwidth to the RoomSound server; it is not free at scale. Set
+`MEDIA_RELAY_ENABLED=0` only when a measured deployment should use the direct
+STUN/WebRTC browser path. If that opt-out path needs a TURN server, set
+`TURN_ENABLED=1` and provide `TURN_URLS`, `TURN_USERNAME`, and `TURN_CREDENTIAL`.
+The Android client fetches the same `/config` ICE settings before creating
+native peers.
 
 For provider-neutral production deployment, use the Android-free
 [`Dockerfile.runtime`](Dockerfile.runtime), [`compose.yaml`](compose.yaml), or
@@ -232,26 +261,32 @@ directory below `ROOMSOUND_BUILD_DIR` when that option is set. The keystore
 file pattern is ignored by git; do not commit signing material.
 
 ## Server hardening and production foundations
-- `GET /config` returns `iceServers` (STUN-only by default; TURN only when explicitly enabled). Web + Android should fetch it.
+- `GET /config` returns `iceServers` plus `mediaRelay` (`pcm16`, 48 kHz, mono,
+  enabled by default). Browser and Android clients use the relay unless it is
+  explicitly disabled; Android's native WebRTC path remains the opt-out.
 - `TURN_ENABLED=1` plus `TURN_URLS`, `TURN_USERNAME`, and `TURN_CREDENTIAL` wires an optional relay for symmetric NAT/CGNAT. Keep it `0` to avoid relay charges.
 - `ALLOWED_ORIGINS` optional allowlist for WebSocket handshake.
-- Rate limiting: 120 req/min/IP + 30 msg/5s per socket; `maxPayload 64k`.
+- Rate limiting: 120 req/min/IP + 30 JSON msg/5s per socket; PCM16 binary
+  frames are bounded to 600/5s and 64 KiB of payload; WebSocket transport is
+  capped at 512 KiB so application-level rejection can stay descriptive.
 - Message/history bounded: `messages >200 splice 100`; requests auto-prune after cancel/expire/approve.
 - CSP + `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` etc. Also `<meta http-equiv CSP>` in `index.html`.
 - `/health` + `SIGTERM`/`SIGINT` graceful shutdown; timed `host → cohost` promotion at 30s.
 - `/ready` blocks readiness until startup/migrations/room-directory restore finish; `/metrics` emits bounded Prometheus output.
 - Authenticated report/block/ban APIs and Stripe checkout/portal/webhook seams fail closed when unconfigured.
 
-Client hardening: 1 → 30s exponential backoff reconnect (mirrors `RoomSoundWebSocketClient`), `captureNonce` race fix, `clampVolume`, listening `audioElement` is visually hidden but accessible (`aria-label` on control panel), `connectionState=failed` toast + retry, listener-leave peer cleanup, `fetch /config` before RTC.
+Client hardening: 1 → 30s exponential backoff reconnect (mirrors `RoomSoundWebSocketClient`), `captureNonce` race fix, `clampVolume`, listening `audioElement` is visually hidden but accessible (`aria-label` on control panel), `connectionState=failed` toast + retry, listener-leave peer cleanup, `fetch /config` before selecting PCM16 relay or direct RTC.
 
 ## Current scale boundary
 
-Live WebSocket membership and WebRTC media remain single-process and mesh-based;
-durable PostgreSQL metadata survives restarts but live sockets and audio do not.
-The default STUN-only mode is free but cannot guarantee connectivity through
-restrictive NATs, CGNAT, enterprise firewalls, or networks that block direct
-UDP. Those cases need a relay, a VPN/overlay network, or a different media
-architecture; there is no free STUN setting that replaces TURN universally.
+Live WebSocket membership and the browser PCM16 media relay remain
+single-process; durable PostgreSQL metadata survives restarts but live sockets
+and audio do not. The default browser relay improves connectivity through
+restrictive NATs, CGNAT, enterprise firewalls, and networks that block direct
+UDP, but it consumes RoomSound server ingress and fan-out bandwidth for every
+listener. It is not free at scale and needs capacity planning. The direct
+STUN/WebRTC path remains available as an opt-out, but cannot guarantee
+cross-NAT delivery without TURN or another relay architecture.
 The production target is 100 total concurrent users and at most 10 users per
 room. Larger rooms or multiple live instances require shared room state and an
 SFU such as LiveKit, mediasoup, or Janus. Do not promise 100 listeners in one
