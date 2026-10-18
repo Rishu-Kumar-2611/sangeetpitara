@@ -334,26 +334,38 @@ class MainActivity : Activity() {
     private fun buildContentView(): View {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(24), dp(22), dp(24))
-            setBackgroundColor(android.graphics.Color.rgb(7, 11, 22))
+            setPadding(dp(16), dp(16), dp(16), dp(28))
+            setBackgroundResource(R.drawable.bg_roomsound_background)
         }
 
-        content.addView(TextView(this).apply {
-            text = "RoomSound · device-audio room"
-            textSize = 24f
-            setTextColor(android.graphics.Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        val header = panelContainer(R.drawable.bg_roomsound_header)
+        header.addView(TextView(this).apply {
+            text = "ROOMSOUND  •  LISTENING ROOM"
+            textSize = 11f
+            letterSpacing = 0.16f
+            setTextColor(getColor(R.color.roomsound_brass_bright))
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL))
         }, matchWrap())
-        content.addView(TextView(this).apply {
+        header.addView(TextView(this).apply {
+            text = "RoomSound · device-audio room"
+            textSize = 25f
+            setTextColor(getColor(R.color.roomsound_cream))
+            setTypeface(android.graphics.Typeface.create("serif", android.graphics.Typeface.BOLD))
+            setPadding(0, dp(7), 0, dp(5))
+        }, matchWrap())
+        header.addView(TextView(this).apply {
             text = "Share eligible playback from this phone with one room. RoomSound never selects a microphone source."
             textSize = 14f
-            setTextColor(android.graphics.Color.rgb(164, 175, 201))
-            setPadding(0, dp(10), 0, dp(20))
+            setTextColor(getColor(R.color.roomsound_cream_soft))
+            setLineSpacing(0f, 1.12f)
         }, matchWrap())
+        content.addView(header, panelLayout())
 
-        content.addView(sectionTitle("Room control"), matchWrap())
+        val roomPanel = panelContainer()
+        roomPanel.addView(sectionTitle("Room control"), matchWrap())
+        roomPanel.addView(sectionLabel("Connect to a listening room"), matchWrap())
         endpointInput = inputText("WebSocket endpoint", preferences.getString(ENDPOINT_KEY, defaultRoomEndpoint()))
-        content.addView(endpointInput, matchWrap())
+        roomPanel.addView(endpointInput, matchWrap())
         endpointHintText = labelText().apply {
             text = if (BuildConfig.DEBUG) {
                 "Debug: emulator ws://10.0.2.2:4173 · phone ws://<laptop LAN IPv4>:4173 · localhost is the phone itself."
@@ -361,71 +373,98 @@ class MainActivity : Activity() {
                 "Local testing: ws://<laptop LAN IPv4>:4173 · public servers require wss://."
             }
             textSize = 11f
-            setTextColor(android.graphics.Color.rgb(126, 143, 177))
-            setPadding(0, dp(6), 0, 0)
+            setTextColor(getColor(R.color.roomsound_cream_muted))
+            setLineSpacing(0f, 1.12f)
+            setPadding(dp(2), dp(7), dp(2), 0)
         }
-        content.addView(endpointHintText, matchWrap())
-        testConnectionButton = button("Test room connection") { testRoomConnection() }
-        content.addView(testConnectionButton, marginLayout())
+        roomPanel.addView(endpointHintText, matchWrap())
+        testConnectionButton = button("Test room connection", ButtonTone.SECONDARY) { testRoomConnection() }
+        roomPanel.addView(testConnectionButton, marginLayout())
 
         displayNameInput = inputText("Display name", preferences.getString(DISPLAY_NAME_KEY, "Android guest"))
-        content.addView(displayNameInput, marginLayout())
+        roomPanel.addView(displayNameInput, marginLayout())
         roomNameInput = inputText("New room name", "Listening room")
-        content.addView(roomNameInput, marginLayout())
+        roomPanel.addView(roomNameInput, marginLayout())
         createRoomButton = button("Create room") { createRoom() }
-        content.addView(createRoomButton, marginLayout())
+        roomPanel.addView(createRoomButton, marginLayout())
         roomCodeInput = inputText("Room code to join", null).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         }
-        content.addView(roomCodeInput, marginLayout())
+        roomPanel.addView(roomCodeInput, marginLayout())
         joinRoomButton = button("Join room") { joinRoom() }
-        content.addView(joinRoomButton, marginLayout())
+        roomPanel.addView(joinRoomButton, marginLayout())
 
+        val roomStatusPanel = statusPanel()
         roomConnectionText = labelText().apply {
             text = "Connection: not connected"
-            setPadding(0, dp(14), 0, dp(3))
+            setTextColor(getColor(R.color.roomsound_brass_bright))
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            setPadding(0, 0, 0, dp(4))
         }
-        content.addView(roomConnectionText, matchWrap())
-        roomStateText = labelText()
-        content.addView(roomStateText, matchWrap())
-        roomMembersText = labelText().apply { setPadding(0, dp(8), 0, 0) }
-        content.addView(roomMembersText, matchWrap())
+        roomStatusPanel.addView(roomConnectionText, matchWrap())
+        roomStateText = labelText().apply {
+            setLineSpacing(0f, 1.12f)
+            setPadding(0, 0, 0, dp(5))
+        }
+        roomStatusPanel.addView(roomStateText, matchWrap())
+        roomMembersText = labelText().apply {
+            setLineSpacing(0f, 1.12f)
+            setPadding(0, dp(3), 0, 0)
+        }
+        roomStatusPanel.addView(roomMembersText, matchWrap())
+        roomPanel.addView(roomStatusPanel, marginLayout())
 
         sourceButton = button("Share device audio") { handleSourceAction() }
-        content.addView(sourceButton, marginLayout())
-        takeoverButton = button("Take back control") { takeoverSource() }
-        content.addView(takeoverButton, marginLayout())
-        requestAudioButton = button("Request to share device audio") { requestAudioControl() }
-        content.addView(requestAudioButton, marginLayout())
-        leaveRoomButton = button("Leave room") { leaveRoom() }
-        content.addView(leaveRoomButton, marginLayout())
-        endRoomButton = button("End room") { endRoom() }
-        content.addView(endRoomButton, marginLayout())
+        roomPanel.addView(sourceButton, marginLayout())
+        takeoverButton = button("Take back control", ButtonTone.SECONDARY) { takeoverSource() }
+        roomPanel.addView(takeoverButton, marginLayout())
+        requestAudioButton = button("Request to share device audio", ButtonTone.SECONDARY) { requestAudioControl() }
+        roomPanel.addView(requestAudioButton, marginLayout())
+        leaveRoomButton = button("Leave room", ButtonTone.SECONDARY) { leaveRoom() }
+        roomPanel.addView(leaveRoomButton, marginLayout())
+        endRoomButton = button("End room", ButtonTone.DANGER) { endRoom() }
+        roomPanel.addView(endRoomButton, marginLayout())
 
-        approvalContainer = verticalContainer()
-        content.addView(approvalContainer, matchWrap())
-        moderationContainer = verticalContainer()
-        content.addView(moderationContainer, matchWrap())
+        approvalContainer = dynamicPanel()
+        roomPanel.addView(approvalContainer, marginLayout())
+        moderationContainer = dynamicPanel()
+        roomPanel.addView(moderationContainer, marginLayout())
+        content.addView(roomPanel, panelLayout())
 
-        content.addView(sectionTitle("Chat"), matchWrap())
+        val chatPanel = panelContainer()
+        chatPanel.addView(sectionTitle("Chat"), matchWrap())
         chatText = labelText().apply { setPadding(0, dp(4), 0, dp(4)) }
-        content.addView(chatText, matchWrap())
+        chatText.setBackgroundResource(R.drawable.bg_roomsound_inset)
+        chatText.setPadding(dp(12), dp(12), dp(12), dp(12))
+        chatText.minHeight = dp(70)
+        chatText.setLineSpacing(0f, 1.12f)
+        chatPanel.addView(chatText, matchWrap())
         val chatRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         chatInput = inputText("Message", null)
         chatRow.addView(chatInput, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        chatRow.addView(button("Send") { sendChat() }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT))
-        content.addView(chatRow, marginLayout())
+        chatRow.addView(
+            button("Send") { sendChat() },
+            LinearLayout.LayoutParams(dp(88), LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) },
+        )
+        chatPanel.addView(chatRow, marginLayout())
+        content.addView(chatPanel, panelLayout())
 
-        content.addView(TextView(this).apply {
-            text = "Local listening"
-            textSize = 18f
-            setTextColor(android.graphics.Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(0, dp(18), 0, dp(4))
+        val listeningPanel = panelContainer()
+        listeningPanel.addView(sectionTitle("Local listening"), matchWrap())
+        listeningPanel.addView(labelText().apply {
+            text = "Tune playback for this phone. The brass dial controls local volume only."
+            textSize = 12.5f
+            setTextColor(getColor(R.color.roomsound_cream_muted))
+            setPadding(0, 0, 0, dp(8))
         }, matchWrap())
         volumeSeekBar = SeekBar(this).apply {
             max = 100
             progress = 100
+            contentDescription = "Local listening volume"
+            splitTrack = false
+            progressDrawable = getDrawable(R.drawable.roomsound_seekbar_track)
+            thumb = getDrawable(R.drawable.roomsound_seekbar_thumb)
+            setPadding(dp(4), dp(5), dp(4), dp(5))
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                     if (fromUser) applyPlaybackVolume()
@@ -434,40 +473,56 @@ class MainActivity : Activity() {
                 override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
             })
         }
-        content.addView(volumeSeekBar, matchWrap())
-        muteButton = button("Mute listening") { muted = !muted; updateMuteButton(); applyPlaybackVolume() }
-        content.addView(muteButton, marginLayout())
+        listeningPanel.addView(volumeSeekBar, matchWrap())
+        muteButton = button("Mute listening", ButtonTone.SECONDARY) { muted = !muted; updateMuteButton(); applyPlaybackVolume() }
+        listeningPanel.addView(muteButton, marginLayout())
 
-        transportText = labelText().apply { setPadding(0, dp(12), 0, 0) }
-        content.addView(transportText, matchWrap())
-        roomEventsText = labelText().apply {
+        transportText = diagnosticText().apply { setPadding(dp(12), dp(11), dp(12), dp(11)) }
+        listeningPanel.addView(transportText, marginLayout())
+        roomEventsText = diagnosticText().apply {
             text = "Room events will appear here."
-            setPadding(0, dp(8), 0, dp(18))
+            setPadding(dp(12), dp(11), dp(12), dp(14))
+            minHeight = dp(60)
         }
-        content.addView(roomEventsText, matchWrap())
+        listeningPanel.addView(roomEventsText, marginLayout())
+        content.addView(listeningPanel, panelLayout())
 
-        content.addView(sectionTitle("Playback capture status"), matchWrap())
-        capabilityText = labelText()
-        content.addView(capabilityText, matchWrap())
-        statusText = labelText().apply { setPadding(0, dp(14), 0, dp(3)) }
-        content.addView(statusText, matchWrap())
-        frameText = labelText()
-        content.addView(frameText, matchWrap())
+        val capturePanel = panelContainer()
+        capturePanel.addView(sectionTitle("Playback capture status"), matchWrap())
+        capturePanel.addView(labelText().apply {
+            text = "System playback capture is kept separate from microphone input."
+            textSize = 12.5f
+            setTextColor(getColor(R.color.roomsound_cream_muted))
+            setPadding(0, 0, 0, dp(8))
+        }, matchWrap())
+        capabilityText = diagnosticText()
+        capturePanel.addView(capabilityText, matchWrap())
+        statusText = diagnosticText().apply { setPadding(dp(12), dp(11), dp(12), dp(7)) }
+        capturePanel.addView(statusText, marginLayout())
+        frameText = diagnosticText().apply { setPadding(dp(12), dp(10), dp(12), dp(10)) }
+        capturePanel.addView(frameText, marginLayout())
         startButton = button("Share device audio") { beginCapture(forRoomSource = true) }
-        content.addView(startButton, marginLayout())
-        stopButton = button("Stop capture") { stopCapture() }
-        content.addView(stopButton, marginLayout())
-        content.addView(TextView(this).apply {
+        capturePanel.addView(startButton, marginLayout())
+        stopButton = button("Stop capture", ButtonTone.DANGER) { stopCapture() }
+        capturePanel.addView(stopButton, marginLayout())
+        capturePanel.addView(TextView(this).apply {
             text = "Android 10+ playback capture requires the system consent dialog and the RECORD_AUDIO permission that Android uses as a playback-capture gate. RoomSound configures AudioRecord for eligible device playback, not the microphone, and the native media backend disables microphone recording. Source apps may opt out and protected content may be unavailable, so silence only reports that no non-zero samples arrived; it does not identify a blocking app."
             textSize = 12f
-            setTextColor(android.graphics.Color.rgb(126, 143, 177))
-            setPadding(0, dp(20), 0, 0)
+            setTextColor(getColor(R.color.roomsound_cream_muted))
+            setLineSpacing(0f, 1.18f)
+            setPadding(0, dp(14), 0, 0)
         }, matchWrap())
+        content.addView(capturePanel, panelLayout())
 
         renderRoomState(null)
         renderTransportNow()
         updateMuteButton()
-        return ScrollView(this).apply { addView(content) }
+        return ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            setBackgroundResource(R.drawable.bg_roomsound_background)
+            addView(content)
+        }
     }
 
     private fun createRoom() {
@@ -645,8 +700,14 @@ class MainActivity : Activity() {
             requestAudioButton.isEnabled = false
             leaveRoomButton.isEnabled = false
             endRoomButton.isEnabled = false
-            runCatching { approvalContainer.removeAllViews() }
-            runCatching { moderationContainer.removeAllViews() }
+            runCatching {
+                approvalContainer.removeAllViews()
+                approvalContainer.visibility = View.GONE
+            }
+            runCatching {
+                moderationContainer.removeAllViews()
+                moderationContainer.visibility = View.GONE
+            }
             chatText.text = "—"
             return
         }
@@ -688,7 +749,9 @@ class MainActivity : Activity() {
 
     private fun renderApprovalControls(state: RoomState, isModerator: Boolean) {
         approvalContainer.removeAllViews()
+        approvalContainer.visibility = View.GONE
         if (!isModerator) return
+        approvalContainer.visibility = View.VISIBLE
         val pending = state.requests.filter { it.status.equals("PENDING", ignoreCase = true) }
         approvalContainer.addView(sectionLabel("Broadcast requests"))
         if (pending.isEmpty()) {
@@ -702,14 +765,16 @@ class MainActivity : Activity() {
                 setPadding(0, dp(5), dp(6), dp(5))
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(button("Approve") { approveRequest(request.id) }, LinearLayout.LayoutParams(dp(100), LinearLayout.LayoutParams.WRAP_CONTENT))
-            row.addView(button("Reject") { rejectRequest(request.id) }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT))
+            row.addView(button("Reject", ButtonTone.DANGER) { rejectRequest(request.id) }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT))
             approvalContainer.addView(row, matchWrap())
         }
     }
 
     private fun renderModerationControls(state: RoomState, isHost: Boolean, isModerator: Boolean) {
         moderationContainer.removeAllViews()
+        moderationContainer.visibility = View.GONE
         if (!isModerator) return
+        moderationContainer.visibility = View.VISIBLE
         moderationContainer.addView(sectionLabel(if (isHost) "Host controls" else "Co-host controls"))
         if (isHost) {
             val currentCohost = state.members.firstOrNull { it.id == state.room.cohostId }
@@ -1163,41 +1228,104 @@ class MainActivity : Activity() {
         if (::roomEventsText.isInitialized) roomEventsText.text = roomEvents.joinToString("\n")
     }
 
+    private enum class ButtonTone {
+        PRIMARY,
+        SECONDARY,
+        DANGER,
+    }
+
     private fun inputText(hint: String, value: String?): EditText = EditText(this).apply {
         setHint(hint)
         setText(value ?: "")
         setSingleLine(true)
-        setTextColor(android.graphics.Color.WHITE)
-        setHintTextColor(android.graphics.Color.rgb(126, 143, 177))
+        setTextColor(getColor(R.color.roomsound_cream))
+        setHintTextColor(getColor(R.color.roomsound_cream_muted))
         textSize = 15f
-        setPadding(dp(12), dp(8), dp(12), dp(8))
+        minHeight = dp(48)
+        setPadding(dp(13), dp(8), dp(13), dp(8))
+        setBackgroundResource(R.drawable.bg_roomsound_field)
     }
 
-    private fun button(text: String, action: () -> Unit): Button = Button(this).apply {
+    private fun button(text: String, tone: ButtonTone = ButtonTone.PRIMARY, action: () -> Unit): Button = Button(this).apply {
         this.text = text
         setOnClickListener { action() }
+        setAllCaps(false)
+        textSize = 14f
+        letterSpacing = 0.015f
+        minHeight = dp(46)
+        minimumHeight = dp(46)
+        setPadding(dp(12), 0, dp(12), 0)
+        gravity = Gravity.CENTER
+        setTextColor(
+            when (tone) {
+                ButtonTone.PRIMARY -> getColor(R.color.roomsound_inset)
+                ButtonTone.SECONDARY -> getColor(R.color.roomsound_cream)
+                ButtonTone.DANGER -> getColor(R.color.roomsound_cream)
+            },
+        )
+        setBackgroundResource(
+            when (tone) {
+                ButtonTone.PRIMARY -> R.drawable.bg_roomsound_button_primary
+                ButtonTone.SECONDARY -> R.drawable.bg_roomsound_button_secondary
+                ButtonTone.DANGER -> R.drawable.bg_roomsound_button_danger
+            },
+        )
+        elevation = dp(2).toFloat()
     }
 
     private fun sectionTitle(text: String): TextView = TextView(this).apply {
         this.text = text
         textSize = 18f
-        setTextColor(android.graphics.Color.WHITE)
-        setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setPadding(0, dp(18), 0, dp(6))
+        setTextColor(getColor(R.color.roomsound_cream))
+        setTypeface(android.graphics.Typeface.create("serif", android.graphics.Typeface.BOLD))
+        letterSpacing = 0.025f
+        setPadding(0, 0, 0, dp(8))
     }
 
     private fun sectionLabel(text: String): TextView = TextView(this).apply {
         this.text = text
         textSize = 15f
-        setTextColor(android.graphics.Color.rgb(197, 207, 233))
-        setPadding(0, dp(12), 0, dp(4))
+        setTextColor(getColor(R.color.roomsound_brass_bright))
+        setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL))
+        setPadding(0, dp(3), 0, dp(6))
     }
 
-    private fun verticalContainer() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+    private fun panelContainer(background: Int = R.drawable.bg_roomsound_panel) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(15), dp(14), dp(15), dp(16))
+        setBackgroundResource(background)
+        elevation = dp(2).toFloat()
+        clipToPadding = true
+    }
+
+    private fun statusPanel() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(12), dp(11), dp(12), dp(11))
+        setBackgroundResource(R.drawable.bg_roomsound_inset)
+    }
+
+    private fun dynamicPanel() = verticalContainer().apply {
+        setPadding(dp(10), dp(7), dp(10), dp(9))
+        setBackgroundResource(R.drawable.bg_roomsound_inset)
+        visibility = View.GONE
+    }
+
+    private fun diagnosticText(): TextView = labelText().apply {
+        setTextColor(getColor(R.color.roomsound_cream_soft))
+        textSize = 12.5f
+        setLineSpacing(0f, 1.15f)
+        setBackgroundResource(R.drawable.bg_roomsound_inset)
+    }
+
+    private fun verticalContainer() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        clipToPadding = false
+    }
 
     private fun labelText(): TextView = TextView(this).apply {
-        textSize = 14f
-        setTextColor(android.graphics.Color.rgb(197, 207, 233))
+        textSize = 13.5f
+        setTextColor(getColor(R.color.roomsound_cream_soft))
+        setLineSpacing(0f, 1.12f)
     }
 
     private fun matchWrap() = LinearLayout.LayoutParams(
@@ -1209,8 +1337,15 @@ class MainActivity : Activity() {
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT,
     ).apply {
-        topMargin = dp(10)
+        topMargin = dp(9)
         gravity = Gravity.CENTER_HORIZONTAL
+    }
+
+    private fun panelLayout() = LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+    ).apply {
+        bottomMargin = dp(12)
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

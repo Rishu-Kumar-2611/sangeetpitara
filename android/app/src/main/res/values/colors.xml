@@ -1,0 +1,46 @@
+<resources>
+    <color name="roomsound_background_top">#2A1711</color>
+    <color name="roomsound_background_bottom">#160C09</color>
+    <color name="roomsound_header_top">#754A32</color>
+    <color name="roomsound_header_bottom">#452618</color>
+    <color name="roomsound_panel_top">#53301F</color>
+    <color name="roomsound_panel_bottom">#352016</color>
+    <color name="roomsound_panel_stroke">#8B6040</color>
+    <color name="roomsound_inset">#28150F</color>
+    <color name="roomsound_inset_stroke">#68452F</color>
+    <color name="roomsound_field">#321C14</color>
+    <color name="roomsound_field_focused">#43271A</color>
+    <color name="roomsound_field_stroke">#865B3A</color>
+    <color name="roomsound_field_focus_stroke">#E0AA63</color>
+
+    <color name="roomsound_cream">#FFF0D5</color>
+    <color name="roomsound_cream_soft">#E8CDAA</color>
+    <color name="roomsound_cream_muted">#BE9F7E</color>
+    <color name="roomsound_brass">#D39A52</color>
+    <color name="roomsound_brass_bright">#F0C477</color>
+    <color name="roomsound_brass_shadow">#8E5D32</color>
+    <color name="roomsound_skin">#C47B62</color>
+    <color name="roomsound_success">#B4CC8A</color>
+    <color name="roomsound_warning">#E2B36E</color>
+    <color name="roomsound_danger">#D7846A</color>
+
+    <color name="roomsound_button_primary_top">#E0AC61</color>
+    <color name="roomsound_button_primary_bottom">#B8733A</color>
+    <color name="roomsound_button_primary_pressed_top">#BA7A3F</color>
+    <color name="roomsound_button_primary_pressed_bottom">#8F512B</color>
+    <color name="roomsound_button_secondary_top">#65402A</color>
+    <color name="roomsound_button_secondary_bottom">#422719</color>
+    <color name="roomsound_button_secondary_pressed_top">#7B5032</color>
+    <color name="roomsound_button_secondary_pressed_bottom">#51301F</color>
+    <color name="roomsound_button_danger_top">#B96652</color>
+    <color name="roomsound_button_danger_bottom">#813E35</color>
+    <color name="roomsound_button_danger_pressed_top">#984C40</color>
+    <color name="roomsound_button_danger_pressed_bottom">#672D2A</color>
+    <color name="roomsound_button_disabled">#4A3228</color>
+    <color name="roomsound_button_disabled_stroke">#674A38</color>
+
+    <color name="roomsound_seekbar_track">#5E3B28</color>
+    <color name="roomsound_seekbar_progress">#D39A52</color>
+    <color name="roomsound_seekbar_thumb_top">#F2C77C</color>
+    <color name="roomsound_seekbar_thumb_bottom">#B36C35</color>
+</resources>
