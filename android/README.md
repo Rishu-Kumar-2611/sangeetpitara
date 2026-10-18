@@ -85,9 +85,10 @@ the existing probe continues to capture only in memory and publishes no media.
 ## Build and run
 
 The Android SDK and JDK 17 are external prerequisites; they are not bundled
-with this workspace. The Gradle wrapper is checked in and pins Gradle 8.9, so
-do not install a second global Gradle version. Android SDK Platform 35 and
-Build-Tools are required.
+with this workspace. The Gradle wrapper is checked in and pins Gradle 8.9 with
+a SHA-256 distribution check, so do not install a second global Gradle version.
+Android SDK Platform 35 and Build-Tools are required. App dependency versions
+are locked in `app/gradle.lockfile`.
 
 Once the toolchain and dependency access are available, run from this folder:
 

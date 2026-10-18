@@ -3,6 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 fun configuredValue(name: String): String? = providers.gradleProperty(name)
     .orElse(providers.environmentVariable(name))
     .orNull
