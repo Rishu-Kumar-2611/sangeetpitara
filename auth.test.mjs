@@ -10,6 +10,7 @@ import {
   hashPassword,
   hashSessionToken,
   parseCookies,
+  sessionTokenFromRequest,
   serializeSessionCookie,
   verifyPassword,
 } from './auth.mjs';
@@ -161,6 +162,13 @@ test('session cookies are HttpOnly, same-site, and parseable', () => {
   });
 });
 
+test('session token parsing accepts a bearer authorization header', () => {
+  assert.equal(
+    sessionTokenFromRequest({ headers: { authorization: 'Bearer bearer-session-token' } }),
+    'bearer-session-token',
+  );
+});
+
 test('HTTP auth routes register, reject bad login, expose current user, and invalidate logout', async (t) => {
   const { server, baseUrl } = await startServer();
   t.after(() => server.kill());
@@ -192,6 +200,13 @@ test('HTTP auth routes register, reject bad login, expose current user, and inva
   const current = await fetch(`${baseUrl}/api/auth/current-user`, { headers: { Cookie: cookie } });
   assert.equal(current.status, 200);
   assert.equal((await current.json()).user.email, 'listener@example.test');
+
+  const bearerToken = decodeURIComponent(cookie.slice('roomsound_session='.length));
+  const bearerCurrent = await fetch(`${baseUrl}/api/auth/current-user`, {
+    headers: { Authorization: `Bearer ${bearerToken}` },
+  });
+  assert.equal(bearerCurrent.status, 200);
+  assert.equal((await bearerCurrent.json()).user.email, 'listener@example.test');
 
   const logout = await fetch(`${baseUrl}/api/auth/logout`, {
     method: 'POST',
