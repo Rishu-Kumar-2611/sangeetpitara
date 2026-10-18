@@ -299,7 +299,7 @@ internal class Pcm16FrameQueue(
     }
 
     companion object {
-        const val DEFAULT_CAPACITY_SAMPLES = 9_600 // 200 ms at 48 kHz mono.
+        const val DEFAULT_CAPACITY_SAMPLES = 4_800 // 100 ms at 48 kHz mono.
         private const val BYTES_PER_SAMPLE = 2
     }
 }
