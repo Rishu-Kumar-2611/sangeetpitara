@@ -1,5 +1,7 @@
 import { createGuestId } from './guest-id.js';
 import { liveAudioTracks, prepareDisplayAudioStream } from './capture-tracks.js';
+import { getCurrentUser, logout as requestLogout, submitAuth as requestAuth } from './account-client.mjs';
+import { initializeAdSlots } from './ads.mjs';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -55,6 +57,10 @@ const state = {
   notificationUnavailableNotified: false,
   user: null,
   authRequired: false,
+  authLoading: true,
+  authBusy: false,
+  accountError: '',
+  signingOut: false,
 };
 
 let rtcConfig = {
@@ -81,22 +87,33 @@ loadIceConfig();
 
 async function loadAuthState() {
   try {
-    const response = await fetch('/api/auth/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-    if (response.ok) {
-      const payload = await response.json();
-      state.user = payload.user || null;
-    }
+    state.user = await getCurrentUser();
   } catch {
-    // Guest mode remains available when the optional account service is offline.
+    // Guest mode remains usable when the optional account service is offline.
+    // A required deployment will still be guarded by the server and by the
+    // room-entry check below.
+  } finally {
+    state.authLoading = false;
+    renderAuthState();
   }
-  renderAuthState();
 }
 
 function setAccountError(message = '') {
+  state.accountError = String(message || '');
   const element = $('#account-error');
   if (!element) return;
-  element.textContent = message;
-  element.classList.toggle('hidden', !message);
+  element.textContent = state.accountError;
+  element.classList.toggle('hidden', !state.accountError);
+}
+
+function renderRoomSession() {
+  const element = $('#room-session');
+  const email = $('#room-session-email');
+  if (!element || !email) return;
+  const signedIn = Boolean(state.user);
+  element.classList.toggle('hidden', !signedIn);
+  email.textContent = state.user?.email || '';
+  element.title = signedIn ? `Signed in as ${state.user.email}` : '';
 }
 
 function renderAuthState() {
@@ -104,42 +121,128 @@ function renderAuthState() {
   const signedIn = $('#account-signed-in');
   const stateLabel = $('#account-state');
   const emailLabel = $('#account-email-label');
-  if (!form || !signedIn || !stateLabel || !emailLabel) return;
+  const accountKicker = $('#account-kicker');
+  const accountHelp = $('#account-help');
+  const entryFootnote = $('#entry-footnote');
+  const loginButton = $('#account-login');
+  const registerButton = $('#account-register');
+  const passwordInput = $('#account-password');
+  const createButton = $('#create-room');
+  const joinButton = $('#join-room');
+  if (!form || !signedIn || !stateLabel || !emailLabel) {
+    renderRoomSession();
+    return;
+  }
+
   const user = state.user;
+  const blocked = state.authRequired && !user;
+  const busy = state.authBusy;
+  const checking = state.authLoading;
   form.classList.toggle('hidden', Boolean(user));
   signedIn.classList.toggle('hidden', !user);
-  stateLabel.textContent = user ? (state.authRequired ? 'Required' : 'Signed in') : (state.authRequired ? 'Required' : 'Guest mode');
+  stateLabel.textContent = checking
+    ? 'Checking session…'
+    : user
+      ? (state.authRequired ? 'Signed in · required' : 'Signed in')
+      : state.authRequired ? 'Sign in required' : 'Guest mode';
+  stateLabel.classList.toggle('account-state-required', blocked);
   emailLabel.textContent = user?.email || '';
-  setAccountError('');
+  if (accountKicker) accountKicker.textContent = state.authRequired ? 'ACCOUNT REQUIRED' : 'ACCOUNT';
+  if (accountHelp) accountHelp.textContent = state.authRequired
+    ? (blocked ? 'Sign in before creating or joining a room on this server.' : 'Your room session is tied to this signed-in account.')
+    : 'Guest rooms stay available when anonymous listening is enabled.';
+  if (entryFootnote) entryFootnote.textContent = state.authRequired
+    ? 'Your session is protected by a server-issued HttpOnly cookie.'
+    : 'Guest rooms stay available when this server allows anonymous listening.';
+
+  for (const button of [loginButton, registerButton, passwordInput]) if (button) button.disabled = busy;
+  if (loginButton) loginButton.textContent = busy ? 'Working…' : 'Sign in';
+  if (registerButton) registerButton.textContent = busy ? 'Working…' : 'Create account';
+  for (const button of [createButton, joinButton]) {
+    if (!button) continue;
+    button.disabled = blocked;
+    button.setAttribute('aria-disabled', String(blocked));
+  }
+  const error = $('#account-error');
+  if (error) {
+    error.textContent = state.accountError;
+    error.classList.toggle('hidden', !state.accountError);
+  }
+  renderRoomSession();
 }
 
-async function submitAuth(path) {
-  const email = $('#account-email')?.value.trim() || '';
-  const password = $('#account-password')?.value || '';
+function accountInputValues() {
+  return {
+    email: $('#account-email')?.value.trim() || '',
+    password: $('#account-password')?.value || '',
+  };
+}
+
+async function submitAccount(mode) {
+  if (state.authBusy) return;
+  const credentials = accountInputValues();
+  if (!credentials.email || !credentials.password) {
+    setAccountError('Enter your email and password.');
+    return;
+  }
+  if (credentials.password.length < 12) {
+    setAccountError('Password must be at least 12 characters.');
+    return;
+  }
+
+  state.authBusy = true;
   setAccountError('');
+  renderAuthState();
   try {
-    const response = await fetch(path, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'Account request failed.');
-    state.user = payload.user || null;
-    $('#account-password').value = '';
+    const payload = await requestAuth(mode, credentials);
+    state.user = payload?.user || null;
+    if (!state.user) throw new Error('Account response was incomplete.');
+    const password = $('#account-password');
+    if (password) password.value = '';
+    setAccountError('');
     renderAuthState();
-    toast(state.user ? `Signed in as ${state.user.email}.` : 'Account ready.', 'success');
+    toast(mode === 'register' ? 'Your RoomSound account is ready.' : `Signed in as ${state.user.email}.`, 'success');
   } catch (error) {
-    setAccountError(error.message || 'Account request failed.');
+    setAccountError(error?.message || 'Account request could not be completed.');
+    renderAuthState();
+  } finally {
+    state.authBusy = false;
+    renderAuthState();
   }
 }
 
 async function signOut() {
-  try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch {}
-  state.user = null;
+  if (state.authBusy) return;
+  state.authBusy = true;
+  const hadSocket = Boolean(state.ws);
+  state.signingOut = hadSocket;
+  setAccountError('');
   renderAuthState();
-  toast('Signed out.', 'success');
+  try {
+    await requestLogout();
+    state.user = null;
+    state.explicitLeave = true;
+    state.lastRoomCode = null;
+    resetToLanding();
+    toast('Signed out.', 'success');
+  } catch (error) {
+    if (error?.status === 401) {
+      state.user = null;
+      state.explicitLeave = true;
+      state.lastRoomCode = null;
+      resetToLanding();
+      toast('Your session has expired. Sign in again.', 'error');
+    } else {
+      state.signingOut = false;
+      const message = error?.message || 'Could not sign out. Try again.';
+      setAccountError(message);
+      toast(message, 'error');
+    }
+  } finally {
+    state.authBusy = false;
+    if (!hadSocket) state.signingOut = false;
+    renderAuthState();
+  }
 }
 
 function hasTurnServer(config) {
@@ -476,6 +579,7 @@ function connectAnd(action, isReconnect = false) {
   if (state.authRequired && !state.user) {
     setAccountError('Sign in before entering a room.');
     toast('Sign in is required for this deployment.', 'error');
+    $('#account-email')?.focus();
     return;
   }
   const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -518,11 +622,14 @@ function connectAnd(action, isReconnect = false) {
     const code = event.code;
     const reason = event.reason || '';
     // Explicit leaves / removals should NOT reconnect
+    if (code === 1000 && state.signingOut) state.signingOut = false;
     if (code === 4003) {
+      const signingOut = state.signingOut;
+      state.signingOut = false;
       state.lastRoomCode = null;
       state.explicitLeave = true;
       resetToLanding(reason || 'You were removed from the room.');
-      toast(reason || 'You were removed from the room.', 'bad');
+      if (!signingOut) toast(reason || 'You were removed from the room.', 'bad');
       return;
     }
     if (code === 1000 && reason === 'Left room') {
@@ -1590,9 +1697,12 @@ function wireEvents() {
     if (!button) return;
     send({ type: button.dataset.requestAction === 'approve' ? 'approve-request' : 'reject-request', requestId: button.dataset.requestId });
   });
-  $('#account-login')?.addEventListener('click', () => submitAuth('/api/auth/login'));
-  $('#account-register')?.addEventListener('click', () => submitAuth('/api/auth/register'));
-  $('#account-logout')?.addEventListener('click', signOut);
+  $('#account-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void submitAccount(event.submitter?.dataset.authAction || 'login');
+  });
+  $('#account-logout')?.addEventListener('click', () => { void signOut(); });
+  $('#room-logout')?.addEventListener('click', () => { void signOut(); });
 }
 
 wireEvents();
@@ -1601,6 +1711,8 @@ if (notificationSupportAvailable()) {
   navigator.serviceWorker.addEventListener('controllerchange', postNotificationReady);
 }
 void registerNotificationServiceWorker();
+initializeAdSlots();
+renderAuthState();
 void loadAuthState();
 
 const locationParams = new URLSearchParams(location.search);

@@ -17,6 +17,7 @@ RoomSound is a small, runnable web prototype for the private audio-room idea. It
 - Optional PostgreSQL-backed email/password accounts with server-issued HttpOnly sessions
 - Durable room directory, moderation records, billing events, and subscription entitlements when PostgreSQL is enabled
 - Production health (`/health`, `/ready`), bounded Prometheus metrics, structured redacted logs, and abuse-report APIs
+- Privacy-gated, opt-in advertising boundary with a Google AdSense adapter that is disabled until deployment configuration and consent exist
 - No audio recording
 
 ## Run it
@@ -50,6 +51,14 @@ For public SaaS mode, set `REQUIRE_AUTH=1`. The browser account panel signs in
 before room entry and the WebSocket uses the same-origin HttpOnly session cookie.
 Guest mode remains available for local development and the current Android build
 until native Android account/token UX is added.
+
+Advertising is disabled by default. To enable a reviewed Google AdSense deployment,
+configure the `roomsound-ad-provider=adsense`, `roomsound-ad-client`, and
+`roomsound-ad-enabled=true` meta values at deploy time, provide non-empty
+`data-ad-slot` values, and obtain user consent through the in-app banner. Never
+commit a publisher/client identifier, load ads before consent, or treat this
+boundary as a substitute for legal privacy/consent review. The room UI keeps ad
+slots outside live audio controls.
 
 Passwords are validated before persistence and stored as salted, parameterized
 scrypt hashes. Set `SESSION_COOKIE_SECURE=1` when HTTPS terminates at the server

@@ -52,7 +52,10 @@ const auth = createAuthService({
   sessionTtlMs: process.env.SESSION_TTL_MS,
 });
 const secureSessionCookie = sessionCookieSecure(process.env);
-const requireAuth = process.env.REQUIRE_AUTH === '1' || process.env.REQUIRE_AUTH === 'true';
+const explicitRequireAuth = process.env.REQUIRE_AUTH === '1' || process.env.REQUIRE_AUTH === 'true';
+const explicitGuestMode = process.env.REQUIRE_AUTH === '0' || process.env.REQUIRE_AUTH === 'false'
+  || process.env.ALLOW_ANONYMOUS === '1' || process.env.ALLOW_ANONYMOUS === 'true';
+const requireAuth = explicitRequireAuth || (!explicitGuestMode && process.env.NODE_ENV === 'production');
 const billing = createBillingService({ env: process.env });
 const logger = createStructuredLogger({
   service: 'roomsound',
@@ -306,10 +309,11 @@ async function handleProductApiRequest(req, res, requestPath) {
   const isBlocks = path === '/api/moderation/blocks';
   const blockMatch = path.match(/^\/api\/moderation\/blocks\/([^/]+)$/);
   const isBans = path === '/api/moderation/bans';
+  const accountRevokeMatch = path.match(/^\/api\/admin\/accounts\/([^/]+)\/revoke$/);
   const isBillingWebhook = path === '/api/billing/webhook';
   const isCheckout = path === '/api/billing/checkout';
   const isPortal = path === '/api/billing/portal';
-  if (!isReports && !isBlocks && !blockMatch && !isBans && !isBillingWebhook && !isCheckout && !isPortal) return false;
+  if (!isReports && !isBlocks && !blockMatch && !isBans && !accountRevokeMatch && !isBillingWebhook && !isCheckout && !isPortal) return false;
 
   try {
     if (isBillingWebhook) {
@@ -432,6 +436,24 @@ async function handleProductApiRequest(req, res, requestPath) {
       const stored = await repository.createBan(ban);
       audit.record({ type: 'moderation.ban.created', severity: 'warn', actorId: user.id, targetId: ban.subjectId, roomId: ban.roomId || undefined });
       sendJson(res, 201, { ban: stored });
+      return true;
+    }
+
+    if (accountRevokeMatch) {
+      if (!isAdminUser(user)) { sendJson(res, 403, { error: 'Administrator access required.' }); return true; }
+      if (req.method !== 'POST') { sendJson(res, 405, { error: 'Method not allowed.' }, { Allow: 'POST' }); return true; }
+      const targetId = decodeURIComponent(accountRevokeMatch[1]);
+      if (targetId === user.id) { sendJson(res, 400, { error: 'Use a separate administrator account to revoke this account.' }); return true; }
+      const revoked = await auth.revokeAccount(targetId);
+      if (!revoked) { sendJson(res, 404, { error: 'Account not found or already revoked.' }); return true; }
+      for (const socket of wss.clients) {
+        if (socket.authenticatedUser?.id === targetId) {
+          send(socket, { type: 'error', message: 'This account has been revoked.' });
+          socket.close(4003, 'Account revoked');
+        }
+      }
+      audit.record({ type: 'admin.account.revoked', severity: 'warn', actorId: user.id, targetId });
+      sendJson(res, 200, { ok: true });
       return true;
     }
   } catch (error) {
@@ -1166,7 +1188,7 @@ const server = http.createServer(async (req, res) => {
     const mime = mimeTypes[ext] || 'application/octet-stream';
     const headers = { 'Content-Type': mime };
     if (ext === '.html') {
-      headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-ancestors 'none'";
+      headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'";
       headers['Cache-Control'] = 'no-cache';
     } else {
       headers['Cache-Control'] = 'public, max-age=3600';

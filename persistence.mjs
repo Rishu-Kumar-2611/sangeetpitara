@@ -46,6 +46,7 @@ function mapUser(row) {
     email: row.email,
     passwordHash: row.passwordHash ?? row.password_hash,
     isAdmin: Boolean(row.isAdmin ?? row.is_admin),
+    revokedAt: (row.revokedAt ?? row.revoked_at) ? isoDate(row.revokedAt ?? row.revoked_at) : null,
     createdAt: isoDate(row.createdAt ?? row.created_at),
   };
 }
@@ -183,6 +184,7 @@ export class InMemoryRepository {
       email: normalizedEmail,
       passwordHash,
       isAdmin: false,
+      revokedAt: null,
       createdAt: isoDate(createdAt, this.clock()),
     };
     this.usersById.set(user.id, user);
@@ -219,7 +221,8 @@ export class InMemoryRepository {
       this.sessionsByTokenHash.delete(tokenHash);
       return null;
     }
-    if (!this.usersById.has(session.userId)) {
+    const user = this.usersById.get(session.userId);
+    if (!user || user.revokedAt) {
       this.sessionsByTokenHash.delete(tokenHash);
       return null;
     }
@@ -255,6 +258,14 @@ export class InMemoryRepository {
       }
     }
     return deleted;
+  }
+
+  async revokeUser(userId, revokedAt = this.clock()) {
+    const user = this.usersById.get(userId);
+    if (!user) return false;
+    user.revokedAt = isoDate(revokedAt);
+    await this.deleteSessionsForUser(userId);
+    return true;
   }
 
   async createRoom(room) {
@@ -379,7 +390,7 @@ export class PostgresRepository {
       const result = await this.pool.query(
         `INSERT INTO users (id, email, password_hash, created_at)
          VALUES ($1, $2, $3, COALESCE($4::timestamptz, CURRENT_TIMESTAMP))
-         RETURNING id, email, password_hash, created_at`,
+         RETURNING id, email, password_hash, is_admin, revoked_at, created_at`,
         [id, normalizeEmail(email), passwordHash, createdAt ? isoDate(createdAt) : null],
       );
       return mapUser(result.rows[0]);
@@ -391,7 +402,7 @@ export class PostgresRepository {
 
   async findUserByEmail(email) {
     const result = await this.pool.query(
-        `SELECT id, email, password_hash, is_admin, created_at
+        `SELECT id, email, password_hash, is_admin, revoked_at, created_at
        FROM users
        WHERE email = $1
        LIMIT 1`,
@@ -402,7 +413,7 @@ export class PostgresRepository {
 
   async findUserById(id) {
     const result = await this.pool.query(
-      `SELECT id, email, password_hash, is_admin, created_at
+      `SELECT id, email, password_hash, is_admin, revoked_at, created_at
        FROM users
        WHERE id = $1
        LIMIT 1`,
@@ -425,7 +436,9 @@ export class PostgresRepository {
     const result = await this.pool.query(
       `SELECT token_hash, user_id, expires_at, created_at, last_seen_at
        FROM sessions
+       JOIN users ON users.id = sessions.user_id
        WHERE token_hash = $1
+         AND users.revoked_at IS NULL
          AND expires_at > CURRENT_TIMESTAMP
        LIMIT 1`,
       [tokenHash],
@@ -450,6 +463,29 @@ export class PostgresRepository {
   async deleteExpiredSessions() {
     const result = await this.pool.query('DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP');
     return result.rowCount;
+  }
+
+  async revokeUser(userId, revokedAt = new Date()) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        'UPDATE users SET revoked_at = $2::timestamptz WHERE id = $1 AND revoked_at IS NULL',
+        [userId, isoDate(revokedAt)],
+      );
+      if (result.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return false;
+      }
+      await client.query('DELETE FROM sessions WHERE user_id = $1', [userId]);
+      await client.query('COMMIT');
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async createRoom(room) {

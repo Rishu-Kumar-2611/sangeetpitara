@@ -125,11 +125,26 @@ timeout longer than the expected room session.
 
 ## Account, moderation, and legal launch requirements
 
-Set `REQUIRE_AUTH=1` for a public SaaS deployment. The browser provides
-same-origin email/password registration and login; WebSocket connections use the
-HttpOnly session cookie. Android remains compatible with guest mode until its
-native account/token flow is enabled, so do not turn on `REQUIRE_AUTH=1` for a
-deployment that still needs the current guest-only Android build.
+Set `NODE_ENV=production` and leave `REQUIRE_AUTH` unset (or set it to `1`) for
+a public SaaS deployment. `REQUIRE_AUTH=0` or `ALLOW_ANONYMOUS=1` is an explicit
+guest-mode override and should be limited to local/beta use. The browser
+provides same-origin email/password registration and login; WebSocket
+connections use the HttpOnly session cookie. The current Android client remains
+guest-compatible until native account/token UX is enabled, so a deployment
+serving Android must either retain the explicit guest override or complete that
+native login flow before requiring auth for every client.
+
+Administrators can revoke an account through the protected
+`POST /api/admin/accounts/:userId/revoke` endpoint. Revocation marks the account
+disabled, removes its server sessions, and closes its active WebSocket
+connections. Keep this endpoint behind the existing administrator controls and
+never expose it without an authenticated admin session.
+
+Advertising is disabled by default. If a deployment enables the optional
+AdSense adapter, configure a publisher client and slot IDs outside git, obtain
+user consent before loading the provider script, and replace the legal privacy
+template with a reviewed notice. Do not place ads over live audio controls or
+log ad identifiers/consent payloads.
 
 Replace the legal placeholders in `docs/PRIVACY.md`, `docs/TERMS.md`, and
 `docs/ABUSE.md`, publish the pages, and set `ADMIN_EMAILS` or database admin

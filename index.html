@@ -4,9 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#2b1a11" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-ancestors 'none'" />
+    <!-- Ad slots are opt-in. Keep these values empty/false until a privacy-reviewed provider adapter and consent flow exist. -->
+    <meta name="roomsound-ad-provider" content="" />
+    <meta name="roomsound-ad-client" content="" />
+    <meta name="roomsound-ad-enabled" content="false" />
+    <meta name="roomsound-ad-consent" content="false" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'" />
     <title>RoomSound — listen together</title>
-    <link rel="stylesheet" href="/styles.css?v=20261018-minimal-ui-1" />
+    <link rel="stylesheet" href="/styles.css?v=20261018-account-ads-1" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -43,23 +48,33 @@
             <input id="room-code" class="text-input code-input" maxlength="6" placeholder="ABC123" autocomplete="one-time-code" />
             <button id="join-room" class="primary-button full-button" type="button"><span>→</span> Join room</button>
           </div>
-           <p class="entry-footnote">No signup. Your guest identity is remembered on this device.</p>
-           <div class="account-panel" id="account-panel">
-             <div class="account-heading"><span class="section-label">OPTIONAL ACCOUNT</span><span id="account-state">Guest mode</span></div>
-             <div id="account-form">
-               <label class="field-label" for="account-email">Email</label>
-               <input id="account-email" class="text-input" type="email" autocomplete="email" placeholder="you@example.com" />
-               <label class="field-label account-password-label" for="account-password">Password</label>
-               <input id="account-password" class="text-input" type="password" autocomplete="current-password" placeholder="12+ characters" />
-               <div class="account-actions">
-                 <button id="account-login" class="secondary-button" type="button">Sign in</button>
-                 <button id="account-register" class="secondary-button" type="button">Create account</button>
-               </div>
-             </div>
-             <div id="account-signed-in" class="hidden account-signed-in"><span id="account-email-label"></span><button id="account-logout" class="ghost-button" type="button">Sign out</button></div>
-             <div id="account-error" class="inline-error hidden"></div>
-           </div>
-           <div id="entry-error" class="inline-error hidden"></div>
+          <p class="entry-footnote" id="entry-footnote">Guest rooms stay available when this server allows anonymous listening.</p>
+          <div class="account-panel" id="account-panel" aria-labelledby="account-kicker">
+            <div class="account-heading"><span class="section-label" id="account-kicker">ACCOUNT</span><span id="account-state" aria-live="polite">Checking session…</span></div>
+            <form id="account-form" novalidate>
+              <label class="field-label" for="account-email">Email</label>
+              <input id="account-email" class="text-input" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="you@example.com" required />
+              <label class="field-label account-password-label" for="account-password">Password</label>
+              <input id="account-password" class="text-input" type="password" autocomplete="current-password" minlength="12" maxlength="1024" placeholder="12+ characters" required />
+              <div class="account-actions">
+                <button id="account-login" class="secondary-button" type="submit" data-auth-action="login">Sign in</button>
+                <button id="account-register" class="secondary-button" type="submit" data-auth-action="register">Create account</button>
+              </div>
+            </form>
+            <div id="account-signed-in" class="hidden account-signed-in"><span><strong id="account-email-label"></strong><small id="account-session-note">Session active</small></span><button id="account-logout" class="ghost-button" type="button">Sign out</button></div>
+            <p class="account-help" id="account-help">Sign in to keep your room session tied to your account.</p>
+            <div id="account-error" class="inline-error hidden" role="alert"></div>
+          </div>
+          <div id="entry-error" class="inline-error hidden"></div>
+          <div id="landing-ad-slot" class="ad-slot" data-ad-slot="" data-ad-placement="landing" hidden aria-hidden="true"></div>
+          <div id="ad-consent-banner" class="ad-consent" hidden role="dialog" aria-labelledby="ad-consent-title" aria-describedby="ad-consent-copy">
+            <strong id="ad-consent-title">Support RoomSound</strong>
+            <p id="ad-consent-copy">Optional sponsored placements help keep the service running. You can change this choice later in your browser settings.</p>
+            <div class="ad-consent-actions">
+              <button id="ad-consent-allow" class="secondary-button" type="button">Allow ads</button>
+              <button id="ad-consent-deny" class="ghost-button" type="button">No thanks</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -69,6 +84,7 @@
           <div class="room-crumb"><span class="crumb-room-name" id="top-room-name">Listening room</span><span class="crumb-separator">/</span><span class="room-code-small" id="top-room-code">------</span></div>
           <div class="topbar-actions">
             <span class="connection-chip" id="connection-chip"><span class="connection-dot"></span><span id="connection-label">Connecting</span></span>
+            <span id="room-session" class="session-chip hidden"><span id="room-session-email"></span><button id="room-logout" class="session-logout" type="button">Sign out</button></span>
             <button id="share-room" class="ghost-button" type="button">↗ Share invite</button>
             <button id="leave-room" class="icon-button" type="button" aria-label="Leave room">×</button>
           </div>
@@ -143,6 +159,8 @@
               <div id="request-list" class="request-list"></div>
             </section>
 
+            <div id="room-ad-slot" class="ad-slot" data-ad-slot="" data-ad-placement="room-sidebar" hidden aria-hidden="true"></div>
+
           </aside>
         </div>
       </section>
@@ -151,6 +169,6 @@
     <footer class="site-footer"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="mailto:abuse@example.com">Report abuse</a></footer>
     <div id="toast-stack" class="toast-stack"></div>
     <div id="modal-root"></div>
-    <script type="module" src="/app.js?v=20261018-notifications-1"></script>
+    <script type="module" src="/app.js?v=20261018-account-ads-1"></script>
   </body>
 </html>

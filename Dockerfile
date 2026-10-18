@@ -45,5 +45,15 @@ COPY . .
 RUN npm test && npm run check
 
 ENV NODE_ENV=production
+
+# The HTTP server is read-only at runtime and can run as the image's unprivileged
+# node user. Docker sends SIGTERM by default, which the server handles for a
+# graceful WebSocket/repository shutdown.
+USER node
+
 EXPOSE 4173
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD ["node", "--input-type=module", "--eval", "const response = await fetch('http://127.0.0.1:' + (process.env.PORT || 4173) + '/health'); if (!response.ok) process.exit(1); const body = await response.json(); if (body.ok !== true) process.exit(1);"]
+
 CMD ["npm", "start"]

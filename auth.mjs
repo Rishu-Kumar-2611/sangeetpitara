@@ -216,7 +216,7 @@ export function createAuthService({
   async function login(input) {
     const { email, password } = validateCredentials(input);
     const user = await repository.findUserByEmail(email);
-    const passwordMatches = user
+    const passwordMatches = user && !user.revokedAt
       ? await passwordVerifier(password, user.passwordHash)
       : await passwordHasher(password).then(() => false);
     if (!user || !passwordMatches) throw new InvalidCredentialsError();
@@ -236,7 +236,13 @@ export function createAuthService({
     const session = await repository.findSession(tokenHash);
     if (!session) return null;
     const user = session.user || await repository.findUserById(session.userId);
+    if (!user || user.revokedAt) return null;
     return publicUser(user);
+  }
+
+  async function revokeAccount(userId) {
+    if (!userId || typeof repository.revokeUser !== 'function') return false;
+    return repository.revokeUser(userId);
   }
 
   return {
@@ -246,6 +252,7 @@ export function createAuthService({
     logout,
     currentUser,
     getCurrentUser: currentUser,
+    revokeAccount,
   };
 }
 
