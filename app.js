@@ -818,7 +818,8 @@ async function startLocalCapture(sourceType, intent = 'host') {
       }
       label = 'device or browser audio';
     } else if (sourceType === 'TEST_TONE') {
-      const context = new AudioContext();
+      const context = new AudioContext({ latencyHint: 'interactive' });
+      if (context.state !== 'running') await context.resume();
       const oscillator = context.createOscillator();
       const gain = context.createGain();
       const destination = context.createMediaStreamDestination();
