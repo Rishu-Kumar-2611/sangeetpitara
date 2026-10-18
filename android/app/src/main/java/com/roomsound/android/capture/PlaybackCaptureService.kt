@@ -15,6 +15,9 @@ import android.os.IBinder
 import android.os.Looper
 import com.roomsound.android.MainActivity
 import com.roomsound.android.R
+import com.roomsound.android.room.RoomConnectionState
+import com.roomsound.android.room.RoomSoundEvent
+import com.roomsound.android.room.RoomState
 import java.util.concurrent.CopyOnWriteArraySet
 
 /**
@@ -38,13 +41,45 @@ class PlaybackCaptureService : Service() {
     private val listeners = CopyOnWriteArraySet<(CaptureSnapshot) -> Unit>()
     private lateinit var controller: PlaybackCaptureController
     private lateinit var roomSession: RoomSessionCoordinator
+    private lateinit var controlRequestNotifications: RoomControlRequestNotifications
     private var latestSnapshot = CaptureSnapshot(CaptureStatus.IDLE)
     private var foregroundStarted = false
     private var foregroundSessionId: String? = null
 
+    private val roomNotificationListener = object : RoomSessionCoordinator.Listener {
+        override fun onConnectionStateChanged(state: RoomConnectionState) {
+            if (state != RoomConnectionState.JOINED) controlRequestNotifications.dismissAll()
+        }
+
+        override fun onEvent(event: RoomSoundEvent) {
+            when (event) {
+                is RoomSoundEvent.Joined -> syncControlRequestNotifications(event.state)
+                is RoomSoundEvent.State -> syncControlRequestNotifications(event.state)
+                is RoomSoundEvent.ControlRequested -> showControlRequestIfAllowed(event.request)
+                is RoomSoundEvent.RequestResult -> {
+                    event.request?.id?.let { requestId ->
+                        if (!event.status.equals("PENDING", ignoreCase = true)) {
+                            controlRequestNotifications.dismiss(requestId)
+                        }
+                    }
+                }
+                is RoomSoundEvent.ControlRequestExpired -> controlRequestNotifications.dismiss(event.requestId)
+                is RoomSoundEvent.Removed, is RoomSoundEvent.RoomEnded -> controlRequestNotifications.dismissAll()
+                else -> Unit
+            }
+        }
+
+        override fun onPublisherStatus(message: String) = Unit
+
+        override fun onSessionChanged() {
+            syncControlRequestNotifications(roomSession.currentRoomState())
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        controlRequestNotifications = RoomControlRequestNotifications(this)
         roomSession = RoomSessionCoordinator(this) { id, message ->
             controller.stop(id, message, publishStopped = false)
             if (latestSnapshot.sessionId == id || foregroundSessionId == id ||
@@ -54,6 +89,7 @@ class PlaybackCaptureService : Service() {
             }
             finishCapture(id)
         }
+        roomSession.addListener(roomNotificationListener)
         controller = PlaybackCaptureController(this) { snapshot ->
             val deliver = {
                 try { if (roomSession.onCaptureSnapshot(snapshot)) {
@@ -70,6 +106,14 @@ class PlaybackCaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
         when (intent?.action) {
+            RoomControlRequestNotifications.ACTION_APPROVE_REQUEST -> {
+                handleControlRequestAction(intent, approve = true)
+            }
+
+            RoomControlRequestNotifications.ACTION_REJECT_REQUEST -> {
+                handleControlRequestAction(intent, approve = false)
+            }
+
             ACTION_STOP -> {
                 val requestedId = intent.getStringExtra(EXTRA_SESSION_ID)
                 val pendingId = roomSession.pendingCapture()?.id
@@ -122,10 +166,12 @@ class PlaybackCaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
+        roomSession.removeListener(roomNotificationListener)
         roomSession.close()
         controller.close()
         listeners.clear()
         main.removeCallbacksAndMessages(null)
+        controlRequestNotifications.close()
         stopCaptureNotification()
         super.onDestroy()
     }
@@ -145,6 +191,42 @@ class PlaybackCaptureService : Service() {
 
     fun removeListener(listener: (CaptureSnapshot) -> Unit) {
         listeners -= listener
+    }
+
+    private fun handleControlRequestAction(intent: Intent, approve: Boolean) {
+        val requestId = intent.getStringExtra(RoomControlRequestNotifications.EXTRA_REQUEST_ID)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: return
+        controlRequestNotifications.dismiss(requestId)
+        val accepted = if (approve) {
+            roomSession.approveRequest(requestId)
+        } else {
+            roomSession.rejectRequest(requestId)
+        }
+        if (!accepted) syncControlRequestNotifications(roomSession.currentRoomState())
+    }
+
+    private fun showControlRequestIfAllowed(request: com.roomsound.android.room.RoomRequest) {
+        val state = roomSession.currentRoomState() ?: return
+        if (isModerator(state) && state.room.status.equals("ACTIVE", ignoreCase = true)) {
+            controlRequestNotifications.show(request)
+        }
+    }
+
+    private fun syncControlRequestNotifications(state: RoomState?) {
+        if (state == null || !state.room.status.equals("ACTIVE", ignoreCase = true) || !isModerator(state)) {
+            controlRequestNotifications.dismissAll()
+            return
+        }
+        val pending = state.requests.filter { it.status.equals("PENDING", ignoreCase = true) }
+        pending.forEach(controlRequestNotifications::show)
+        controlRequestNotifications.dismissExcept(pending.mapTo(mutableSetOf()) { it.id })
+    }
+
+    private fun isModerator(state: RoomState): Boolean {
+        val selfId = state.self?.id ?: return false
+        return selfId == state.room.hostId || selfId == state.room.cohostId
     }
 
     private fun publish(snapshot: CaptureSnapshot) {

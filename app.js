@@ -8,6 +8,10 @@ const guestStorageKey = 'roomsound-guest-id';
 const guestId = localStorage.getItem(guestStorageKey) || createGuestId();
 localStorage.setItem(guestStorageKey, guestId);
 
+const notificationServiceWorkerUrl = '/notifications-sw.js?v=20261018-1';
+const notificationActionMessageType = 'roomsound-notification-action';
+const notificationReadyMessageType = 'roomsound-notification-ready';
+
 function clampVolume(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return 0.9;
@@ -44,6 +48,11 @@ const state = {
   telemetryTimer: null,
   telemetryGeneration: 0,
   telemetryPollPromise: null,
+  notificationRegistration: null,
+  notificationSetupPromise: null,
+  pendingNotificationActions: [],
+  sentNotificationActions: new Set(),
+  notificationUnavailableNotified: false,
 };
 
 let rtcConfig = {
@@ -102,6 +111,221 @@ function isModerator() {
 
 function isSelfSource() {
   return Boolean(state.self && state.room?.activeSourceId === state.self.id);
+}
+
+function notificationSupportAvailable() {
+  return typeof Notification !== 'undefined'
+    && typeof window !== 'undefined'
+    && window.isSecureContext !== false
+    && typeof navigator !== 'undefined'
+    && 'serviceWorker' in navigator
+    && typeof navigator.serviceWorker.register === 'function';
+}
+
+function notificationPermissionState() {
+  if (typeof Notification === 'undefined') return 'unsupported';
+  return Notification.permission;
+}
+
+function roomUrlForCode(roomCode) {
+  const url = new URL('/', location.origin);
+  const code = String(roomCode || '').trim().toUpperCase();
+  if (code) url.searchParams.set('room', code);
+  return url.href;
+}
+
+function notificationRoomCodeFromLocation() {
+  try {
+    return new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || null;
+  } catch {
+    return null;
+  }
+}
+
+function postNotificationReady() {
+  if (!notificationSupportAvailable()) return;
+  const worker = navigator.serviceWorker.controller
+    || state.notificationRegistration?.active
+    || state.notificationRegistration?.waiting
+    || state.notificationRegistration?.installing;
+  if (!worker) return;
+  try {
+    worker.postMessage({
+      type: notificationReadyMessageType,
+      roomCode: state.room?.code || notificationRoomCodeFromLocation(),
+    });
+  } catch {
+    // The worker may be replaced between lookup and postMessage.
+  }
+}
+
+function registerNotificationServiceWorker() {
+  if (!notificationSupportAvailable()) return Promise.resolve(null);
+  if (state.notificationSetupPromise) return state.notificationSetupPromise;
+  state.notificationSetupPromise = navigator.serviceWorker.register(notificationServiceWorkerUrl, { scope: '/' })
+    .then(async (registration) => {
+      state.notificationRegistration = registration;
+      try { await navigator.serviceWorker.ready; } catch {}
+      postNotificationReady();
+      return registration;
+    })
+    .catch((error) => {
+      state.notificationSetupPromise = null;
+      console.warn('[RoomSound] notification service worker unavailable', error);
+      return null;
+    });
+  return state.notificationSetupPromise;
+}
+
+function normalizeNotificationAction(data) {
+  const action = data?.action === 'approve' || data?.action === 'reject' ? data.action : '';
+  const requestId = String(data?.requestId || '').trim();
+  let roomCode = String(data?.roomCode || '').trim().toUpperCase();
+  if (!roomCode && data?.roomUrl) {
+    try { roomCode = new URL(data.roomUrl, location.origin).searchParams.get('room')?.trim().toUpperCase() || ''; } catch {}
+  }
+  if (!action || !requestId || !roomCode) return null;
+  return { type: notificationActionMessageType, action, requestId, roomCode };
+}
+
+function notificationActionKey(action) {
+  return `${action.roomCode}:${action.action}:${action.requestId}`;
+}
+
+function prepareRoomForNotificationAction(action) {
+  if (state.room || state.ws || !action?.roomCode) return;
+  $('#room-code').value = action.roomCode;
+  $$('.entry-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.entryTab === 'join'));
+  $$('.entry-panel').forEach((panel) => panel.classList.toggle('active-panel', panel.id === 'join-panel'));
+  connectAnd({ type: 'join', code: action.roomCode });
+}
+
+function flushNotificationActions() {
+  if (!state.room || !isModerator() || state.ws?.readyState !== WebSocket.OPEN) return;
+  const remaining = [];
+  for (const action of state.pendingNotificationActions) {
+    if (action.roomCode !== String(state.room.code || '').toUpperCase()) {
+      remaining.push(action);
+      continue;
+    }
+    const key = notificationActionKey(action);
+    if (state.sentNotificationActions.has(key)) continue;
+    send({
+      type: action.action === 'approve' ? 'approve-request' : 'reject-request',
+      requestId: action.requestId,
+    });
+    state.sentNotificationActions.add(key);
+  }
+  state.pendingNotificationActions = remaining;
+}
+
+function queueNotificationAction(data) {
+  const action = normalizeNotificationAction(data);
+  if (!action) return;
+  const key = notificationActionKey(action);
+  if (state.sentNotificationActions.has(key) || state.pendingNotificationActions.some((item) => notificationActionKey(item) === key)) return;
+  state.pendingNotificationActions.push(action);
+  prepareRoomForNotificationAction(action);
+  flushNotificationActions();
+}
+
+function handleNotificationMessage(event) {
+  if (event.data?.type !== notificationActionMessageType) return;
+  queueNotificationAction(event.data);
+}
+
+async function requestNotificationPermission() {
+  if (!notificationSupportAvailable()) {
+    toast('System notifications are not available in this browser.', 'error');
+    return 'unsupported';
+  }
+
+  let permission = notificationPermissionState();
+  if (permission === 'denied') {
+    toast('Notifications are blocked for this site. Allow them in the browser site settings.', 'error');
+    return permission;
+  }
+  if (permission === 'default') {
+    try {
+      permission = await Notification.requestPermission();
+    } catch {
+      permission = 'denied';
+    }
+  }
+  if (permission !== 'granted') {
+    toast('Request notifications were not enabled.', 'error');
+    return permission;
+  }
+
+  const registration = await registerNotificationServiceWorker();
+  if (!registration?.showNotification) {
+    toast('This browser cannot show RoomSound action notifications.', 'error');
+    return 'unsupported';
+  }
+  state.notificationUnavailableNotified = false;
+  toast('Control request notifications are enabled.', 'success');
+  return permission;
+}
+
+async function showControlRequestNotification(request) {
+  if (!isModerator() || !request?.id) return;
+  const permission = notificationPermissionState();
+  if (permission !== 'granted') {
+    if (!state.notificationUnavailableNotified) {
+      state.notificationUnavailableNotified = true;
+      toast(permission === 'denied'
+        ? 'Request notifications are blocked. Check browser site settings.'
+        : 'Enable request notifications from Room settings for Approve/Reject alerts.');
+    }
+    return;
+  }
+
+  const registration = await registerNotificationServiceWorker();
+  if (!registration?.showNotification || !state.room?.code) {
+    if (!state.notificationUnavailableNotified) {
+      state.notificationUnavailableNotified = true;
+      toast('RoomSound could not enable system request notifications.', 'error');
+    }
+    return;
+  }
+
+  try {
+    await registration.showNotification(`${request.requesterName} wants to share audio`, {
+      body: `${state.room.name} · Approve or reject this control request.`,
+      tag: `roomsound-control-${request.id}`,
+      renotify: true,
+      data: {
+        type: 'control-request',
+        requestId: request.id,
+        roomCode: state.room.code,
+        roomUrl: roomUrlForCode(state.room.code),
+      },
+      actions: [
+        { action: 'approve', title: 'Approve' },
+        { action: 'reject', title: 'Reject' },
+      ],
+    });
+  } catch (error) {
+    console.warn('[RoomSound] could not show request notification', error);
+    if (!state.notificationUnavailableNotified) {
+      state.notificationUnavailableNotified = true;
+      toast('System request notifications are unavailable in this browser.', 'error');
+    }
+  }
+}
+
+function notificationSettingsMarkup() {
+  const permission = notificationPermissionState();
+  if (permission === 'unsupported') {
+    return '<div class="settings-note"><strong>Control request notifications</strong><br>System notifications are not supported in this browser.</div>';
+  }
+  if (permission === 'granted') {
+    return '<div class="settings-note"><strong>Control request notifications</strong><br>Enabled. Approve or reject requests from your system notifications.</div>';
+  }
+  if (permission === 'denied') {
+    return '<div class="settings-note"><strong>Control request notifications</strong><br>Blocked by the browser. Allow notifications for this site in browser site settings, then reopen this room.</div>';
+  }
+  return '<div class="settings-note"><strong>Control request notifications</strong><br>Get Approve and Reject buttons when someone asks to share audio.<br><button class="secondary-button" type="button" data-enable-notifications="true" style="margin-top:10px">Enable notifications</button></div>';
 }
 
 function send(payload) {
@@ -285,6 +509,7 @@ function handleServerMessage(message) {
     state.lastRoomCode = message.state.room.code;
     $('#room-banner').classList.add('hidden');
     applyRoomState(message.state);
+    window.history.replaceState(window.history.state, '', roomUrlForCode(message.state.room.code));
     showRoom();
     toast(`Room ${message.state.room.code} is ready.`, 'success');
     return;
@@ -302,7 +527,10 @@ function handleServerMessage(message) {
   }
   if (message.type === 'control-requested') {
     addActivity(`${message.request.requesterName} requested audio control.`, true);
-    if (isModerator()) toast(`${message.request.requesterName} requested audio control.`, 'success');
+    if (isModerator()) {
+      toast(`${message.request.requesterName} requested audio control.`, 'success');
+      void showControlRequestNotification(message.request);
+    }
     return;
   }
   if (message.type === 'request-result') {
@@ -400,6 +628,8 @@ function applyRoomState(next) {
   if (state.room.activeSourceId !== state.self?.id && state.audioElement?.srcObject && state.room.sourceStatus === 'NONE') {
     state.audioElement.srcObject = null;
   }
+  postNotificationReady();
+  flushNotificationActions();
 }
 
 function renderAll() {
@@ -1189,9 +1419,14 @@ function openRoomSettings() {
   const hostControls = state.self?.role === 'HOST'
     ? '<button class="danger-modal-button" type="button" data-end-room="true">End room for everyone</button>'
     : '<p class="settings-note">Only the host can end this room. Ask the host to take control or update the room.</p>';
-  modal.innerHTML = `<div class="source-modal settings-modal"><div class="modal-eyebrow">ROOM SETTINGS</div><h2>${escapeHtml(state.room.name)}</h2><p>Private room · up to 10 people · audio is not recorded.</p><div class="settings-summary"><div><span>Room code</span><strong>${escapeHtml(state.room.code)}</strong></div><div><span>Current source</span><strong>${escapeHtml(state.room.activeSourceId ? sourceLabel(state.room.activeSourceType) : 'None')}</strong></div></div>${hostControls}<button class="modal-close" type="button">Close</button></div>`;
+  modal.innerHTML = `<div class="source-modal settings-modal"><div class="modal-eyebrow">ROOM SETTINGS</div><h2>${escapeHtml(state.room.name)}</h2><p>Private room · up to 10 people · audio is not recorded.</p><div class="settings-summary"><div><span>Room code</span><strong>${escapeHtml(state.room.code)}</strong></div><div><span>Current source</span><strong>${escapeHtml(state.room.activeSourceId ? sourceLabel(state.room.activeSourceType) : 'None')}</strong></div></div>${notificationSettingsMarkup()}${hostControls}<button class="modal-close" type="button">Close</button></div>`;
   $('#modal-root').append(modal);
   modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+  modal.querySelector('[data-enable-notifications]')?.addEventListener('click', async () => {
+    await requestNotificationPermission();
+    modal.remove();
+    openRoomSettings();
+  });
   modal.querySelector('[data-end-room]')?.addEventListener('click', () => {
     if (!window.confirm('End this room for everyone?')) return;
     send({ type: 'end-room' });
@@ -1285,9 +1520,27 @@ function wireEvents() {
 }
 
 wireEvents();
-const queryRoom = new URLSearchParams(location.search).get('room');
-if (queryRoom) {
-  $$('.entry-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.entryTab === 'join'));
-  $$('.entry-panel').forEach((panel) => panel.classList.toggle('active-panel', panel.id === 'join-panel'));
-  $('#room-code').value = queryRoom.toUpperCase();
+if (notificationSupportAvailable()) {
+  navigator.serviceWorker.addEventListener('message', handleNotificationMessage);
+  navigator.serviceWorker.addEventListener('controllerchange', postNotificationReady);
+}
+void registerNotificationServiceWorker();
+
+const locationParams = new URLSearchParams(location.search);
+const initialNotificationAction = normalizeNotificationAction({
+  action: locationParams.get('notificationAction'),
+  requestId: locationParams.get('requestId'),
+  roomCode: locationParams.get('room'),
+});
+if (initialNotificationAction) {
+  // Keep the action in the URL until the room joins. That gives a reload a
+  // durable retry path if the worker or WebSocket is interrupted mid-join.
+  queueNotificationAction(initialNotificationAction);
+} else {
+  const queryRoom = locationParams.get('room');
+  if (queryRoom) {
+    $$('.entry-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.entryTab === 'join'));
+    $$('.entry-panel').forEach((panel) => panel.classList.toggle('active-panel', panel.id === 'join-panel'));
+    $('#room-code').value = queryRoom.toUpperCase();
+  }
 }

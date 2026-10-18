@@ -44,6 +44,11 @@ opens or publishes a microphone input.
   service is available. Capture start is rejected if native WebRTC
   initialization fails, instead of allowing a session that can only drop its
   PCM frames; the transport status explains the failure.
+- Hosts and co-hosts can approve or reject participant audio-control requests
+  from Android system notifications while the Activity is backgrounded. Android
+  13+ requests notification permission separately from playback-capture audio
+  permission; the in-room approval controls remain available if notifications
+  are denied.
 
 The WebSocket client is control/signaling only. Its `rtc` events carry the
 same JSON signaling envelopes used by the web prototype; they do not carry

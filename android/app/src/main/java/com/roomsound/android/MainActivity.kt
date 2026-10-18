@@ -43,6 +43,7 @@ class MainActivity : Activity() {
     companion object {
         private const val REQUEST_MEDIA_PROJECTION = 6102
         private const val REQUEST_RUNTIME_PERMISSIONS = 6103
+        private const val REQUEST_POST_NOTIFICATIONS = 6104
         private const val STATE_PENDING_CAPTURE_ID = "pending_capture_id"
         private const val STATE_PROJECTION_IN_FLIGHT = "projection_consent_in_flight"
         private const val PREFERENCES_NAME = "roomsound_android"
@@ -99,6 +100,9 @@ class MainActivity : Activity() {
     private var captureService: PlaybackCaptureService? = null
     private var serviceBound = false
     private var serviceBindingInFlight = false
+    private var activityResumed = false
+    private var notificationPermissionRequestInFlight = false
+    private var notificationPermissionRequestedRoomId: String? = null
     private var latestCapability: CaptureCapabilityReport? = null
     private var roomSession: RoomSessionCoordinator? = null
     private var latestRoomState: RoomState? = null
@@ -186,8 +190,15 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        activityResumed = true
         ensureCaptureService()
         if (serviceBound) renderAttachedServiceState()
+        requestNotificationPermissionIfNeeded()
+    }
+
+    override fun onPause() {
+        activityResumed = false
+        super.onPause()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -197,6 +208,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        activityResumed = false
         transportRenderHandler.removeCallbacks(transportRenderRunnable)
         transportRenderPosted = false
         detachFromService()
@@ -299,6 +311,7 @@ class MainActivity : Activity() {
         session.addListener(roomListener)
         service.addListener(serviceListener)
         renderAttachedServiceState()
+        requestNotificationPermissionIfNeeded()
     }
 
     private fun detachFromService() {
@@ -315,6 +328,7 @@ class MainActivity : Activity() {
         renderRoomConnection(session?.connectionState() ?: RoomConnectionState.IDLE)
         renderRoomState(session?.currentRoomState())
         renderTransportNow()
+        requestNotificationPermissionIfNeeded()
     }
 
     private fun buildContentView(): View {
@@ -551,13 +565,18 @@ class MainActivity : Activity() {
         try {
             when (event) {
                 is RoomSoundEvent.Joined -> {
+                    if (notificationPermissionRequestedRoomId != event.state.room.id) {
+                        notificationPermissionRequestedRoomId = null
+                    }
                     latestRoomState = event.state
                     appendRoomEvent("Joined room ${event.state.room.code}.")
                     renderRoomState(event.state)
+                    requestNotificationPermissionIfNeeded()
                 }
                 is RoomSoundEvent.State -> {
                     latestRoomState = event.state
                     renderRoomState(event.state)
+                    requestNotificationPermissionIfNeeded()
                 }
                 is RoomSoundEvent.Error -> appendRoomEvent("Server error: ${event.message}")
                 is RoomSoundEvent.LocalError -> appendRoomEvent("Not sent: ${event.message}")
@@ -574,11 +593,13 @@ class MainActivity : Activity() {
                 is RoomSoundEvent.HostPromoted -> appendRoomEvent("A co-host was promoted to host.")
                 is RoomSoundEvent.Takeover -> appendRoomEvent("The room source was taken over immediately.")
                 is RoomSoundEvent.Removed -> {
+                    notificationPermissionRequestedRoomId = null
                     latestRoomState = null
                     appendRoomEvent(event.message)
                     renderRoomState(null)
                 }
                 is RoomSoundEvent.RoomEnded -> {
+                    notificationPermissionRequestedRoomId = null
                     latestRoomState = null
                     appendRoomEvent(event.message)
                     renderRoomState(null)
@@ -919,6 +940,7 @@ class MainActivity : Activity() {
     private fun leaveRoom() {
         pendingCaptureStart = false
         projectionConsentInFlight = false
+        notificationPermissionRequestedRoomId = null
         cancelPendingCapture("Left the room before capture consent completed.")
         roomSession?.leaveRoom()
         latestRoomState = null
@@ -994,12 +1016,17 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_POST_NOTIFICATIONS) {
+            notificationPermissionRequestInFlight = false
+            return
+        }
         if (requestCode != REQUEST_RUNTIME_PERMISSIONS || !pendingCaptureStart) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             launchProjectionConsent()
         } else {
             failPendingCapture("Android audio permission was denied; playback capture cannot start.")
         }
+        requestNotificationPermissionIfNeeded()
     }
 
     @Deprecated("Uses the dependency-free platform Activity result API.")
@@ -1009,10 +1036,12 @@ class MainActivity : Activity() {
         projectionConsentInFlight = false
         if (resultCode != RESULT_OK || data == null) {
             failPendingCapture("Android system capture consent was canceled.")
+            requestNotificationPermissionIfNeeded()
             return
         }
         if (roomSession == null || pendingCaptureId == null) {
             failPendingCapture("The room service is unavailable.")
+            requestNotificationPermissionIfNeeded()
             return
         }
         val sessionId = requireNotNull(pendingCaptureId)
@@ -1029,6 +1058,41 @@ class MainActivity : Activity() {
             failPendingCapture("The foreground capture service could not start: ${error.message}")
         } finally {
             pendingRoomSourceStart = false
+        }
+        requestNotificationPermissionIfNeeded()
+    }
+
+    /**
+     * Notification permission is deliberately a separate runtime request from
+     * playback capture's RECORD_AUDIO request. It is only started while the
+     * joined room is visible and no capture-consent transaction is active.
+     */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            !activityResumed ||
+            isFinishing ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed) ||
+            notificationPermissionRequestInFlight ||
+            pendingCaptureStart ||
+            projectionConsentInFlight
+        ) return
+
+        val state = latestRoomState ?: roomSession?.currentRoomState() ?: return
+        if (roomSession?.connectionState() != RoomConnectionState.JOINED ||
+            !state.room.status.equals("ACTIVE", ignoreCase = true) ||
+            state.self?.id !in setOf(state.room.hostId, state.room.cohostId) ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED ||
+            notificationPermissionRequestedRoomId == state.room.id
+        ) return
+
+        notificationPermissionRequestedRoomId = state.room.id
+        notificationPermissionRequestInFlight = true
+        try {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_POST_NOTIFICATIONS)
+        } catch (error: Throwable) {
+            notificationPermissionRequestInFlight = false
+            notificationPermissionRequestedRoomId = null
+            android.util.Log.w("RoomSound", "Notification permission request failed", error)
         }
     }
 

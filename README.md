@@ -10,6 +10,7 @@ RoomSound is a small, runnable web prototype for the private audio-room idea. It
 - Browser display/tab-audio capture where supported
 - Device/browser playback audio and a generated test-audio diagnostic source
 - Host approval/rejection of participant source requests
+- Optional browser/Android OS notifications with Approve/Reject actions for moderators
 - Host takeover and participant-to-host source resumption
 - Co-host promotion after host disconnect
 - Text chat, roster presence, local mute, and volume controls
@@ -69,6 +70,8 @@ node --input-type=module -e 'const response = await fetch("http://127.0.0.1:4173
 Open `http://localhost:4173` in a current browser. To test the room flow, open the URL in two browser windows or on two devices that can reach the machine running the server.
 
 For audio capture, use a secure context (`localhost` is allowed by browsers) and expect a browser permission prompt. Desktop Chrome and Edge are the most useful first targets for browser-tab audio. RoomSound does not stream microphones; mobile browsers generally cannot capture audio from a separate native app, so use the native Android app for Android device playback.
+
+Moderators can opt in to control-request notifications from the browser room settings menu (`•••`), or allow the Android notification permission after joining as host/co-host. If notifications are unsupported or blocked, the normal in-room control queue remains available. Approve or Reject from a notification sends the existing room command directly; if the browser room page is closed, RoomSound reopens the room invite URL and reconnects before delivering the action. Android actions are owned by the room service, so they continue to work while the Activity is backgrounded.
 
 With the server running in another terminal, the repeatable room-control smoke test is:
 
