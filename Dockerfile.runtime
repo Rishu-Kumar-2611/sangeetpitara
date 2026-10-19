@@ -13,6 +13,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 # sources, Gradle caches, logs, and local artifacts out of the production image.
 COPY --chown=node:node index.html privacy.html terms.html styles.css app.js account-client.mjs ads.mjs capture-tracks.js guest-id.js media-relay.mjs notifications-sw.js ./
 COPY --chown=node:node branding/sangeetpitara/05-diya-eighth-note.svg ./branding/sangeetpitara/
+COPY --chown=node:node downloads/SangeetPitara-debug.apk ./downloads/
 COPY --chown=node:node server.mjs auth.mjs persistence.mjs migrate.mjs security.mjs moderation.mjs observability.mjs audit.mjs billing.mjs ./
 COPY --chown=node:node migrations ./migrations
 COPY --chown=node:node checks ./checks

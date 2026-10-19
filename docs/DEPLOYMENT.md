@@ -125,6 +125,31 @@ timeout longer than the expected room session.
 5. Rotate `TURN_CREDENTIAL`, session/database credentials, and billing secrets
    through the platform; never put them in a Docker layer or tracked `.env`.
 
+## Standard display advertising
+
+The web client has an opt-in AdSense display-ad adapter. Keep these values
+disabled until Google approves the exact public site and the privacy/consent
+copy has been reviewed:
+
+```text
+ADSENSE_ENABLED=1
+ADSENSE_CLIENT=ca-pub-<publisher-id>
+ADSENSE_LANDING_SLOT=<landing-ad-unit-id>
+ADSENSE_ROOM_SLOT=<room-sidebar-ad-unit-id>
+```
+
+These are public publisher/ad-unit identifiers, not secrets. The server
+publishes the configuration through `/config` and generates `/ads.txt` from
+the publisher ID. AdSense display ads provide publisher revenue from eligible
+impressions/clicks; they do not validate the local six-hour demo access grant
+or guarantee a payment for every view. Do not click your own ads or encourage
+users to click them. Google AdSense account approval, privacy disclosures,
+consent, payment thresholds, and program policies remain required.
+
+If the product later needs a user to watch an ad in exchange for room access,
+that is a separate Google Ad Manager rewarded-web integration. Do not label the
+offline `demo-local` timer as a real rewarded ad.
+
 ## Account, moderation, and legal launch requirements
 
 Browser room create/join is anonymous in every deployment. Older

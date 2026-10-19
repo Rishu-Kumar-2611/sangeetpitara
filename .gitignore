@@ -14,6 +14,11 @@ android/app/*.jks
 *.apk
 oracleJdk-*/
 
+# The public debug APK is intentionally packaged into the runtime image so the
+# website can offer a stable download link. Other APK artifacts remain ignored.
+!downloads/
+!downloads/SangeetPitara-debug.apk
+
 .DS_Store
 Thumbs.db
 

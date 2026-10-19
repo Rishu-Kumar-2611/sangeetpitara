@@ -64,8 +64,9 @@ package, RoomSound wire protocol, and
   explicit `LocalDemoRewardedAccessProvider` countdown; this is provider-neutral
   plumbing and **does not integrate a real ad SDK**.
   When `ROOMSOUND_DEFAULT_ENDPOINT` is omitted, debug emulator builds default
-  to `ws://10.0.2.2:4173`. Physical-device builds and release emulator builds
-  keep the endpoint unset rather than guessing a host.
+  to `ws://10.0.2.2:4173`. Physical-device and release builds use the current
+  public Render endpoint `wss://sangeet-pitaraa.onrender.com`; pass an explicit
+  endpoint for LAN, staging, or another production deployment.
 - The activity binds `RoomAudioTransport` to the capture service when the
   service is available. Relay mode does not initialize native WebRTC peers or
   require a native WebRTC audio backend for capture. The direct WebRTC opt-out
@@ -81,6 +82,11 @@ package, RoomSound wire protocol, and
   high-importance notification remains the fallback when Android or the user
   blocks full-screen notification access, and repeated room-state refreshes do
   not relaunch the prompt.
+- The installable APK uses the current public Render endpoint by default when
+  no `ROOMSOUND_DEFAULT_ENDPOINT` override is supplied. Entering a name is
+  required for every create/join action, and creating a room also requires a
+  non-empty room name; the UI no longer invents "Android guest" or
+  "Listening room".
 
 The WebSocket client carries JSON control/signaling and the binary relay
 fallback. Its `rtc` events carry the same JSON signaling envelopes used by the
@@ -168,9 +174,9 @@ export ROOMSOUND_DEFAULT_ENDPOINT='ws://<reachable-lan-host>:4173'
 The generated `BuildConfig.ROOMSOUND_DEFAULT_ENDPOINT` value is normalized to
 the corresponding WebSocket scheme at runtime. A non-empty configured value is
 never replaced by the emulator fallback, even when it is invalid; the app
-reports a configuration failure without showing the raw endpoint. If no value
-is supplied on a physical device or release emulator build, create/join stays
-disabled and the room status reports that the APK needs a configured endpoint.
+ reports a configuration failure without showing the raw endpoint. If no value
+ is supplied, the current public Render fallback is used; pass an explicit
+ endpoint for LAN, staging, or another production deployment.
 
 The offline unit-test, debug-assemble, and lint check used for this Android
 slice is:
@@ -194,6 +200,13 @@ run `./gradlew :app:exportDebugApk --offline --no-daemon --console=plain` from
 this directory with the same `ROOMSOUND_DEFAULT_ENDPOINT` setting. On Windows,
 use `./gradlew.bat`. The artifacts directory is ignored by git; the previous
 RoomSound APK is kept for rollback.
+
+The website download is a debug/sideload APK. Android or Play Protect may show
+an "Install anyway" warning for an APK downloaded outside Google Play; app code
+cannot suppress that security decision. A warning-free consumer distribution
+requires a signed release build and Google Play (or another trusted managed
+distribution) with the package registered and reviewed. Never bypass or try to
+disable Android's install protection in the app.
 
 The build declares OkHttp `4.12.0` and the WebRTC SDK from Maven Central. If
 the checkout is under OneDrive or another synchronised folder, generated

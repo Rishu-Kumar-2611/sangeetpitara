@@ -56,7 +56,6 @@ class MainActivity : Activity() {
         private const val STATE_PROJECTION_IN_FLIGHT = "projection_consent_in_flight"
         private const val PREFERENCES_NAME = "roomsound_android"
         private const val GUEST_ID_KEY = "guest_id"
-        private const val DISPLAY_NAME_KEY = "display_name"
         private const val LAST_CRASH_DIAGNOSTIC_KEY = "last_uncaught_exception"
         private const val MAX_CRASH_DIAGNOSTIC_CHARS = 8192
         private const val MAX_CRASH_SUMMARY_CHARS = 180
@@ -396,9 +395,9 @@ class MainActivity : Activity() {
         roomPanel.addView(sectionTitle("Room control"), matchWrap())
         roomPanel.addView(sectionLabel("Create or join a listening room"), matchWrap())
 
-        displayNameInput = inputText("Display name", preferences.getString(DISPLAY_NAME_KEY, "Android guest"))
+        displayNameInput = inputText("Your name", null)
         roomPanel.addView(displayNameInput, marginLayout())
-        roomNameInput = inputText("New room name", "Listening room")
+        roomNameInput = inputText("Room name", null)
         roomPanel.addView(roomNameInput, marginLayout())
         createRoomButton = button("Create room") { createRoom() }
         roomPanel.addView(createRoomButton, marginLayout())
@@ -515,9 +514,20 @@ class MainActivity : Activity() {
     private fun createRoom() {
         if (!requireRewardedAccess()) return
         val session = roomSessionForRoomAction() ?: return
-        val displayName = displayNameInput.text.toString().trim().ifEmpty { "Android guest" }
-        val roomName = roomNameInput.text.toString().trim().ifEmpty { "Listening room" }
-        saveRoomInputs(displayName)
+        val displayName = displayNameInput.text.toString().trim()
+        if (displayName.isEmpty()) {
+            displayNameInput.error = "Enter your name"
+            displayNameInput.requestFocus()
+            appendRoomEvent("Enter your name before creating a room.")
+            return
+        }
+        val roomName = roomNameInput.text.toString().trim()
+        if (roomName.isEmpty()) {
+            roomNameInput.error = "Enter a room name"
+            roomNameInput.requestFocus()
+            appendRoomEvent("Enter a room name before creating a room.")
+            return
+        }
         appendRoomEvent("Creating room '$roomName' as $displayName.")
         try {
             session.createRoom(roomName, displayName, guestId)
@@ -530,13 +540,18 @@ class MainActivity : Activity() {
     private fun joinRoom() {
         if (!requireRewardedAccess()) return
         val session = roomSessionForRoomAction() ?: return
-        val displayName = displayNameInput.text.toString().trim().ifEmpty { "Android guest" }
+        val displayName = displayNameInput.text.toString().trim()
+        if (displayName.isEmpty()) {
+            displayNameInput.error = "Enter your name"
+            displayNameInput.requestFocus()
+            appendRoomEvent("Enter your name before joining a room.")
+            return
+        }
         val roomCode = roomCodeInput.text.toString().trim().uppercase(Locale.US)
         if (roomCode.isEmpty()) {
             appendRoomEvent("Enter a room code before joining.")
             return
         }
-        saveRoomInputs(displayName)
         appendRoomEvent("Joining room $roomCode as $displayName.")
         try {
             session.joinRoom(roomCode, displayName, guestId)
@@ -581,10 +596,6 @@ class MainActivity : Activity() {
         Build.FINGERPRINT.lowercase().contains("emulator") ||
         Build.MODEL.contains("Emulator", ignoreCase = true) ||
         Build.MODEL.contains("Android SDK built for", ignoreCase = true)
-
-    private fun saveRoomInputs(displayName: String) {
-        preferences.edit().putString(DISPLAY_NAME_KEY, displayName).apply()
-    }
 
     private fun requireRewardedAccess(): Boolean {
         if (rewardedAccessGate.hasAccess()) return true

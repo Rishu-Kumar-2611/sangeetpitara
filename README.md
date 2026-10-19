@@ -8,6 +8,8 @@ package identity, and media protocol stay unchanged so existing installs and
 sessions remain compatible. It includes:
 
 - Account-less room creation and joining by code or invite link
+- Public landing-page download link for the current Android APK at
+  `/downloads/SangeetPitara-debug.apk`
 - Device-local guest identity
 - Up to 10 people in a room
 - Host, co-host, participant, and active-source state

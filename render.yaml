@@ -1,54 +1,43 @@
 services:
   - type: web
-    name: roomsound
+    name: sangeet-pitaraa
     runtime: docker
-    plan: starter
+    plan: free
+    region: singapore
     dockerfilePath: ./Dockerfile.runtime
     dockerContext: .
-    healthCheckPath: /ready
-    autoDeploy: true
+    healthCheckPath: /health
+    autoDeployTrigger: commit
     envVars:
       - key: NODE_ENV
         value: production
       - key: HOST
         value: 0.0.0.0
-      - key: REQUIRE_AUTH
-        value: "1"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: roomsound-db
-          property: connectionString
-      - key: DATABASE_SSL
+      - key: TRUST_PROXY
         value: "1"
       - key: SESSION_COOKIE_SECURE
         value: "1"
-      - key: TRUST_PROXY
+      - key: TURN_ENABLED
+        value: "0"
+      - key: MEDIA_RELAY_ENABLED
         value: "1"
+      - key: REWARDED_ACCESS_ENABLED
+        value: "1"
+      - key: REWARDED_AD_PROVIDER
+        value: demo-local
+      - key: REWARDED_AD_MODE
+        value: offline
+      - key: REWARDED_AD_DURATION_SECONDS
+        value: "30"
+      - key: REWARDED_ACCESS_DURATION_HOURS
+        value: "6"
       - key: ALLOWED_ORIGINS
         sync: false
-      - key: TURN_URLS
+      - key: ADSENSE_ENABLED
         sync: false
-      - key: TURN_USERNAME
+      - key: ADSENSE_CLIENT
         sync: false
-      - key: TURN_CREDENTIAL
+      - key: ADSENSE_LANDING_SLOT
         sync: false
-      - key: BILLING_PROVIDER
-        value: stripe
-      - key: STRIPE_SECRET_KEY
+      - key: ADSENSE_ROOM_SLOT
         sync: false
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: false
-      - key: STRIPE_PRICE_ID
-        sync: false
-      - key: STRIPE_CHECKOUT_SUCCESS_URL
-        sync: false
-      - key: STRIPE_CHECKOUT_CANCEL_URL
-        sync: false
-      - key: STRIPE_PORTAL_RETURN_URL
-        sync: false
-
-databases:
-  - name: roomsound-db
-    plan: basic-256mb
-    databaseName: roomsound
-    user: roomsound

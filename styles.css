@@ -281,6 +281,47 @@ input:focus-visible {
 
 .landing-hint { margin: 0; color: #dbc9a9; font-size: 15px; line-height: 1.5; }
 
+.apk-download-card {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  max-width: 390px;
+  margin-top: 28px;
+  padding: 14px 16px;
+  border: 1px solid rgba(212, 184, 121, 0.55);
+  border-radius: 14px;
+  color: var(--paper-bright);
+  background: rgba(70, 38, 24, 0.62);
+  box-shadow: 0 10px 28px rgba(24, 9, 4, 0.16), inset 0 1px rgba(255, 240, 213, 0.1);
+  text-decoration: none;
+  transition: transform 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.apk-download-card:hover,
+.apk-download-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--brass-bright);
+  background: rgba(92, 51, 30, 0.82);
+}
+
+.apk-download-icon {
+  display: grid;
+  width: 35px;
+  height: 35px;
+  flex: 0 0 35px;
+  place-items: center;
+  border: 1px solid rgba(240, 196, 119, 0.75);
+  border-radius: 50%;
+  color: var(--brass-bright);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.apk-download-copy { display: grid; gap: 3px; min-width: 0; }
+.apk-download-copy strong { color: var(--paper-bright); font-size: 14px; }
+.apk-download-copy small { color: #dbc9a9; font-size: 11px; line-height: 1.35; }
+.apk-download-arrow { margin-left: auto; color: var(--brass-bright); font-size: 20px; }
+
 .entry-card {
   position: relative;
   padding: 30px;

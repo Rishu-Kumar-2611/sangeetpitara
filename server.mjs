@@ -71,6 +71,19 @@ const mediaRelay = {
   sampleRate: MEDIA_RELAY_SAMPLE_RATE,
   channels: MEDIA_RELAY_CHANNELS,
 };
+const adsenseClient = String(process.env.ADSENSE_CLIENT || '').trim();
+const adsenseLandingSlot = String(process.env.ADSENSE_LANDING_SLOT || '').trim();
+const adsenseRoomSlot = String(process.env.ADSENSE_ROOM_SLOT || '').trim();
+const adsense = {
+  enabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.ADSENSE_ENABLED || '').trim().toLowerCase())
+    && /^ca-pub-\d+$/.test(adsenseClient)
+    && /^\d+$/.test(adsenseLandingSlot)
+    && /^\d+$/.test(adsenseRoomSlot),
+  provider: 'adsense',
+  client: adsenseClient,
+  landingSlot: adsenseLandingSlot,
+  roomSlot: adsenseRoomSlot,
+};
 const rewardedAccess = normalizeRewardedAccessConfig({
   enabled: !['0', 'false', 'off'].includes(String(process.env.REWARDED_ACCESS_ENABLED || '').trim().toLowerCase()),
   provider: process.env.REWARDED_AD_PROVIDER || DEFAULT_REWARDED_ACCESS_CONFIG.provider,
@@ -692,13 +705,17 @@ function attachRoom(ws, room, member) {
 
 async function createRoom(ws, message) {
   if (await moderationBlocksEntry(ws)) return;
+  const roomName = safeText(message.name, 60);
+  const displayName = safeText(message.displayName, 40);
+  if (!roomName) return sendError(ws, 'Enter a room name before creating a room.');
+  if (!displayName) return sendError(ws, 'Enter your name before creating or joining a room.');
   let code = randomCode();
   while (findRoomByCode(code)) code = randomCode();
 
   const room = {
     id: randomId(),
     code,
-    name: safeText(message.name, 60) || 'Listening room',
+    name: roomName,
     status: 'ACTIVE',
     hostId: null,
     hostUserId: ws.authenticatedUser?.id || null,
@@ -720,7 +737,7 @@ async function createRoom(ws, message) {
     hostFailoverTimer: null,
   };
 
-  const member = makeMember({ guestId: message.guestId, name: message.displayName, ws, role: 'HOST' });
+  const member = makeMember({ guestId: message.guestId, name: displayName, ws, role: 'HOST' });
   room.hostId = member.id;
   try {
     await createPersistedRoom(room);
@@ -733,6 +750,8 @@ async function createRoom(ws, message) {
 }
 
 async function joinRoom(ws, message) {
+  const displayName = safeText(message.displayName, 40);
+  if (!displayName) return sendError(ws, 'Enter your name before creating or joining a room.');
   const room = findRoomByCode(message.code);
   if (!room || room.status !== 'ACTIVE') return sendError(ws, 'That room is unavailable or has ended.');
   if (await moderationBlocksEntry(ws, room)) return;
@@ -745,7 +764,7 @@ async function joinRoom(ws, message) {
   if (existing?.ws) return sendError(ws, 'This account is already connected to the room.');
   if (existing && !existing.ws) {
     existing.ws = ws;
-    existing.name = safeText(message.displayName, 40) || existing.name;
+    existing.name = displayName;
     attachRoom(ws, room, existing);
     return;
   }
@@ -762,7 +781,7 @@ async function joinRoom(ws, message) {
     : accountId && room.cohostUserId === accountId
       ? 'CO_HOST'
       : 'PARTICIPANT';
-  const member = makeMember({ guestId: message.guestId, name: message.displayName, ws, role });
+  const member = makeMember({ guestId: message.guestId, name: displayName, ws, role });
   if (role === 'HOST') room.hostId = member.id;
   if (role === 'CO_HOST') room.cohostId = member.id;
   attachRoom(ws, room, member);
@@ -1233,7 +1252,19 @@ const server = http.createServer(async (req, res) => {
       requestTtlMs,
       authRequired: roomAuthRequired,
       rewardedAccess,
+      adsense,
     }));
+    return;
+  }
+  if (requestPath === '/ads.txt') {
+    const publisher = adsenseClient.replace(/^ca-/, '');
+    if (!/^pub-\d+$/.test(publisher)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Not found');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    res.end(`google.com, ${publisher}, DIRECT, f08c47fec0942fa0\n`);
     return;
   }
   const fileName = requestPath === '/' ? 'index.html' : requestPath.replace(/^\//, '');

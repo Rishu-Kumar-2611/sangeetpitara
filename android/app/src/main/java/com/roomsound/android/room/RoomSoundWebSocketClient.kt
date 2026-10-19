@@ -157,7 +157,9 @@ class RoomSoundWebSocketClient(
     }
 
     fun createRoom(name: String, displayName: String, guestId: String) {
-        val cleanName = name.trim().ifEmpty { "Listening room" }
+        val cleanName = name.trim().also {
+            require(it.isNotEmpty()) { "Room name must not be empty." }
+        }.take(60)
         val intent = RoomIntent(
             roomCode = null,
             roomName = cleanName,
@@ -541,7 +543,7 @@ class RoomSoundWebSocketClient(
         val message = if (intent.roomCode == null) {
             JSONObject()
                 .put("type", "create-room")
-                .put("name", intent.roomName ?: "Listening room")
+                .put("name", requireNotNull(intent.roomName))
                 .put("displayName", intent.displayName)
                 .put("guestId", intent.guestId)
         } else {
@@ -642,7 +644,9 @@ class RoomSoundWebSocketClient(
         }
     }
 
-    private fun cleanDisplayName(value: String): String = value.trim().ifEmpty { "Guest" }.take(40)
+    private fun cleanDisplayName(value: String): String = value.trim().also {
+        require(it.isNotEmpty()) { "Display name must not be empty." }
+    }.take(40)
 
     private fun requireIdentity(value: String): String = value.trim().also {
         require(it.isNotEmpty()) { "guestId must not be empty." }

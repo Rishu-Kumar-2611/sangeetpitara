@@ -20,6 +20,9 @@ test('Android branding uses SangeetPitara without changing installed app identit
   assert.match(manifest, /android:roundIcon="@mipmap\/ic_launcher_round"/);
   assert.match(build, /applicationId = "com\.roomsound\.android"/);
   assert.match(build, /ROOMSOUND_DEFAULT_ENDPOINT/);
+  assert.match(build, /wss:\/\/sangeet-pitaraa\.onrender\.com/);
+  assert.match(activity, /Enter your name before creating a room/);
+  assert.match(activity, /Enter a room name before creating a room/);
   assert.match(activity, /setImageResource\(R\.mipmap\.ic_launcher\)/);
 });
 

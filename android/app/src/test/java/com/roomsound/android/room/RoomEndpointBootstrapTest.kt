@@ -1,7 +1,6 @@
 package com.roomsound.android.room
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RoomEndpointBootstrapTest {
@@ -22,9 +21,15 @@ class RoomEndpointBootstrapTest {
     }
 
     @Test
-    fun missingConfigurationDoesNotChooseAnEndpointForPhysicalOrReleaseBuilds() {
-        assertNull(RoomEndpointBootstrap.selectEndpoint(null, true, false))
-        assertNull(RoomEndpointBootstrap.selectEndpoint(null, false, true))
+    fun missingConfigurationUsesThePublicDeploymentForPhysicalOrReleaseBuilds() {
+        assertEquals(
+            RoomEndpointBootstrap.PUBLIC_FALLBACK_ENDPOINT,
+            RoomEndpointBootstrap.selectEndpoint(null, true, false),
+        )
+        assertEquals(
+            RoomEndpointBootstrap.PUBLIC_FALLBACK_ENDPOINT,
+            RoomEndpointBootstrap.selectEndpoint(null, false, true),
+        )
     }
 
     @Test

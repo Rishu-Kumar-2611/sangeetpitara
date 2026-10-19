@@ -52,11 +52,12 @@ test('browser-facing messages use SangeetPitara while retaining existing room in
 });
 
 test('browser surface is anonymous and exposes the local rewarded-access gate', async () => {
-  const [html, app, ads, relay] = await Promise.all([
+  const [html, app, ads, relay, dockerfile] = await Promise.all([
     readFile(new URL('index.html', root), 'utf8'),
     readFile(new URL('app.js', root), 'utf8'),
     readFile(new URL('ads.mjs', root), 'utf8'),
     readFile(new URL('media-relay.mjs', root), 'utf8'),
+    readFile(new URL('Dockerfile.runtime', root), 'utf8'),
   ]);
 
   for (const id of ['account-form', 'account-login', 'account-register', 'account-logout', 'room-session', 'room-logout']) {
@@ -68,6 +69,8 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(html, /Demo\/local provider · offline development only/);
   assert.match(html, /id="create-room"[^>]+disabled/);
   assert.match(html, /id="join-room"[^>]+disabled/);
+  assert.match(html, /href="\/downloads\/SangeetPitara-debug\.apk"[^>]+download/);
+  assert.match(dockerfile, /downloads\/SangeetPitara-debug\.apk/);
   assert.match(html, /id="create-tab"[^>]+role="tab"[^>]+aria-selected="true"/);
   assert.match(html, /id="join-tab"[^>]+role="tab"[^>]+aria-selected="false"/);
   assert.match(html, /id="create-panel"[^>]+role="tabpanel"/);
@@ -96,6 +99,8 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.doesNotMatch(html, /<script[^>]+src=["']https?:\/\//i);
   assert.doesNotMatch(`${html}\n${app}\n${ads}`, /ca-pub-\d+/i);
   assert.match(app, /mediaRelay/);
+  assert.match(app, /applyAdSenseConfig/);
+  assert.match(ads, /ADSENSE|adsense/);
   assert.match(app, /decodePcm16Frame/);
   assert.match(app, /encodePcm16Frame/);
   assert.match(app, /createScriptProcessor/);

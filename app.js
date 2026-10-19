@@ -135,6 +135,21 @@ function isMediaRelayEnabled() {
     && state.mediaRelay.channels === DEFAULT_MEDIA_RELAY_CONFIG.channels;
 }
 
+function applyAdSenseConfig(config) {
+  const providerMeta = document.querySelector('meta[name="roomsound-ad-provider"]');
+  const clientMeta = document.querySelector('meta[name="roomsound-ad-client"]');
+  const enabledMeta = document.querySelector('meta[name="roomsound-ad-enabled"]');
+  const landingSlot = $('#landing-ad-slot');
+  const roomSlot = $('#room-ad-slot');
+  const enabled = config?.enabled === true && config?.provider === 'adsense';
+  if (providerMeta) providerMeta.content = enabled ? 'adsense' : '';
+  if (clientMeta) clientMeta.content = enabled ? String(config.client || '') : '';
+  if (enabledMeta) enabledMeta.content = String(enabled);
+  if (landingSlot) landingSlot.dataset.adSlot = enabled ? String(config.landingSlot || '') : '';
+  if (roomSlot) roomSlot.dataset.adSlot = enabled ? String(config.roomSlot || '') : '';
+  initializeAdSlots();
+}
+
 async function loadClientConfig() {
   if (iceConfigLoaded) return;
   try {
@@ -145,6 +160,7 @@ async function loadClientConfig() {
     const wasMediaRelayEnabled = isMediaRelayEnabled();
     state.mediaRelay = normalizeMediaRelayConfig(j.mediaRelay);
     if (j.rewardedAccess) state.rewardedAccessConfig = normalizeRewardedAccessConfig(j.rewardedAccess);
+    applyAdSenseConfig(j.adsense);
     iceConfigLoaded = true;
     if (wasMediaRelayEnabled !== isMediaRelayEnabled() && state.captureStream && isSelfSource()) {
       closePeerConnections();
@@ -876,7 +892,17 @@ function connectAnd(action, isReconnect = false) {
     return;
   }
 
-  const displayName = isReconnect ? state.lastDisplayName : ($('#display-name').value.trim() || 'Guest');
+  const displayName = isReconnect ? state.lastDisplayName : $('#display-name').value.trim();
+  if (!isReconnect && !displayName) {
+    showLanding('Enter your name before entering a room.');
+    $('#display-name')?.focus();
+    return;
+  }
+  if (!isReconnect && action.type === 'create' && !action.roomName?.trim()) {
+    showLanding('Enter a room name before creating a room.');
+    $('#room-name')?.focus();
+    return;
+  }
   state.pendingIntent = { ...action, displayName };
   if (!isReconnect) {
     state.explicitLeave = false;
@@ -2060,7 +2086,7 @@ function sendRequest() {
 function wireEvents() {
   $$('.entry-tab').forEach((tab) => tab.addEventListener('click', () => selectEntryTab(tab.dataset.entryTab)));
 
-  $('#create-room').addEventListener('click', () => connectAnd({ type: 'create', roomName: $('#room-name').value.trim() || 'Listening room' }));
+  $('#create-room').addEventListener('click', () => connectAnd({ type: 'create', roomName: $('#room-name').value.trim() }));
   $('#join-room').addEventListener('click', () => {
     const code = $('#room-code').value.trim().toUpperCase();
     if (code.length < 4) return showLanding('Enter the room code your host shared with you.');

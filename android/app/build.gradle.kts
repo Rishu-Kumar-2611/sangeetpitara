@@ -28,7 +28,10 @@ fun String.asBuildConfigStringLiteral(): String = buildString {
     append('"')
 }
 
-val configuredDefaultEndpoint = configuredValue("ROOMSOUND_DEFAULT_ENDPOINT").orEmpty()
+// Public routing configuration, not a credential. Explicit LAN, staging, or
+// release values supplied through ROOMSOUND_DEFAULT_ENDPOINT still win.
+val configuredDefaultEndpoint = configuredValue("ROOMSOUND_DEFAULT_ENDPOINT")
+    ?: "wss://sangeet-pitaraa.onrender.com"
 val releaseKeystorePath = configuredValue("ROOMSOUND_KEYSTORE")
 val releaseKeystorePassword = configuredValue("ROOMSOUND_KEYSTORE_PASSWORD")
 val releaseKeyAlias = configuredValue("ROOMSOUND_KEY_ALIAS")
