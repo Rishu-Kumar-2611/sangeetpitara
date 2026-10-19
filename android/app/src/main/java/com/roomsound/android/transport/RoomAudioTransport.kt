@@ -110,7 +110,12 @@ class RoomAudioTransport(
 
     override fun onBinaryFrame(frame: ByteString) {
         if (relayPlayer == null) return
-        val packet = runCatching { Pcm16RelayPacketCodec.decode(frame) }.getOrElse {
+        val packet = runCatching {
+            Pcm16RelayPacketCodec.decode(
+                frame,
+                maxPayloadBytes = Pcm16RelayPacketCodec.MAX_PLAYOUT_PAYLOAD_BYTES,
+            )
+        }.getOrElse {
             synchronized(lock) {
                 if (!closed) droppedRelayMalformedFrames += 1
             }

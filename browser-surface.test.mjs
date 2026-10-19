@@ -52,6 +52,9 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(app, /decodePcm16Frame/);
   assert.match(app, /encodePcm16Frame/);
   assert.match(app, /createScriptProcessor/);
+  assert.match(app, /RELAY_PROCESSOR_BUFFER_SAMPLES = 512/);
+  assert.match(app, /RELAY_MAX_BUFFERED_BYTES/);
+  assert.match(app, /RELAY_MAX_PLAYAHEAD_SECONDS/);
   assert.match(app, /muted sink/);
   assert.match(app, /event\.data instanceof Blob|handleRelayFrame\(event\.data\)/);
   assert.match(app, /displayAudioCaptureConstraints/);

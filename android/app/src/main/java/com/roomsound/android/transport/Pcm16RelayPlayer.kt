@@ -237,7 +237,9 @@ class Pcm16RelayPlayer(
             AudioFormat.ENCODING_PCM_16BIT,
         )
         require(minBufferBytes > 0) { "Android returned an invalid AudioTrack buffer size: $minBufferBytes" }
-        val bufferBytes = maxOf(minBufferBytes, format.sampleRate / 10 * 2 * 2)
+        // Keep the hardware queue near 50 ms. The old 200 ms floor made a
+        // burst or temporary stall audible as stale room audio.
+        val bufferBytes = maxOf(minBufferBytes, format.sampleRate / 20 * 2)
         return AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -261,7 +263,7 @@ class Pcm16RelayPlayer(
     private fun report(message: String) = runCatching { onStatus(message) }
 
     companion object {
-        const val DEFAULT_MAX_QUEUED_FRAMES = 32
+        const val DEFAULT_MAX_QUEUED_FRAMES = 12
         val FORMAT = Pcm16AudioFormat(48_000, 1)
     }
 }

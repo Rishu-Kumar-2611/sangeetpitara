@@ -40,6 +40,9 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
   channels: MEDIA_RELAY_CHANNELS,
 };
 const RELAY_FRAME_SAMPLES = 960; // 20 ms at 48 kHz
+const RELAY_PROCESSOR_BUFFER_SAMPLES = 512; // 10.7 ms; lower capture latency than 2048
+const RELAY_MAX_BUFFERED_BYTES = 12 * 1024; // Keep browser WebSocket backlog near 125 ms.
+const RELAY_MAX_PLAYAHEAD_SECONDS = 0.12; // Prefer a gap over playing stale audio.
 
 function clampVolume(v) {
   const n = Number(v);
@@ -580,13 +583,16 @@ function applyOutputVolume() {
 function sendRelayPcmFrame(samples, sourceEpoch) {
   if (!isMediaRelayEnabled() || !isSelfSource() || state.room?.sourceEpoch !== sourceEpoch) return;
   if (state.ws?.readyState !== WebSocket.OPEN) return;
+  const sequence = state.relaySequence;
+  state.relaySequence = (state.relaySequence + 1) >>> 0;
+  const frameBytes = 20 + samples.byteLength;
+  if ((Number(state.ws.bufferedAmount) || 0) + frameBytes > RELAY_MAX_BUFFERED_BYTES) return;
   try {
     const frame = encodePcm16Frame({
       sourceEpoch,
-      sequence: state.relaySequence,
+      sequence,
       samples,
     });
-    state.relaySequence = (state.relaySequence + 1) >>> 0;
     state.ws.send(frame);
   } catch (error) {
     console.warn('[RoomSound] PCM16 relay frame was not sent', error);
@@ -620,7 +626,7 @@ function ensureRelayPublisher() {
       ? state.audioContext
       : createRoomAudioContext();
     const source = context.createMediaStreamSource(state.captureStream);
-    const processor = context.createScriptProcessor(2048, 1, 1);
+    const processor = context.createScriptProcessor(RELAY_PROCESSOR_BUFFER_SAMPLES, 1, 1);
     const sink = context.createGain();
     sink.gain.value = 0;
     source.connect(processor);
@@ -726,8 +732,8 @@ function handleRelayFrame(data) {
   const context = ensureRelayPlaybackContext();
   if (!context || !state.relayPlaybackGain) return;
   const now = context.currentTime;
-  if (state.relayPlaybackNextTime > now + 1.5) resetRelayPlaybackQueue(frame.sourceEpoch);
-  const startAt = Math.max(now + 0.02, state.relayPlaybackNextTime || 0);
+  if (state.relayPlaybackNextTime > now + RELAY_MAX_PLAYAHEAD_SECONDS) resetRelayPlaybackQueue(frame.sourceEpoch);
+  const startAt = Math.max(now + 0.01, state.relayPlaybackNextTime || 0);
   const buffer = context.createBuffer(1, frame.sampleCount, frame.sampleRate);
   const channel = buffer.getChannelData(0);
   for (let index = 0; index < frame.samples.length; index += 1) channel[index] = frame.samples[index] / 0x8000;

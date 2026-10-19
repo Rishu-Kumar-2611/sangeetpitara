@@ -89,4 +89,32 @@ class Pcm16RelayPacketCodecTest {
         overLimit[19] = 0x80.toByte()
         assertThrows(IllegalArgumentException::class.java) { Pcm16RelayPacketCodec.decode(overLimit) }
     }
+
+    @Test
+    fun playoutBoundAcceptsCurrentProducerFramesAndRejectsLongBacklogFrames() {
+        val browserFrame = Pcm16RelayPacketCodec.encode(
+            ShortArray(Pcm16RelayPacketCodec.MAX_PLAYOUT_PAYLOAD_BYTES / 2),
+            sourceEpoch = 1,
+            sequence = 2,
+        )
+        assertEquals(
+            Pcm16RelayPacketCodec.MAX_PLAYOUT_PAYLOAD_BYTES / 2,
+            Pcm16RelayPacketCodec.decode(
+                browserFrame,
+                maxPayloadBytes = Pcm16RelayPacketCodec.MAX_PLAYOUT_PAYLOAD_BYTES,
+            ).sampleCount,
+        )
+
+        val oversized = Pcm16RelayPacketCodec.encode(
+            ShortArray(Pcm16RelayPacketCodec.MAX_PLAYOUT_PAYLOAD_BYTES / 2 + 1),
+            sourceEpoch = 1,
+            sequence = 3,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            Pcm16RelayPacketCodec.decode(
+                oversized,
+                maxPayloadBytes = Pcm16RelayPacketCodec.MAX_PLAYOUT_PAYLOAD_BYTES,
+            )
+        }
+    }
 }

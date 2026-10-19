@@ -89,6 +89,12 @@ microphone. The default `UnavailablePcm16FramePublisher` still reports an
 explicit `BACKEND_UNAVAILABLE` result when direct WebRTC is selected but its
 native backend cannot initialize.
 
+Relay playout deliberately favors freshness over a perfect buffer: sender
+backlog is bounded near 125 ms, the Android queue keeps 12 frames, and the
+`AudioTrack` buffer target is approximately 50 ms subject to the device's
+reported minimum. When a listener falls behind, old frames are dropped so the
+user hears a short gap instead of stale audio catching up seconds later.
+
 When `mediaRelay.enabled` is true, the coordinator creates
 `Pcm16RelayPublisher` and `Pcm16RelayPlayer`; native WebRTC peer creation is
 not attempted. When it is false, the existing `WebRtcPcmPublisher` path,

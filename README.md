@@ -94,7 +94,11 @@ The relay frame is binary and starts with the 20-byte little-endian header
 sample count, followed by the exact PCM16 mono payload. The server accepts only
 48,000 Hz, one channel, non-empty frames whose payload length matches
 `sampleCount * 2`; it authorizes the current active source and source epoch
-before forwarding the original bytes to online room members.
+before forwarding the original bytes to online room members. The low-latency
+path uses small browser capture callbacks, bounded sender/playout queues, a
+short playback look-ahead, and drops stale frames for slow listeners instead
+of letting old audio accumulate. This favors a short gap over delayed audio
+when a device or network falls behind.
 
 `demo-local` is an explicitly named offline development simulation. It does not
 load a real ad network, make a production ad-impression claim, or provide

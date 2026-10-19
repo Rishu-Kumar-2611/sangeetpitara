@@ -56,6 +56,9 @@ const BINARY_FRAME_WINDOW_MS = 5_000;
 // little headroom above that cadence while still bounding a client's relay
 // work; browser packetizers use 20 ms frames and remain well below this cap.
 const BINARY_FRAME_RATE_MAX = 600;
+// A slow listener must lose old audio rather than turning the WebSocket into a
+// stale-audio queue. At PCM16/48 kHz mono this is roughly 160 ms of payload.
+const MAX_RELAY_BUFFERED_BYTES = 16 * 1024;
 const turnEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.TURN_ENABLED || '').trim().toLowerCase());
 const TURN_URLS = turnEnabled && process.env.TURN_URLS
   ? process.env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean)
@@ -911,6 +914,10 @@ function handleBinaryFrame(ws, raw) {
   const bytes = Buffer.from(raw);
   for (const target of room.members.values()) {
     if (target.id === member.id || !target.ws || target.ws.readyState !== WebSocket.OPEN) continue;
+    // Drop this frame for a slow listener instead of allowing ws to queue
+    // seconds of old PCM. The next frame will be accepted once the listener
+    // catches up, keeping perceived latency bounded at the cost of a gap.
+    if (Number(target.ws.bufferedAmount) > MAX_RELAY_BUFFERED_BYTES) continue;
     target.ws.send(bytes);
   }
 }
@@ -1279,6 +1286,7 @@ const server = http.createServer(async (req, res) => {
 
 const wss = new WebSocketServer({
   server,
+  perMessageDeflate: false,
   // Transport limit is intentionally larger than the 64 KiB application limit
   // so the handler can send `Message too large` and keep the socket alive
   // instead of ws closing with 1009 before the handler runs.

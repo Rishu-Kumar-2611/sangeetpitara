@@ -27,6 +27,8 @@ object Pcm16RelayPacketCodec {
     const val SAMPLE_RATE = 48_000
     const val MAX_PAYLOAD_BYTES = 64 * 1024
     const val MAX_FRAME_BYTES = HEADER_BYTES + MAX_PAYLOAD_BYTES
+    /** Largest frame emitted by the current browser or Android publishers. */
+    const val MAX_PLAYOUT_PAYLOAD_BYTES = 960 * 2
     const val UINT32_MAX = 0xFFFF_FFFFL
 
     private const val UINT16_MAX = 0xFFFF
