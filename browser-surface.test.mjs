@@ -46,6 +46,9 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(app, /createScriptProcessor/);
   assert.match(app, /muted sink/);
   assert.match(app, /event\.data instanceof Blob|handleRelayFrame\(event\.data\)/);
+  assert.match(app, /displayAudioCaptureConstraints/);
+  assert.match(app, /displayAudioCaptureGuidance/);
+  assert.match(app, /Firefox.*does not provide system audio/s);
   assert.match(app, /sourceEpoch/);
   assert.match(relay, /0x52, 0x53, 0x52, 0x31/);
   assert.match(relay, /MEDIA_RELAY_SAMPLE_RATE = 48_000/);

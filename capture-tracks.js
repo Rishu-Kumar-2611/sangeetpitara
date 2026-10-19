@@ -4,6 +4,30 @@
  * a display-audio capture session, but RoomSound must not negotiate video to
  * an audio-only Android listener.
  */
+export function displayAudioCaptureConstraints() {
+  return {
+    video: true,
+    audio: {
+      // Do not ask the browser to mute the local source while it is captured.
+      suppressLocalAudioPlayback: false,
+    },
+    // These are browser hints, not guarantees. Chromium uses them to expose
+    // the system/tab-audio choices when the selected surface supports them.
+    systemAudio: 'include',
+    windowAudio: 'system',
+    selfBrowserSurface: 'exclude',
+    surfaceSwitching: 'include',
+    monitorTypeSurfaces: 'include',
+  };
+}
+
+export function displayAudioCaptureGuidance(userAgent = '') {
+  if (/Firefox\/|FxiOS\//i.test(String(userAgent))) {
+    return 'Firefox can share the screen here, but this browser does not provide a live system-audio track for RoomSound. Open RoomSound in Google Chrome or Microsoft Edge on the laptop, then choose a Chrome tab with Share tab audio or a screen with Share system audio.';
+  }
+  return 'The browser returned the screen without a live audio track. In Chrome or Edge, choose a tab or screen that is actively playing sound and enable Share tab audio or Share system audio. If the picker has no audio control, switch to Chrome or Edge or choose Test audio.';
+}
+
 export function prepareDisplayAudioStream(stream) {
   const videoTracks = stream?.getVideoTracks?.() || [];
   videoTracks.forEach((track) => {

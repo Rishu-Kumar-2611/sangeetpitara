@@ -1,5 +1,10 @@
 import { createGuestId } from './guest-id.js';
-import { liveAudioTracks, prepareDisplayAudioStream } from './capture-tracks.js';
+import {
+  displayAudioCaptureConstraints,
+  displayAudioCaptureGuidance,
+  liveAudioTracks,
+  prepareDisplayAudioStream,
+} from './capture-tracks.js?v=20261019-display-audio-1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
@@ -1457,9 +1462,12 @@ function openSourceModal(intent) {
   const hostNote = !insecure && /Mobi|Android/i.test(navigator.userAgent)
     ? `<div class="settings-note" style="margin:0 0 14px;text-align:left;line-height:1.5">\uD83D\uDCF1 You're on a phone browser. Chrome/Firefox on Android do not expose system-audio capture to the web. Use the <strong>Android app</strong> for device playback capture.</div>`
     : '';
+  const browserAudioNote = !insecure && /Firefox\/|FxiOS\//i.test(navigator.userAgent)
+    ? `<div class="settings-note" style="margin:0 0 14px;border-color:rgba(255,190,95,0.36);color:#ffe0a8;text-align:left;line-height:1.5">\u26A0 Firefox can share the picture of your screen, but this browser does not provide system audio to RoomSound. Use <strong>Google Chrome or Microsoft Edge</strong> on the laptop for music sharing; their picker offers Share tab audio or Share system audio.</div>`
+    : '';
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="source-modal"><div class="modal-eyebrow">AUDIO SOURCE</div><h2>${intent === 'participant' ? 'You were approved to play' : 'Choose what to share'}</h2><p>RoomSound publishes supported device or browser playback only. It never opens or streams a microphone.</p>${insecureBanner}${hostNote}<div class="source-options"><button class="source-option" data-source="DEVICE_AUDIO" ${insecure ? 'disabled title="Blocked \u2014 insecure origin (open localhost or use the Android app)"' : ''}><span class="option-icon">◉</span><span><strong>Device / browser audio</strong><small>${insecure ? 'Blocked on http LAN \u2014 use localhost / Android app' : 'Android playback capture or browser tab audio'}</small></span><span>›</span></button><button class="source-option" data-source="TEST_TONE"><span class="option-icon">∿</span><span><strong>Test audio</strong><small>Generate a private room-safe diagnostic signal \u2014 always works</small></span><span>›</span></button></div><button class="modal-close" type="button">Not now</button></div>`;
+  modal.innerHTML = `<div class="source-modal"><div class="modal-eyebrow">AUDIO SOURCE</div><h2>${intent === 'participant' ? 'You were approved to play' : 'Choose what to share'}</h2><p>RoomSound publishes supported device or browser playback only. It never opens or streams a microphone.</p>${insecureBanner}${hostNote}${browserAudioNote}<div class="source-options"><button class="source-option" data-source="DEVICE_AUDIO" ${insecure ? 'disabled title="Blocked \u2014 insecure origin (open localhost or use the Android app)"' : ''}><span class="option-icon">◉</span><span><strong>Device / browser audio</strong><small>${insecure ? 'Blocked on http LAN \u2014 use localhost / Android app' : 'Android playback capture or browser tab audio'}</small></span><span>›</span></button><button class="source-option" data-source="TEST_TONE"><span class="option-icon">∿</span><span><strong>Test audio</strong><small>Generate a private room-safe diagnostic signal \u2014 always works</small></span><span>›</span></button></div><button class="modal-close" type="button">Not now</button></div>`;
   $('#modal-root').append(modal);
   modal.querySelector('.modal-close').addEventListener('click', () => {
     modal.remove();
@@ -1489,7 +1497,7 @@ async function startLocalCapture(sourceType, intent = 'host') {
     if (sourceType === 'DEVICE_AUDIO') {
       if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('This browser does not expose display-audio capture. Try a current desktop browser or the Android app.');
       try {
-        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        stream = await navigator.mediaDevices.getDisplayMedia(displayAudioCaptureConstraints());
       } catch (e) {
         const n2 = e?.name || '';
         if (n2 === 'NotAllowedError' || n2 === 'PermissionDeniedError') throw new Error('Display capture was denied. Allow access and tick Share audio, or use Test Tone.');
@@ -1501,7 +1509,7 @@ async function startLocalCapture(sourceType, intent = 'host') {
         // Never crash: stop the display stream, wrap the technical message in guidance.
         try { stream.getTracks().forEach((t) => t.stop()); } catch {}
         const hint = e?.message ? ` ${e.message}` : ' The source did not provide audio.';
-        throw new Error(`System audio was not captured.${hint} When the browser picker shows Entire Screen, tick Share audio (Chrome 116+) and pick a tab/window that is currently playing sound. To test without capture, choose Test Tone.`);
+        throw new Error(`System audio was not captured.${hint} ${displayAudioCaptureGuidance(navigator.userAgent)}`);
       }
       label = 'device or browser audio';
     } else if (sourceType === 'TEST_TONE') {
