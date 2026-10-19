@@ -21,6 +21,9 @@ blur or zoom jitter.
 9. SP Monogram Seal — an app-first SangeetPitara monogram.
 10. Raga Sunburst — a central sound source radiating outward.
 
-The chosen concept should be applied consistently to the web favicon/brand mark,
-Android launcher assets, and the internal/external SangeetPitara name change in
-a separate rename pass.
+## Selected identity
+
+**05 · Diya Eighth Note** is the selected SangeetPitara logo. The web header and
+favicon use its SVG directly; Android uses an adaptive vector derived from the
+same paths for the launcher and in-app header. The other nine concepts remain
+here as design history and are not active app branding.

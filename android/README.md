@@ -1,8 +1,17 @@
-# RoomSound Android phase 2 transport slice
+# SangeetPitara Android phase 2 transport slice
 
-This module contains the Android playback-capture client and native RoomSound
-media transport. It shares eligible Android device playback only; it never
-opens or publishes a microphone input.
+This module contains the SangeetPitara Android playback-capture client and
+native RoomSound media transport. It shares eligible Android device playback
+only; it never opens or publishes a microphone input.
+
+The launcher uses the selected **Diya Eighth Note** concept from
+`../branding/sangeetpitara/05-diya-eighth-note.svg`. Android renders the icon as
+an adaptive vector with a diya-and-eighth-note foreground and the source's
+deep-wood background, plus a monochrome layer for Android 13+ themed icons.
+The mark fits inside the adaptive icon's 66dp safe circle so circular and
+rounded-square launcher masks retain the full diya and note. The Android
+package, RoomSound wire protocol, and
+`ROOMSOUND_*` build properties remain unchanged for compatibility.
 
 ## Implemented behavior
 
@@ -166,6 +175,20 @@ export ROOMSOUND_BUILD_DIR="${TMPDIR:-/tmp}/roomsound-android-build"
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug \
   --offline --no-daemon --console=plain
 ```
+
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`, or
+`$ROOMSOUND_BUILD_DIR/app/outputs/apk/debug/app-debug.apk` when the external
+build directory is enabled. After installing it, check that the launcher name
+and in-app header say **SangeetPitara**, the launcher shows the complete Diya
+Eighth Note on both circular and rounded-square masks, and Android 13+ themed
+icons retain the diya-and-note silhouette. Capture and room-control request
+notification titles/channel names also use SangeetPitara.
+
+To publish the same debug build as `android/artifacts/SangeetPitara-debug.apk`,
+run `./gradlew :app:exportDebugApk --offline --no-daemon --console=plain` from
+this directory with the same `ROOMSOUND_DEFAULT_ENDPOINT` setting. On Windows,
+use `./gradlew.bat`. The artifacts directory is ignored by git; the previous
+RoomSound APK is kept for rollback.
 
 The build declares OkHttp `4.12.0` and the WebRTC SDK from Maven Central. If
 the checkout is under OneDrive or another synchronised folder, generated

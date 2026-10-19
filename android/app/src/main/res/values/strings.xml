@@ -1,11 +1,15 @@
 <resources>
-    <string name="app_name">RoomSound</string>
-    <string name="capture_notification_title">RoomSound device audio</string>
+    <string name="app_name">SangeetPitara</string>
+    <string name="header_eyebrow">LISTEN TOGETHER</string>
+    <string name="header_title">SangeetPitara</string>
+    <string name="capture_notification_title">SangeetPitara device audio</string>
     <string name="capture_notification_text">Capturing eligible device playback for this room</string>
     <string name="stop_capture">Stop device audio</string>
-    <string name="control_request_channel_name">RoomSound control requests</string>
+    <string name="capture_notification_channel_name">SangeetPitara audio capture</string>
+    <string name="capture_notification_channel_description">Shows while SangeetPitara captures supported device playback.</string>
+    <string name="control_request_channel_name">SangeetPitara control requests</string>
     <string name="control_request_channel_description">Alerts that let a host or co-host approve or reject room control requests.</string>
-    <string name="control_request_notification_title">RoomSound control request</string>
+    <string name="control_request_notification_title">SangeetPitara control request</string>
     <string name="control_request_notification_text">A participant requested permission to share device audio.</string>
     <string name="approve_control_request">Approve</string>
     <string name="reject_control_request">Reject</string>

@@ -4,6 +4,53 @@ import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
 
+test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
+  const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
+  const brandingVersion = '20261019-sangeetpitara-1';
+  const pages = await Promise.all(['index.html', 'privacy.html', 'terms.html'].map(async (name) => ({
+    name,
+    html: await readFile(new URL(name, root), 'utf8'),
+  })));
+  const logo = await readFile(new URL(logoPath.slice(1), root), 'utf8');
+
+  assert.match(logo, /viewBox="0 0 512 512"/);
+  assert.match(logo, /Diya Eighth Note/);
+  for (const { name, html } of pages) {
+    assert.match(html, /<title>SangeetPitara[^<]*<\/title>/, name);
+    assert.match(html, /<meta name="description" content="SangeetPitara[^"\n]+"\s*\/>/, name);
+    assert.doesNotMatch(html, /RoomSound|brand-dot/, name);
+
+    const favicon = html.match(/<link rel="icon" type="image\/svg\+xml" href="([^"]+)"/);
+    assert.equal(favicon?.[1], `${logoPath}?v=${brandingVersion}`, name);
+    const stylesheet = html.match(/<link rel="stylesheet" href="([^"]+)"/);
+    assert.equal(stylesheet?.[1], `/styles.css?v=${brandingVersion}`, name);
+    const marks = [...html.matchAll(/<img class="brand-logo" src="([^"]+)" alt="SangeetPitara logo" width="40" height="40"/g)];
+    assert.equal(marks.length, name === 'index.html' ? 2 : 1, name);
+    for (const mark of marks) assert.equal(mark[1], `${logoPath}?v=${brandingVersion}`, name);
+  }
+});
+
+test('browser-facing messages use SangeetPitara while retaining existing room integration names', async () => {
+  const [app, ads, capture, html] = await Promise.all([
+    readFile(new URL('app.js', root), 'utf8'),
+    readFile(new URL('ads.mjs', root), 'utf8'),
+    readFile(new URL('capture-tracks.js', root), 'utf8'),
+    readFile(new URL('index.html', root), 'utf8'),
+  ]);
+
+  assert.doesNotMatch(`${app}\n${ads}\n${capture}`, /RoomSound/);
+  assert.match(app, /Join my SangeetPitara room with code/);
+  assert.match(app, /roomsound-guest-id/);
+  assert.match(app, /roomsound-notification-action/);
+  assert.match(app, /roomsound-notification-ready/);
+  assert.match(app, /roomsound-volume/);
+  assert.match(ads, /roomsound-rewarded-access-expires-at/);
+  assert.match(ads, /roomsound-ad-consent/);
+  assert.match(app, /from '\.\/ads\.mjs\?v=20261019-sangeetpitara-1'/);
+  assert.match(app, /from '\.\/capture-tracks\.js\?v=20261019-sangeetpitara-1'/);
+  assert.match(html, /src="\/app\.js\?v=20261019-sangeetpitara-1"/);
+});
+
 test('browser surface is anonymous and exposes the local rewarded-access gate', async () => {
   const [html, app, ads, relay] = await Promise.all([
     readFile(new URL('index.html', root), 'utf8'),

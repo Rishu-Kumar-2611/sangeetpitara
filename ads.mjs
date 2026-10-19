@@ -1,7 +1,7 @@
 /**
  * Provider-neutral advertising boundary.
  *
- * RoomSound ships no ad-network script and registers no provider by default.
+ * SangeetPitara ships no ad-network script and registers no provider by default.
  * A deployment may opt in by setting the three meta values in index.html (or
  * an equivalent same-origin build step), obtaining consent, and supplying a
  * slot key on an existing [data-ad-slot] element. A future provider adapter
@@ -187,7 +187,7 @@ function placeholderContent(documentRef, provider) {
   label.textContent = 'SPONSORED SPACE';
   const note = documentRef.createElement('span');
   note.className = 'ad-slot-note';
-  note.textContent = `${provider} placement · RoomSound loads no third-party ad script by default.`;
+  note.textContent = `${provider} placement · SangeetPitara loads no third-party ad script by default.`;
   return [label, note];
 }
 

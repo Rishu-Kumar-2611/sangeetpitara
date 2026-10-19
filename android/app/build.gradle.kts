@@ -133,6 +133,15 @@ val validateRoomSoundReleaseSigning = tasks.register("validateRoomSoundReleaseSi
 tasks.matching { it.name == "preReleaseBuild" || it.name == "validateSigningRelease" }
     .configureEach { dependsOn(validateRoomSoundReleaseSigning) }
 
+// Publish a clearly named installable artifact without renaming the package or
+// changing the normal Gradle output layout. Previous APKs remain available.
+tasks.register<Copy>("exportDebugApk") {
+    dependsOn("assembleDebug")
+    from(project.layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
+    into(rootProject.layout.projectDirectory.dir("artifacts"))
+    rename { "SangeetPitara-debug.apk" }
+}
+
 dependencies {
     // JSON signaling/control uses the platform org.json APIs. OkHttp is used
     // only for the native RoomSound WebSocket client.

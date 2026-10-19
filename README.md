@@ -1,6 +1,11 @@
-# RoomSound prototype
+# SangeetPitara
 
-RoomSound is a small, runnable web prototype for the private audio-room idea. It includes:
+SangeetPitara (formerly RoomSound) is a private audio-room app for web and Android.
+The selected logo is the vector **Diya Eighth Note** in
+[`branding/sangeetpitara/05-diya-eighth-note.svg`](branding/sangeetpitara/05-diya-eighth-note.svg).
+Existing `roomsound-*` storage keys, `ROOMSOUND_*` build settings, Android
+package identity, and media protocol stay unchanged so existing installs and
+sessions remain compatible. It includes:
 
 - Account-less room creation and joining by code or invite link
 - Device-local guest identity

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <!-- Transparent, single-color Diya Eighth Note for system notification tinting. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M146,312c17,70 67,105 110,105s93,-35 110,-105z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M257,313V142c0,-18 13,-32 30,-32h37v31h-30v115c0,30 -24,57 -54,57 -25,0 -43,-15 -43,-36 0,-23 20,-40 45,-40 7,0 13,1 19,4z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M327,126m-20,0a20,20 0,1 1,40 0a20,20 0,1 1,-40 0" />
+</vector>

@@ -54,7 +54,7 @@ object PlaybackCaptureCapabilities {
         val recordAudioGranted = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val summary = when {
             !projectionAvailable -> "MediaProjection is unavailable on this device."
-            !recordAudioGranted -> "Android requires audio permission for playback capture; RoomSound does not use your microphone."
+            !recordAudioGranted -> "Android requires audio permission for playback capture; SangeetPitara does not use your microphone."
             else -> "Ready to request Android's system capture consent."
         }
         return CaptureCapabilityReport(

@@ -143,7 +143,7 @@ class RoomSoundWebSocketClient(
     /** Connect without selecting a room. Usually createRoom or joinRoom is preferred. */
     fun connect() {
         synchronized(lock) {
-            check(!permanentlyClosed) { "This RoomSound client has been closed." }
+            check(!permanentlyClosed) { "This SangeetPitara client has been closed." }
             stopRequested = false
             if (webSocket != null || connectionState == RoomConnectionState.CONNECTING ||
                 connectionState == RoomConnectionState.OPEN || connectionState == RoomConnectionState.JOINED
@@ -336,9 +336,9 @@ class RoomSoundWebSocketClient(
 
     private fun selectRoom(intent: RoomIntent) {
         synchronized(lock) {
-            check(!permanentlyClosed) { "This RoomSound client has been closed." }
+            check(!permanentlyClosed) { "This SangeetPitara client has been closed." }
             check(roomState == null || connectionState != RoomConnectionState.JOINED) {
-                "Leave the current RoomSound room before selecting another room."
+                "Leave the current SangeetPitara room before selecting another room."
             }
             stopRequested = false
             roomIntent = intent
@@ -358,7 +358,7 @@ class RoomSoundWebSocketClient(
                 .build()
         } catch (error: Throwable) {
             setConnectionState(RoomConnectionState.FAILED)
-            emit(RoomSoundEvent.Error("Invalid RoomSound WebSocket endpoint. Check the build-time endpoint configuration."))
+            emit(RoomSoundEvent.Error("Invalid SangeetPitara WebSocket endpoint. Check the build-time endpoint configuration."))
             return
         }
 
@@ -416,7 +416,7 @@ class RoomSoundWebSocketClient(
             if (!clearCurrentSocket(webSocket)) return
             emit(
                 RoomSoundEvent.Error(
-                    "RoomSound WebSocket connection failed (${t.javaClass.simpleName}). " +
+                    "SangeetPitara WebSocket connection failed (${t.javaClass.simpleName}). " +
                         "Check the configured server, port, Wi-Fi, and firewall.",
                 ),
             )
@@ -430,7 +430,7 @@ class RoomSoundWebSocketClient(
             JSONObject(text)
         } catch (error: Throwable) {
             android.util.Log.e("RoomSound", "WebSocket JSON parse failed", error)
-            emit(RoomSoundEvent.Error("RoomSound sent invalid JSON: ${error.message ?: error.javaClass.simpleName}"))
+            emit(RoomSoundEvent.Error("SangeetPitara sent invalid JSON: ${error.message ?: error.javaClass.simpleName}"))
             return
         }
 
@@ -443,7 +443,7 @@ class RoomSoundWebSocketClient(
             else -> type
         }
         if (resolvedType == "unknown") {
-            emit(RoomSoundEvent.Error("RoomSound sent an event without a type."))
+            emit(RoomSoundEvent.Error("SangeetPitara sent an event without a type."))
             return
         }
 
@@ -452,7 +452,7 @@ class RoomSoundWebSocketClient(
                 "joined" -> handleRoomState(message, joined = true)
                 "state" -> handleRoomState(message, joined = false)
                 "error" -> {
-                    val serverMessage = message.stringOrNull("message") ?: "RoomSound rejected the request."
+                    val serverMessage = message.stringOrNull("message") ?: "SangeetPitara rejected the request."
                     synchronized(lock) {
                         if (roomState == null) roomIntent = null
                     }
@@ -500,7 +500,7 @@ class RoomSoundWebSocketClient(
             }
         } catch (error: Throwable) {
             android.util.Log.e("RoomSound", "handleMessage fatal for type '$type': $text", error)
-            emit(RoomSoundEvent.Error("Invalid RoomSound '$type' event: ${error.message ?: error.javaClass.simpleName}"))
+            emit(RoomSoundEvent.Error("Invalid SangeetPitara '$type' event: ${error.message ?: error.javaClass.simpleName}"))
         }
     }
 
@@ -552,7 +552,7 @@ class RoomSoundWebSocketClient(
                 .put("guestId", intent.guestId)
         }
         if (!socket.send(message.toString())) {
-            emit(RoomSoundEvent.Error("RoomSound could not send the room selection request."))
+            emit(RoomSoundEvent.Error("SangeetPitara could not send the room selection request."))
         }
     }
 

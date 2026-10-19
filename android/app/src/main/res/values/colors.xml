@@ -1,4 +1,5 @@
 <resources>
+    <color name="sangeetpitara_icon_background">#21150F</color>
     <color name="roomsound_background_top">#2A1711</color>
     <color name="roomsound_background_bottom">#160C09</color>
     <color name="roomsound_header_top">#754A32</color>

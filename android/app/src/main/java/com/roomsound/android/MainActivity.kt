@@ -19,6 +19,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -353,20 +354,31 @@ class MainActivity : Activity() {
         }
 
         val header = panelContainer(R.drawable.bg_roomsound_header)
-        header.addView(TextView(this).apply {
-            text = "ROOMSOUND  •  LISTENING ROOM"
+        val brandRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        brandRow.addView(ImageView(this).apply {
+            setImageResource(R.mipmap.ic_launcher)
+            contentDescription = getString(R.string.app_name)
+        }, LinearLayout.LayoutParams(dp(52), dp(52)).apply { marginEnd = dp(12) })
+        val brandCopy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        brandCopy.addView(TextView(this).apply {
+            text = getString(R.string.header_eyebrow)
             textSize = 11f
             letterSpacing = 0.16f
             setTextColor(getColor(R.color.roomsound_brass_bright))
             setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL))
         }, matchWrap())
-        header.addView(TextView(this).apply {
-            text = "RoomSound · device-audio room"
+        brandCopy.addView(TextView(this).apply {
+            text = getString(R.string.header_title)
             textSize = 25f
             setTextColor(getColor(R.color.roomsound_cream))
             setTypeface(android.graphics.Typeface.create("serif", android.graphics.Typeface.BOLD))
             setPadding(0, dp(7), 0, dp(5))
         }, matchWrap())
+        brandRow.addView(brandCopy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(brandRow, matchWrap())
         content.addView(header, panelLayout())
 
         val accessPanel = panelContainer()
@@ -1104,7 +1116,7 @@ class MainActivity : Activity() {
             pendingCaptureStart = true
             renderSnapshot(CaptureSnapshot(
                 CaptureStatus.PERMISSION_REQUIRED,
-                message = "Allow Android's playback-capture permission. RoomSound does not use a microphone input.",
+                message = "Allow Android's playback-capture permission. SangeetPitara does not use a microphone input.",
             ))
             requestPermissions(missingPermissions.toTypedArray(), REQUEST_RUNTIME_PERMISSIONS)
             return

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!--
+        Diya Eighth Note, adapted from
+        branding/sangeetpitara/05-diya-eighth-note.svg. Adaptive icons use the
+        system mask for the background shape, so only the artwork is kept in
+        this foreground layer. The 90% scale keeps the entire mark inside the
+        adaptive icon's 66dp safe circle.
+    -->
+    <group
+        android:pivotX="256"
+        android:pivotY="256"
+        android:scaleX="0.9"
+        android:scaleY="0.9">
+        <path
+            android:fillColor="#70472D"
+            android:pathData="M146,312c17,70 67,105 110,105s93,-35 110,-105z"
+            android:strokeColor="#C9974C"
+            android:strokeLineJoin="round"
+            android:strokeWidth="12" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M164,313c28,20 156,20 184,0"
+            android:strokeColor="#EBC979"
+            android:strokeLineCap="round"
+            android:strokeWidth="11" />
+        <path
+            android:fillColor="#EBC979"
+            android:pathData="M257,313V142c0,-18 13,-32 30,-32h37v31h-30v115c0,30 -24,57 -54,57 -25,0 -43,-15 -43,-36 0,-23 20,-40 45,-40 7,0 13,1 19,4z" />
+        <path
+            android:fillColor="#78AD7D"
+            android:pathData="M327,126m-20,0a20,20 0,1 1,40 0a20,20 0,1 1,-40 0" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M220,267c9,10 21,15 35,15"
+            android:strokeColor="#F4EAD3"
+            android:strokeLineCap="round"
+            android:strokeWidth="8" />
+    </group>
+</vector>

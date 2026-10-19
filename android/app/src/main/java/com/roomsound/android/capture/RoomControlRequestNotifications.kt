@@ -60,7 +60,7 @@ internal class RoomControlRequestNotifications(context: Context) {
         activeRequestIds += requestId
 
         val builder = Notification.Builder(appContext, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_stat_diya)
             .setContentTitle("${request.requesterName} wants to share audio")
             .setContentText(appContext.getString(R.string.control_request_notification_text))
             .setContentIntent(contentPendingIntent())

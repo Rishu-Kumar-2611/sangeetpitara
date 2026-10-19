@@ -4,7 +4,7 @@ import {
   displayAudioCaptureGuidance,
   liveAudioTracks,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261019-display-audio-1';
+} from './capture-tracks.js?v=20261019-sangeetpitara-1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
@@ -21,7 +21,7 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs';
+} from './ads.mjs?v=20261019-sangeetpitara-1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -361,7 +361,7 @@ function registerNotificationServiceWorker() {
     })
     .catch((error) => {
       state.notificationSetupPromise = null;
-      console.warn('[RoomSound] notification service worker unavailable', error);
+      console.warn('[SangeetPitara] notification service worker unavailable', error);
       return null;
     });
   return state.notificationSetupPromise;
@@ -448,7 +448,7 @@ async function requestNotificationPermission() {
 
   const registration = await registerNotificationServiceWorker();
   if (!registration?.showNotification) {
-    toast('This browser cannot show RoomSound action notifications.', 'error');
+    toast('This browser cannot show SangeetPitara action notifications.', 'error');
     return 'unsupported';
   }
   state.notificationUnavailableNotified = false;
@@ -473,7 +473,7 @@ async function showControlRequestNotification(request) {
   if (!registration?.showNotification || !state.room?.code) {
     if (!state.notificationUnavailableNotified) {
       state.notificationUnavailableNotified = true;
-      toast('RoomSound could not enable system request notifications.', 'error');
+      toast('SangeetPitara could not enable system request notifications.', 'error');
     }
     return;
   }
@@ -481,6 +481,7 @@ async function showControlRequestNotification(request) {
   try {
     await registration.showNotification(`${request.requesterName} wants to share audio`, {
       body: `${state.room.name} · Approve or reject this control request.`,
+      icon: '/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261019-sangeetpitara-1',
       tag: `roomsound-control-${request.id}`,
       renotify: true,
       data: {
@@ -495,7 +496,7 @@ async function showControlRequestNotification(request) {
       ],
     });
   } catch (error) {
-    console.warn('[RoomSound] could not show request notification', error);
+    console.warn('[SangeetPitara] could not show request notification', error);
     if (!state.notificationUnavailableNotified) {
       state.notificationUnavailableNotified = true;
       toast('System request notifications are unavailable in this browser.', 'error');
@@ -595,7 +596,7 @@ function sendRelayPcmFrame(samples, sourceEpoch) {
     });
     state.ws.send(frame);
   } catch (error) {
-    console.warn('[RoomSound] PCM16 relay frame was not sent', error);
+    console.warn('[SangeetPitara] PCM16 relay frame was not sent', error);
   }
 }
 
@@ -718,7 +719,7 @@ function handleRelayFrame(data) {
   try {
     frame = decodePcm16Frame(data);
   } catch (error) {
-    console.warn('[RoomSound] ignored invalid PCM16 relay frame', error);
+    console.warn('[SangeetPitara] ignored invalid PCM16 relay frame', error);
     return;
   }
   const room = state.room;
@@ -752,7 +753,7 @@ function handleRelayFrame(data) {
   } catch (error) {
     state.relayPlaybackSources.delete(source);
     try { source.disconnect(); } catch {}
-    console.warn('[RoomSound] PCM16 relay playback scheduling failed', error);
+    console.warn('[SangeetPitara] PCM16 relay playback scheduling failed', error);
     return;
   }
   if (context.state !== 'running') {
@@ -869,7 +870,7 @@ function connectAnd(action, isReconnect = false) {
   const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const isDeviceLocalhost = ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
   if (!isReconnect && isMobileDevice && isDeviceLocalhost) {
-    const message = 'This phone is opening localhost on itself. Open RoomSound from the laptop LAN address, for example http://192.168.1.20:4173.';
+    const message = 'This phone is opening localhost on itself. Open SangeetPitara from the laptop LAN address, for example http://192.168.1.20:4173.';
     setConnection('Use LAN address', false);
     showLanding(message);
     return;
@@ -952,7 +953,7 @@ function connectAnd(action, isReconnect = false) {
   socket.addEventListener('error', () => {
     if (!isCurrentSocket()) return;
     setConnection('Offline', false);
-    if (!state.room) showLanding('Could not connect to the RoomSound server. Is it running?');
+    if (!state.room) showLanding('Could not connect to the SangeetPitara server. Is it running?');
     else if (!state.explicitLeave) scheduleReconnect();
   });
   socket.addEventListener('message', (event) => {
@@ -960,7 +961,7 @@ function connectAnd(action, isReconnect = false) {
     if (typeof event.data !== 'string') {
       if (typeof Blob !== 'undefined' && event.data instanceof Blob) {
         void event.data.arrayBuffer().then(handleRelayFrame).catch((error) => {
-          console.warn('[RoomSound] could not read PCM16 relay frame', error);
+          console.warn('[SangeetPitara] could not read PCM16 relay frame', error);
         });
       } else {
         handleRelayFrame(event.data);
@@ -972,7 +973,7 @@ function connectAnd(action, isReconnect = false) {
       handleServerMessage(message);
     } catch (error) {
       setConnection('Protocol error', false);
-      showLanding(`The RoomSound server sent an invalid message: ${error.message || 'invalid JSON'}`);
+      showLanding(`The SangeetPitara server sent an invalid message: ${error.message || 'invalid JSON'}`);
     }
   });
 }
@@ -1426,7 +1427,7 @@ function renderTelemetry() {
     summary.textContent = `${sourceName} · epoch ${epoch} · PCM16 WebSocket relay`;
     status.textContent = 'Relay';
     status.className = 'telemetry-state good';
-    list.innerHTML = '<div class="telemetry-empty">Audio is transported through the RoomSound server relay. Relay bandwidth grows with the number of listeners.</div>';
+    list.innerHTML = '<div class="telemetry-empty">Audio is transported through the SangeetPitara server relay. Relay bandwidth grows with the number of listeners.</div>';
     return;
   }
 
@@ -1521,11 +1522,11 @@ function openSourceModal(intent) {
     ? `<div class="settings-note" style="margin:0 0 14px;text-align:left;line-height:1.5">\uD83D\uDCF1 You're on a phone browser. Chrome/Firefox on Android do not expose system-audio capture to the web. Use the <strong>Android app</strong> for device playback capture.</div>`
     : '';
   const browserAudioNote = !insecure && /Firefox\/|FxiOS\//i.test(navigator.userAgent)
-    ? `<div class="settings-note" style="margin:0 0 14px;border-color:rgba(255,190,95,0.36);color:#ffe0a8;text-align:left;line-height:1.5">\u26A0 Firefox can share the picture of your screen, but this browser does not provide system audio to RoomSound. Use <strong>Google Chrome or Microsoft Edge</strong> on the laptop for music sharing; their picker offers Share tab audio or Share system audio.</div>`
+    ? `<div class="settings-note" style="margin:0 0 14px;border-color:rgba(255,190,95,0.36);color:#ffe0a8;text-align:left;line-height:1.5">\u26A0 Firefox can share the picture of your screen, but this browser does not provide system audio to SangeetPitara. Use <strong>Google Chrome or Microsoft Edge</strong> on the laptop for music sharing; their picker offers Share tab audio or Share system audio.</div>`
     : '';
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="source-modal"><div class="modal-eyebrow">AUDIO SOURCE</div><h2>${intent === 'participant' ? 'You were approved to play' : 'Choose what to share'}</h2><p>RoomSound publishes supported device or browser playback only. It never opens or streams a microphone.</p>${insecureBanner}${hostNote}${browserAudioNote}<div class="source-options"><button class="source-option" data-source="DEVICE_AUDIO" ${insecure ? 'disabled title="Blocked \u2014 insecure origin (open localhost or use the Android app)"' : ''}><span class="option-icon">◉</span><span><strong>Device / browser audio</strong><small>${insecure ? 'Blocked on http LAN \u2014 use localhost / Android app' : 'Android playback capture or browser tab audio'}</small></span><span>›</span></button><button class="source-option" data-source="TEST_TONE"><span class="option-icon">∿</span><span><strong>Test audio</strong><small>Generate a private room-safe diagnostic signal \u2014 always works</small></span><span>›</span></button></div><button class="modal-close" type="button">Not now</button></div>`;
+  modal.innerHTML = `<div class="source-modal"><div class="modal-eyebrow">AUDIO SOURCE</div><h2>${intent === 'participant' ? 'You were approved to play' : 'Choose what to share'}</h2><p>SangeetPitara publishes supported device or browser playback only. It never opens or streams a microphone.</p>${insecureBanner}${hostNote}${browserAudioNote}<div class="source-options"><button class="source-option" data-source="DEVICE_AUDIO" ${insecure ? 'disabled title="Blocked \u2014 insecure origin (open localhost or use the Android app)"' : ''}><span class="option-icon">◉</span><span><strong>Device / browser audio</strong><small>${insecure ? 'Blocked on http LAN \u2014 use localhost / Android app' : 'Android playback capture or browser tab audio'}</small></span><span>›</span></button><button class="source-option" data-source="TEST_TONE"><span class="option-icon">∿</span><span><strong>Test audio</strong><small>Generate a private room-safe diagnostic signal \u2014 always works</small></span><span>›</span></button></div><button class="modal-close" type="button">Not now</button></div>`;
   $('#modal-root').append(modal);
   modal.querySelector('.modal-close').addEventListener('click', () => {
     modal.remove();
@@ -1585,7 +1586,7 @@ async function startLocalCapture(sourceType, intent = 'host') {
       stream = destination.stream;
       label = 'test audio';
     } else {
-      throw new Error('Only device or browser playback audio is supported. RoomSound never streams a microphone.');
+      throw new Error('Only device or browser playback audio is supported. SangeetPitara never streams a microphone.');
     }
     if (nonce !== state.captureNonce) { stream.getTracks().forEach((t) => t.stop()); return; }
     state.captureStream = stream;
@@ -1691,7 +1692,7 @@ async function createPublisherPeer(targetId) {
   const captureStream = state.captureStream;
   const sourceEpoch = state.room?.sourceEpoch;
   const audioTracks = liveAudioTracks(captureStream);
-  if (!audioTracks.length) { console.warn("[RoomSound] no live tracks for "+targetId); return; }
+  if (!audioTracks.length) { console.warn("[SangeetPitara] no live tracks for "+targetId); return; }
   await loadClientConfig();
   if (state.captureStream !== captureStream || !isSelfSource() || state.room?.sourceEpoch !== sourceEpoch || state.peers.has(targetId)) return;
   const pc = new RTCPeerConnection(rtcConfig);
@@ -1707,12 +1708,12 @@ async function createPublisherPeer(targetId) {
   pc.onicegatheringstatechange = () => {
     updatePeerTelemetryState(targetId, entry);
     renderTelemetry();
-    console.log("[RoomSound][pub->"+targetId+"] gathering="+pc.iceGatheringState);
+    console.log("[SangeetPitara][pub->"+targetId+"] gathering="+pc.iceGatheringState);
   };
   pc.oniceconnectionstatechange = () => {
     updatePeerTelemetryState(targetId, entry);
     renderTelemetry();
-    console.log("[RoomSound][pub->"+targetId+"] iceConn="+pc.iceConnectionState);
+    console.log("[SangeetPitara][pub->"+targetId+"] iceConn="+pc.iceConnectionState);
     if (pc.iceConnectionState === 'failed') {
       try { pc.restartIce(); } catch {}
       const msg = hasTurnServer(rtcConfig)
@@ -1730,7 +1731,7 @@ async function createPublisherPeer(targetId) {
   pc.onconnectionstatechange = () => {
     updatePeerTelemetryState(targetId, entry);
     renderTelemetry();
-    console.log("[RoomSound][pub->"+targetId+"] conn="+pc.connectionState+" ice="+pc.iceConnectionState);
+    console.log("[SangeetPitara][pub->"+targetId+"] conn="+pc.connectionState+" ice="+pc.iceConnectionState);
     if (pc.connectionState === 'failed') {
       toast('Audio connection failed — trying to reconnect…', 'error');
       try { pc.restartIce(); } catch {}
@@ -1760,10 +1761,10 @@ async function createPublisherPeer(targetId) {
       return;
     }
     send({ type: 'rtc', to: targetId, signal: { type: 'offer', description: pc.localDescription }, sourceEpoch: entry.sourceEpoch });
-    console.log("[RoomSound] sent offer to "+targetId+" epoch="+entry.sourceEpoch);
+    console.log("[SangeetPitara] sent offer to "+targetId+" epoch="+entry.sourceEpoch);
   } catch (error) {
     if (state.peers.get(targetId) === entry) removePeerConnection(targetId, entry);
-    console.warn("[RoomSound] createOffer failed", error);
+    console.warn("[SangeetPitara] createOffer failed", error);
   }
 }
 
@@ -1772,7 +1773,7 @@ async function handleRtcSignal(message) {
   if (!signal) return;
   const sourceEpoch = Number.isInteger(message.sourceEpoch) ? message.sourceEpoch : state.room?.sourceEpoch;
   if (Number.isInteger(message.sourceEpoch) && Number.isInteger(state.room?.sourceEpoch) && message.sourceEpoch !== state.room.sourceEpoch) {
-    console.warn("[RoomSound] ignored RTC signal for stale source epoch", message.sourceEpoch);
+    console.warn("[SangeetPitara] ignored RTC signal for stale source epoch", message.sourceEpoch);
     return;
   }
   if (signal.type === 'offer') {
@@ -1790,12 +1791,12 @@ async function handleRtcSignal(message) {
     pc.onicegatheringstatechange = () => {
       updatePeerTelemetryState(from, entry);
       renderTelemetry();
-      console.log("[RoomSound][lis<-"+from+"] gathering="+pc.iceGatheringState);
+      console.log("[SangeetPitara][lis<-"+from+"] gathering="+pc.iceGatheringState);
     };
     pc.oniceconnectionstatechange = () => {
       updatePeerTelemetryState(from, entry);
       renderTelemetry();
-      console.log("[RoomSound][lis<-"+from+"] iceConn="+pc.iceConnectionState);
+      console.log("[SangeetPitara][lis<-"+from+"] iceConn="+pc.iceConnectionState);
       if (pc.iceConnectionState === 'failed') {
         try { pc.restartIce(); } catch {}
         setTimeout(() => {
@@ -1813,14 +1814,14 @@ async function handleRtcSignal(message) {
     pc.onconnectionstatechange = () => {
       updatePeerTelemetryState(from, entry);
       renderTelemetry();
-      console.log("[RoomSound][lis<-"+from+"] conn="+pc.connectionState+" ice="+pc.iceConnectionState);
+      console.log("[SangeetPitara][lis<-"+from+"] conn="+pc.connectionState+" ice="+pc.iceConnectionState);
       if (pc.connectionState === 'failed') {
        toast('Audio connection failed. Direct peer connections need reachable networks; try the same Wi-Fi.', 'error');
         try { pc.restartIce(); } catch {}
         state.audioNeedsGesture = true;
         renderControls();
         setTimeout(() => {
-          if (isCurrentPeerEntry(from, entry) && pc.connectionState === 'failed') console.warn("[RoomSound] listener still failed, waiting for publisher renegotiation");
+          if (isCurrentPeerEntry(from, entry) && pc.connectionState === 'failed') console.warn("[SangeetPitara] listener still failed, waiting for publisher renegotiation");
         }, 2500);
       }
       // A transient `disconnected` state is not terminal. ICE may recover
@@ -1830,7 +1831,7 @@ async function handleRtcSignal(message) {
     };
     pc.ontrack = (event) => {
       if (!isCurrentPeerEntry(from, entry)) return;
-      console.log("[RoomSound] ontrack from "+from+" kind="+(event.track?.kind||"audio")+" streams="+(event.streams?.length||0));
+      console.log("[SangeetPitara] ontrack from "+from+" kind="+(event.track?.kind||"audio")+" streams="+(event.streams?.length||0));
       const audio = ensureAudioElement();
       const inbound = event.streams?.[0] || new MediaStream([event.track]);
       audio.srcObject = inbound;
@@ -1840,10 +1841,10 @@ async function handleRtcSignal(message) {
         if (!isCurrentPeerEntry(from, entry)) return;
         state.audioNeedsGesture = false;
         renderControls();
-        console.log("[RoomSound] remote audio playing from "+from);
+        console.log("[SangeetPitara] remote audio playing from "+from);
       }).catch((err) => {
         if (!isCurrentPeerEntry(from, entry)) return;
-        console.warn("[RoomSound] autoplay blocked", err);
+        console.warn("[SangeetPitara] autoplay blocked", err);
         state.audioNeedsGesture = true;
         renderControls();
         toast('Tap “Enable room audio” to start playback.', 'error');
@@ -1857,9 +1858,9 @@ async function handleRtcSignal(message) {
         return;
       }
       entry.remoteDescSet = true;
-      for (const c of entry.pendingCandidates.splice(0)) { try { await pc.addIceCandidate(c); } catch (e) { console.warn("[RoomSound] late candidate flush failed", e); } }
+      for (const c of entry.pendingCandidates.splice(0)) { try { await pc.addIceCandidate(c); } catch (e) { console.warn("[SangeetPitara] late candidate flush failed", e); } }
     } catch (e) {
-      console.error("[RoomSound] setRemoteDescription(offer) failed", e);
+      console.error("[SangeetPitara] setRemoteDescription(offer) failed", e);
       removePeerConnection(from, entry);
       return;
     }
@@ -1876,10 +1877,10 @@ async function handleRtcSignal(message) {
       }
       entry.localDescSet = true;
       send({ type: 'rtc', to: from, signal: { type: 'answer', description: pc.localDescription }, sourceEpoch: entry.sourceEpoch });
-      console.log("[RoomSound] sent answer to "+from+" epoch="+entry.sourceEpoch);
+      console.log("[SangeetPitara] sent answer to "+from+" epoch="+entry.sourceEpoch);
     } catch (e) {
       if (state.peers.get(from) === entry) removePeerConnection(from, entry);
-      console.error("[RoomSound] createAnswer failed", e);
+      console.error("[SangeetPitara] createAnswer failed", e);
     }
     // flush early trickled candidates that arrived before offer was processed
     const pkEarly = "__pending_"+from;
@@ -1899,7 +1900,7 @@ async function handleRtcSignal(message) {
         state.peers.set("__pending_"+from, pend);
       }
       pend.pendingCandidates.push(signal.candidate);
-      console.log("[RoomSound] buffered early candidate from "+from+" before offer");
+      console.log("[SangeetPitara] buffered early candidate from "+from+" before offer");
     }
     return;
   }
@@ -1912,19 +1913,19 @@ async function handleRtcSignal(message) {
         return;
       }
       peer.remoteDescSet = true;
-      console.log("[RoomSound][pub->"+from+"] remote answer set");
-      for (const c of (peer.pendingCandidates||[]).splice(0)) { try { await peer.pc.addIceCandidate(c); } catch (e) { console.warn("[RoomSound] flush queued candidate failed", e); } }
+      console.log("[SangeetPitara][pub->"+from+"] remote answer set");
+      for (const c of (peer.pendingCandidates||[]).splice(0)) { try { await peer.pc.addIceCandidate(c); } catch (e) { console.warn("[SangeetPitara] flush queued candidate failed", e); } }
     } catch (e) {
       if (state.peers.get(from) === peer) removePeerConnection(from, peer);
-      console.error("[RoomSound] setRemoteDescription(answer) failed", e);
+      console.error("[SangeetPitara] setRemoteDescription(answer) failed", e);
     }
   } else if (signal.type === 'candidate') {
     if (!peer.remoteDescSet) {
       peer.pendingCandidates = peer.pendingCandidates || [];
       peer.pendingCandidates.push(signal.candidate);
-      console.log("[RoomSound] queued candidate from "+from+" until remoteDescSet");
+      console.log("[SangeetPitara] queued candidate from "+from+" until remoteDescSet");
     } else {
-      try { await peer.pc.addIceCandidate(signal.candidate); } catch (e) { console.warn("[RoomSound] addIceCandidate failed", e); }
+      try { await peer.pc.addIceCandidate(signal.candidate); } catch (e) { console.warn("[SangeetPitara] addIceCandidate failed", e); }
     }
   }
   const pk = "__pending_"+from;
@@ -1976,7 +1977,7 @@ function toggleRoomMenu() {
 
 function openShare() {
   const link = `${location.origin}/?room=${state.room.code}`;
-  if (navigator.share) navigator.share({ title: `Join ${state.room.name}`, text: `Join my RoomSound room with code ${state.room.code}.`, url: link }).catch(() => {});
+  if (navigator.share) navigator.share({ title: `Join ${state.room.name}`, text: `Join my SangeetPitara room with code ${state.room.code}.`, url: link }).catch(() => {});
   else if (navigator.clipboard?.writeText) navigator.clipboard.writeText(link).then(() => toast('Invite link copied.', 'success')).catch(() => toast(`Room code: ${state.room.code}`, 'success'));
   else toast(`Room code: ${state.room.code}`, 'success');
   closeRoomMenu();

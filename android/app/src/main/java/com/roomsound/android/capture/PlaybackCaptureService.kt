@@ -119,7 +119,7 @@ class PlaybackCaptureService : Service() {
                 val pendingId = roomSession.pendingCapture()?.id
                 try {
                     if (requestedId == null || requestedId == pendingId) {
-                        roomSession.stopCapture("Capture stopped from the RoomSound notification.")
+                        roomSession.stopCapture("Capture stopped from the SangeetPitara notification.")
                     }
                 } catch (t: Throwable) { android.util.Log.e("RoomSound", "stopCapture on ACTION_STOP failed", t) }
                 stopCaptureNotification()
@@ -254,7 +254,7 @@ class PlaybackCaptureService : Service() {
         val notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.capture_notification_title))
             .setContentText(getString(R.string.capture_notification_text))
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_stat_diya)
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
@@ -303,10 +303,10 @@ class PlaybackCaptureService : Service() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "RoomSound audio capture",
+            getString(R.string.capture_notification_channel_name),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Shows while RoomSound captures supported device playback."
+            description = getString(R.string.capture_notification_channel_description)
             setSound(null, null)
             enableVibration(false)
         }

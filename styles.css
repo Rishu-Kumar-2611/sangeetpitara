@@ -219,7 +219,7 @@ input:focus-visible {
 .brand-mark {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
   color: var(--paper-bright);
   font-size: 16px;
   font-weight: 800;
@@ -227,14 +227,15 @@ input:focus-visible {
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.32);
 }
 
-.brand-dot {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border: 2px solid #f3d083;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffe8a1, var(--brass) 58%, var(--brass-dark));
-  box-shadow: 0 0 0 4px rgba(201, 151, 76, 0.15), 0 0 20px rgba(235, 201, 121, 0.42);
+.brand-logo {
+  display: block;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(235, 201, 121, 0.58);
+  border-radius: 11px;
+  background: var(--wood-950);
+  box-shadow: 0 0 0 4px rgba(201, 151, 76, 0.12), 0 8px 20px rgba(8, 4, 2, 0.32);
 }
 
 .eyebrow,
