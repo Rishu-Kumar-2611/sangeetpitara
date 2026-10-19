@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Twin Tabla Mark</title>
+  <desc id="desc">Two warm tabla drums joined by a small sound ripple.</desc>
+  <rect width="512" height="512" rx="96" fill="#21150f"/>
+  <ellipse cx="185" cy="322" rx="95" ry="117" fill="#70472d" stroke="#ebc979" stroke-width="12"/>
+  <ellipse cx="327" cy="322" rx="78" ry="96" fill="#523322" stroke="#c9974c" stroke-width="12"/>
+  <ellipse cx="185" cy="298" rx="67" ry="53" fill="#f4ead3" stroke="#c9974c" stroke-width="10"/>
+  <ellipse cx="327" cy="304" rx="53" ry="42" fill="#ead8b6" stroke="#c9974c" stroke-width="10"/>
+  <circle cx="185" cy="298" r="22" fill="#3b2418"/>
+  <circle cx="327" cy="304" r="17" fill="#3b2418"/>
+  <path d="M231 152c18-17 30 19 48 2s30 19 48 1" fill="none" stroke="#78ad7d" stroke-width="14" stroke-linecap="round"/>
+</svg>

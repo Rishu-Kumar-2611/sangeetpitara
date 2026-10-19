@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Listening Room Arch</title>
+  <desc id="desc">A warm listening-room arch containing a bold sound wave.</desc>
+  <rect width="512" height="512" rx="96" fill="#21150f"/>
+  <path d="M112 405V219c0-86 64-141 144-141s144 55 144 141v186z" fill="#523322" stroke="#c9974c" stroke-width="12"/>
+  <path d="M163 405V224c0-54 40-93 93-93s93 39 93 93v181z" fill="#f4ead3"/>
+  <path d="M177 282c29 0 29-48 58-48s29 91 58 91 29-69 58-69" fill="none" stroke="#3e6d4d" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="369" cy="126" r="13" fill="#78ad7d"/>
+</svg>

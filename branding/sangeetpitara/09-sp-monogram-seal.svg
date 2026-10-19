@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">SangeetPitara SP Monogram</title>
+  <desc id="desc">A bold SP monogram inside a brass-edged listening-room seal.</desc>
+  <rect width="512" height="512" rx="96" fill="#21150f"/>
+  <rect x="83" y="83" width="346" height="346" rx="92" fill="#3b2418" stroke="#c9974c" stroke-width="13"/>
+  <path d="M210 174c-53-34-104 12-62 46 27 22 87 19 89 68 2 49-69 61-115 23" fill="none" stroke="#f4ead3" stroke-width="25" stroke-linecap="round"/>
+  <path d="M271 341V171h61c47 0 66 71 6 82h-67m0 0h53" fill="none" stroke="#ebc979" stroke-width="25" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M121 385c38 18 75 25 111 20" fill="none" stroke="#78ad7d" stroke-width="11" stroke-linecap="round"/>
+  <circle cx="389" cy="124" r="13" fill="#78ad7d"/>
+</svg>

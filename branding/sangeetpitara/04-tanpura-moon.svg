@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Tanpura Moon</title>
+  <desc id="desc">A crescent tanpura resonator crossed by simple strings.</desc>
+  <rect width="512" height="512" rx="96" fill="#21150f"/>
+  <circle cx="247" cy="271" r="135" fill="#3e6d4d" stroke="#ebc979" stroke-width="12"/>
+  <circle cx="300" cy="231" r="126" fill="#21150f"/>
+  <path d="M173 147c-17 83-16 166 3 250" fill="none" stroke="#f4ead3" stroke-width="12" stroke-linecap="round"/>
+  <path d="M203 139c-10 92-7 180 11 271" fill="none" stroke="#c9974c" stroke-width="9" stroke-linecap="round"/>
+  <path d="M232 139c-3 93 1 184 17 277" fill="none" stroke="#ebc979" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="177" cy="278" r="23" fill="#21150f" stroke="#f4ead3" stroke-width="8"/>
+  <circle cx="177" cy="278" r="8" fill="#ebc979"/>
+</svg>

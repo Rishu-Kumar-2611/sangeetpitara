@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Wave Lid Pitara</title>
+  <desc id="desc">A warm wooden music chest with an audio waveform as its lid.</desc>
+  <rect width="512" height="512" rx="96" fill="#21150f"/>
+  <rect x="83" y="213" width="346" height="190" rx="32" fill="#523322" stroke="#c9974c" stroke-width="12"/>
+  <path d="M83 242h346v-46c0-21-17-38-38-38H121c-21 0-38 17-38 38z" fill="#3b2418" stroke="#ebc979" stroke-width="12"/>
+  <path d="M113 204c27 0 27-38 54-38s27 63 54 63 27-80 54-80 27 55 54 55 27-23 70-23" fill="none" stroke="#f4ead3" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="230" y="286" width="52" height="72" rx="12" fill="#c9974c"/>
+  <circle cx="256" cy="321" r="10" fill="#21150f"/>
+  <circle cx="389" cy="269" r="11" fill="#78ad7d"/>
+</svg>

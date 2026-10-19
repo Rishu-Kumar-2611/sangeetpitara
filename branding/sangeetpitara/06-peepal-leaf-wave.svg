@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Peepal Leaf Wave</title>
+  <desc id="desc">A stylized green leaf with a brass audio waveform as its vein.</desc>
+  <rect width="512" height="512" rx="96" fill="#21150f"/>
+  <path d="M255 408C142 361 101 244 155 132c30-62 91-91 164-98 11 84 2 155-40 224-35 57-42 100-24 150z" fill="#3e6d4d" stroke="#ebc979" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M255 403c-19-88-6-167 40-236 20-30 31-69 36-116" fill="none" stroke="#f4ead3" stroke-width="11" stroke-linecap="round"/>
+  <path d="M204 279c19-20 28 30 49 6s29 32 51 5 30 23 51-4" fill="none" stroke="#ebc979" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="357" cy="88" r="12" fill="#c9974c"/>
+</svg>

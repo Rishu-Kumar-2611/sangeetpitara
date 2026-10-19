@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Diya Eighth Note</title>
+  <desc id="desc">A glowing diya whose flame forms a musical eighth note.</desc>
+  <rect width="512" height="512" rx="96" fill="#21150f"/>
+  <path d="M146 312c17 70 67 105 110 105s93-35 110-105z" fill="#70472d" stroke="#c9974c" stroke-width="12"/>
+  <path d="M164 313c28 20 156 20 184 0" fill="none" stroke="#ebc979" stroke-width="11" stroke-linecap="round"/>
+  <path d="M257 313V142c0-18 13-32 30-32h37v31h-30v115c0 30-24 57-54 57-25 0-43-15-43-36 0-23 20-40 45-40 7 0 13 1 19 4" fill="#ebc979"/>
+  <circle cx="327" cy="126" r="20" fill="#78ad7d"/>
+  <path d="M220 267c9 10 21 15 35 15" fill="none" stroke="#f4ead3" stroke-width="8" stroke-linecap="round"/>
+</svg>

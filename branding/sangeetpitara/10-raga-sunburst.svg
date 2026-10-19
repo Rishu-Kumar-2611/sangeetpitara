@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Raga Sunburst</title>
+  <desc id="desc">A brass music disc radiating broad sound-wave arcs.</desc>
+  <rect width="512" height="512" rx="96" fill="#21150f"/>
+  <circle cx="256" cy="256" r="70" fill="#c9974c" stroke="#ebc979" stroke-width="12"/>
+  <circle cx="256" cy="256" r="22" fill="#21150f"/>
+  <path d="M256 112c80 0 144 64 144 144" fill="none" stroke="#f4ead3" stroke-width="18" stroke-linecap="round"/>
+  <path d="M256 72c103 0 184 81 184 184" fill="none" stroke="#78ad7d" stroke-width="14" stroke-linecap="round"/>
+  <path d="M256 400c-80 0-144-64-144-144" fill="none" stroke="#f4ead3" stroke-width="18" stroke-linecap="round"/>
+  <path d="M256 440c-103 0-184-81-184-184" fill="none" stroke="#70472d" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="400" cy="256" r="12" fill="#ebc979"/>
+</svg>
