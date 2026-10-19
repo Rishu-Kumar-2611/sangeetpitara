@@ -85,6 +85,7 @@ const state = {
   reconnectAttempts: 0,
   reconnectTimer: null,
   explicitLeave: false,
+  pendingRoomEnd: false,
   lastRoomCode: null,
   lastDisplayName: null,
   captureNonce: 0,
@@ -381,8 +382,7 @@ function notificationActionKey(action) {
 function prepareRoomForNotificationAction(action) {
   if (state.room || state.ws || !action?.roomCode) return;
   $('#room-code').value = action.roomCode;
-  $$('.entry-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.entryTab === 'join'));
-  $$('.entry-panel').forEach((panel) => panel.classList.toggle('active-panel', panel.id === 'join-panel'));
+  selectEntryTab('join');
   connectAnd({ type: 'join', code: action.roomCode });
 }
 
@@ -800,9 +800,30 @@ function showRoom() {
   $('#room-view').classList.remove('hidden');
 }
 
+function selectEntryTab(entryType) {
+  const selectedType = entryType === 'join' ? 'join' : 'create';
+  $$('.entry-tab').forEach((tab) => {
+    const selected = tab.dataset.entryTab === selectedType;
+    tab.classList.toggle('active', selected);
+    tab.setAttribute('aria-selected', String(selected));
+  });
+  $$('.entry-panel').forEach((panel) => {
+    const selected = panel.id === `${selectedType}-panel`;
+    panel.classList.toggle('active-panel', selected);
+    panel.hidden = !selected;
+    panel.setAttribute('aria-hidden', String(!selected));
+  });
+}
+
 function resetToLanding(reason = '') {
   if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
   state.reconnectAttempts = 0;
+  state.explicitLeave = true;
+  state.pendingRoomEnd = false;
+  state.pendingIntent = null;
+  state.lastRoomCode = null;
+  closeRoomMenu();
+  $('#modal-root')?.replaceChildren();
   closePeerConnections();
   stopLocalCapture(false);
   closeRelayPlayback();
@@ -865,7 +886,9 @@ function connectAnd(action, isReconnect = false) {
   const socket = new WebSocket(`${protocol}//${location.host}`);
   socket.binaryType = 'arraybuffer';
   state.ws = socket;
+  const isCurrentSocket = () => state.ws === socket;
   socket.addEventListener('open', () => {
+    if (!isCurrentSocket()) return;
     setConnection('Live', true);
     state.reconnectAttempts = 0;
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
@@ -877,8 +900,14 @@ function connectAnd(action, isReconnect = false) {
     }
   });
   socket.addEventListener('close', (event) => {
+    if (!isCurrentSocket()) return;
     const code = event.code;
     const reason = event.reason || '';
+    if (state.pendingRoomEnd) {
+      resetToLanding();
+      toast('The host ended the room.', 'bad');
+      return;
+    }
     // Explicit leaves / removals should NOT reconnect
     if (code === 4003) {
       state.lastRoomCode = null;
@@ -915,11 +944,13 @@ function connectAnd(action, isReconnect = false) {
     }
   });
   socket.addEventListener('error', () => {
+    if (!isCurrentSocket()) return;
     setConnection('Offline', false);
     if (!state.room) showLanding('Could not connect to the RoomSound server. Is it running?');
     else if (!state.explicitLeave) scheduleReconnect();
   });
   socket.addEventListener('message', (event) => {
+    if (!isCurrentSocket()) return;
     if (typeof event.data !== 'string') {
       if (typeof Blob !== 'undefined' && event.data instanceof Blob) {
         void event.data.arrayBuffer().then(handleRelayFrame).catch((error) => {
@@ -942,6 +973,7 @@ function connectAnd(action, isReconnect = false) {
 
 function handleServerMessage(message) {
   if (message.type === 'error') {
+    state.pendingRoomEnd = false;
     toast(message.message, 'error');
     if (!state.room) showLanding(message.message);
     // Don't auto-reconnect on explicit room errors like "full" — clear lastRoomCode so scheduleReconnect bails
@@ -951,6 +983,7 @@ function handleServerMessage(message) {
     return;
   }
   if (message.type === 'joined') {
+    state.pendingRoomEnd = false;
     state.lastRoomCode = message.state.room.code;
     $('#room-banner').classList.add('hidden');
     applyRoomState(message.state);
@@ -1093,6 +1126,7 @@ function renderAll() {
   $('#room-title').textContent = room.name;
   $('#room-code-display').textContent = room.code;
   $('#member-count').textContent = state.members.length;
+  $('#end-room')?.classList.toggle('hidden', state.self?.role !== 'HOST');
   renderSource();
   renderControls();
   renderTelemetry();
@@ -1131,6 +1165,8 @@ function renderControls() {
   } else {
     const myRequest = state.requests.find((request) => request.requesterId === state.self?.id && request.status === 'PENDING');
     const selfIsSource = isSelfSource();
+    const requestTitle = $('#request-controls-title');
+    const requestStatus = $('#request-control-status');
     $('#request-audio').classList.toggle('hidden', Boolean(myRequest || selfIsSource || sourceIsParticipant));
     $('#cancel-request').classList.toggle('hidden', !myRequest);
     $('#cancel-request').dataset.requestId = myRequest?.id || '';
@@ -1141,6 +1177,22 @@ function renderControls() {
       $('#request-audio').textContent = 'Stop sharing';
     }
     $('#enable-audio-participant').classList.toggle('hidden', !state.audioNeedsGesture || selfIsSource);
+    if (requestTitle && requestStatus) {
+      if (selfIsSource) {
+        requestTitle.textContent = 'You are sharing audio';
+        requestStatus.textContent = 'Your room audio is live. Stop sharing when you are done.';
+      } else if (myRequest) {
+        requestTitle.textContent = 'Waiting for host approval';
+        requestStatus.textContent = 'Your request is in the queue. You can cancel it here if you change your mind.';
+      } else if (sourceIsParticipant) {
+        requestTitle.textContent = 'Another listener is sharing';
+        requestStatus.textContent = 'Ask the host to take control before you request your turn.';
+      } else {
+        requestTitle.textContent = 'Ask to share audio';
+        requestStatus.textContent = 'Request host approval when you want to play something for the room.';
+      }
+      if (state.audioNeedsGesture && !selfIsSource) requestStatus.textContent += ' Tap Enable room audio to start playback.';
+    }
   }
 }
 
@@ -1898,32 +1950,92 @@ function enableRoomAudio() {
   }).catch(() => toast('Room audio is not ready yet.', 'error'));
 }
 
+function closeRoomMenu() {
+  const menu = $('#room-actions-menu');
+  const button = $('#settings-button');
+  if (!menu || !button) return;
+  menu.hidden = true;
+  button.setAttribute('aria-expanded', 'false');
+}
+
+function toggleRoomMenu() {
+  const menu = $('#room-actions-menu');
+  const button = $('#settings-button');
+  if (!menu || !button) return;
+  const willOpen = menu.hidden;
+  menu.hidden = !willOpen;
+  button.setAttribute('aria-expanded', String(willOpen));
+  if (willOpen) menu.querySelector('[role="menuitem"]')?.focus();
+}
+
 function openShare() {
   const link = `${location.origin}/?room=${state.room.code}`;
   if (navigator.share) navigator.share({ title: `Join ${state.room.name}`, text: `Join my RoomSound room with code ${state.room.code}.`, url: link }).catch(() => {});
   else if (navigator.clipboard?.writeText) navigator.clipboard.writeText(link).then(() => toast('Invite link copied.', 'success')).catch(() => toast(`Room code: ${state.room.code}`, 'success'));
   else toast(`Room code: ${state.room.code}`, 'success');
+  closeRoomMenu();
+}
+
+function openRoomConfirmation(action) {
+  const ending = action === 'end';
+  closeRoomMenu();
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.setAttribute('role', 'presentation');
+  modal.innerHTML = `<div class="source-modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="room-confirm-title" aria-describedby="room-confirm-copy"><div class="modal-eyebrow">${ending ? 'END ROOM' : 'LEAVE ROOM'}</div><h2 id="room-confirm-title">${ending ? 'End this room?' : 'Leave this room?'}</h2><p id="room-confirm-copy">${ending ? 'Everyone will be disconnected and this invite will stop working. Ending a room cannot be undone.' : 'You will stop listening on this device. The room stays open for everyone else.'}</p><div class="confirmation-actions"><button class="confirm-cancel" data-confirm-cancel="true" type="button">${ending ? 'Keep room' : 'Stay in room'}</button><button class="confirm-action" data-confirm-action="true" type="button">${ending ? 'End room' : 'Leave room'}</button></div></div>`;
+  $('#modal-root').append(modal);
+
+  const dismiss = () => {
+    document.removeEventListener('keydown', onKeyDown);
+    modal.remove();
+  };
+  const onKeyDown = (event) => {
+    if (event.key === 'Escape') dismiss();
+  };
+  document.addEventListener('keydown', onKeyDown);
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) dismiss();
+  });
+  modal.querySelector('[data-confirm-cancel]').addEventListener('click', dismiss);
+  modal.querySelector('[data-confirm-action]').addEventListener('click', () => {
+    if (ending) {
+      state.pendingRoomEnd = true;
+      send({ type: 'end-room' });
+    } else {
+      state.explicitLeave = true;
+      state.lastRoomCode = null;
+      if (state.ws?.readyState === WebSocket.OPEN) send({ type: 'leave-room' });
+      resetToLanding();
+    }
+    dismiss();
+  });
+  modal.querySelector('[data-confirm-cancel]').focus();
 }
 
 function openRoomSettings() {
+  closeRoomMenu();
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
-  const hostControls = state.self?.role === 'HOST'
-    ? '<button class="danger-modal-button" type="button" data-end-room="true">End room for everyone</button>'
-    : '<p class="settings-note">Only the host can end this room. Ask the host to take control or update the room.</p>';
-  modal.innerHTML = `<div class="source-modal settings-modal"><div class="modal-eyebrow">ROOM SETTINGS</div><h2>${escapeHtml(state.room.name)}</h2><p>Private room · up to 10 people · audio is not recorded.</p><div class="settings-summary"><div><span>Room code</span><strong>${escapeHtml(state.room.code)}</strong></div><div><span>Current source</span><strong>${escapeHtml(state.room.activeSourceId ? sourceLabel(state.room.activeSourceType) : 'None')}</strong></div></div>${notificationSettingsMarkup()}${hostControls}<button class="modal-close" type="button">Close</button></div>`;
+  modal.innerHTML = `<div class="source-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="room-settings-title"><div class="modal-eyebrow">ROOM SETTINGS</div><h2 id="room-settings-title">${escapeHtml(state.room.name)}</h2><p>Private room · up to 10 people · audio is not recorded. Share, leave, and end actions are in the Room menu.</p><div class="settings-summary"><div><span>Room code</span><strong>${escapeHtml(state.room.code)}</strong></div><div><span>Current source</span><strong>${escapeHtml(state.room.activeSourceId ? sourceLabel(state.room.activeSourceType) : 'None')}</strong></div></div>${notificationSettingsMarkup()}<button class="modal-close" type="button">Close</button></div>`;
   $('#modal-root').append(modal);
-  modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
+  const dismiss = () => {
+    document.removeEventListener('keydown', onKeyDown);
+    modal.remove();
+  };
+  const onKeyDown = (event) => {
+    if (event.key === 'Escape') dismiss();
+  };
+  document.addEventListener('keydown', onKeyDown);
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) dismiss();
+  });
+  modal.querySelector('.modal-close').addEventListener('click', dismiss);
   modal.querySelector('[data-enable-notifications]')?.addEventListener('click', async () => {
     await requestNotificationPermission();
-    modal.remove();
+    dismiss();
     openRoomSettings();
   });
-  modal.querySelector('[data-end-room]')?.addEventListener('click', () => {
-    if (!window.confirm('End this room for everyone?')) return;
-    send({ type: 'end-room' });
-    modal.remove();
-  });
+  modal.querySelector('.modal-close').focus();
 }
 
 function sendRequest() {
@@ -1939,10 +2051,7 @@ function sendRequest() {
 }
 
 function wireEvents() {
-  $$('.entry-tab').forEach((tab) => tab.addEventListener('click', () => {
-    $$('.entry-tab').forEach((item) => item.classList.toggle('active', item === tab));
-    $$('.entry-panel').forEach((panel) => panel.classList.toggle('active-panel', panel.id === `${tab.dataset.entryTab}-panel`));
-  }));
+  $$('.entry-tab').forEach((tab) => tab.addEventListener('click', () => selectEntryTab(tab.dataset.entryTab)));
 
   $('#create-room').addEventListener('click', () => connectAnd({ type: 'create', roomName: $('#room-name').value.trim() || 'Listening room' }));
   $('#join-room').addEventListener('click', () => {
@@ -1983,8 +2092,16 @@ function wireEvents() {
     applyOutputVolume();
   });
   $('#share-room').addEventListener('click', openShare);
-  $('#settings-button').addEventListener('click', openRoomSettings);
-  $('#leave-room').addEventListener('click', () => { state.explicitLeave = true; state.lastRoomCode = null; send({ type: 'leave-room' }); /* server will close ws, close handler resets landing */ });
+  $('#settings-button').addEventListener('click', toggleRoomMenu);
+  $('#room-settings').addEventListener('click', openRoomSettings);
+  $('#leave-room').addEventListener('click', () => openRoomConfirmation('leave'));
+  $('#end-room').addEventListener('click', () => openRoomConfirmation('end'));
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.room-actions')) closeRoomMenu();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeRoomMenu();
+  });
   $('#chat-form').addEventListener('submit', (event) => {
     event.preventDefault();
     const text = $('#chat-input').value.trim();
@@ -2034,8 +2151,7 @@ if (initialNotificationAction) {
 } else {
   const queryRoom = locationParams.get('room');
   if (queryRoom) {
-    $$('.entry-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.entryTab === 'join'));
-    $$('.entry-panel').forEach((panel) => panel.classList.toggle('active-panel', panel.id === 'join-panel'));
+    selectEntryTab('join');
     $('#room-code').value = queryRoom.toUpperCase();
   }
 }

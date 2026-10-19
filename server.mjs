@@ -202,6 +202,11 @@ function send(ws, payload) {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
 }
 
+function clearSocketRoom(ws) {
+  ws.roomId = null;
+  ws.memberId = null;
+}
+
 function safeText(value, max = 240) {
   return String(value ?? '').trim().slice(0, max);
 }
@@ -843,9 +848,15 @@ function promoteCohost(room) {
 
 function handleDisconnect(ws) {
   const room = ws.roomId ? rooms.get(ws.roomId) : null;
-  if (!room) return;
+  if (!room) {
+    clearSocketRoom(ws);
+    return;
+  }
   const member = findMember(room, ws.memberId);
-  if (!member || member.ws !== ws) return;
+  if (!member || member.ws !== ws) {
+    clearSocketRoom(ws);
+    return;
+  }
   member.ws = null;
 
   if (room.activeSourceId === member.id) {
@@ -868,6 +879,7 @@ function handleDisconnect(ws) {
 
   if (![...room.members.values()].some((item) => item.ws)) scheduleCleanup(room);
   broadcastState(room);
+  clearSocketRoom(ws);
 }
 
 function currentMember(ws) {
@@ -1112,7 +1124,14 @@ async function handleMessage(ws, message) {
     room.status = 'ENDED';
     room.endedAt = Date.now();
     broadcast(room, { type: 'room-ended', message: 'The host ended the room.' });
-    for (const participant of room.members.values()) participant.ws?.close(1000, 'Room ended');
+    for (const participant of room.members.values()) {
+      const participantSocket = participant.ws;
+      participant.ws = null;
+      if (participantSocket) {
+        clearSocketRoom(participantSocket);
+        participantSocket.close(1000, 'Room ended');
+      }
+    }
     if (room.hostFailoverTimer) clearTimeout(room.hostFailoverTimer);
     if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
     rooms.delete(room.id);
@@ -1128,6 +1147,10 @@ async function handleMessage(ws, message) {
         broadcastState(room);
       }
     }
+    // Process the departure before starting the close handshake. A reconnect
+    // can otherwise race the asynchronous close event and see this member as
+    // still online, leaving the client unable to rejoin or end its room.
+    handleDisconnect(ws);
     ws.close(1000, 'Left room');
   }
 }

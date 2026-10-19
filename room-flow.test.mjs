@@ -237,3 +237,51 @@ test('rejects microphone source requests', async (t) => {
   const error = await rejected;
   assert.match(error.message, /device playback audio/i);
 });
+
+test('leave releases the host before reconnect so the host can end the same room', async (t) => {
+  const { server, url } = await startServer();
+  const host = client(url);
+  const reconnect = client(url);
+  const lateJoiner = client(url);
+  t.after(() => {
+    host.socket.close();
+    reconnect.socket.close();
+    lateJoiner.socket.close();
+    server.kill();
+  });
+
+  await host.open();
+  host.socket.send(JSON.stringify({
+    type: 'create-room',
+    name: 'Lifecycle room',
+    displayName: 'Host',
+    guestId: 'lifecycle-host',
+  }));
+  const created = await host.wait((message) => message.type === 'joined');
+
+  await reconnect.open();
+  host.socket.send(JSON.stringify({ type: 'leave-room' }));
+  reconnect.socket.send(JSON.stringify({
+    type: 'join-room',
+    code: created.state.room.code,
+    displayName: 'Host again',
+    guestId: 'lifecycle-host',
+  }));
+  const rejoined = await reconnect.wait((message) => message.type === 'joined');
+  assert.equal(rejoined.state.self.role, 'HOST');
+  assert.equal(rejoined.state.room.code, created.state.room.code);
+
+  const ended = reconnect.wait((message) => message.type === 'room-ended');
+  reconnect.socket.send(JSON.stringify({ type: 'end-room' }));
+  assert.equal((await ended).message, 'The host ended the room.');
+
+  await lateJoiner.open();
+  const unavailable = lateJoiner.wait((message) => message.type === 'error');
+  lateJoiner.socket.send(JSON.stringify({
+    type: 'join-room',
+    code: created.state.room.code,
+    displayName: 'Too late',
+    guestId: 'lifecycle-late',
+  }));
+  assert.match((await unavailable).message, /unavailable|ended/i);
+});

@@ -12,7 +12,7 @@
     <meta name="roomsound-media-relay" content="server-configured-pcm16" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'" />
     <title>RoomSound — listen together</title>
-    <link rel="stylesheet" href="/styles.css?v=20261018-anonymous-rewarded-1" />
+    <link rel="stylesheet" href="/styles.css?v=20261019-room-lifecycle-1" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -26,28 +26,31 @@
           <p class="landing-hint">Create a room or join with an invite code.</p>
         </div>
 
-        <div class="entry-card">
-          <div class="card-heading">
-            <div>
-              <div class="eyebrow">GET STARTED</div>
-              <h2>Enter the listening room</h2>
+          <div class="entry-card">
+            <div class="card-heading">
+              <div>
+                <div class="eyebrow">GET STARTED</div>
+                <h2>Enter the listening room</h2>
+                <p class="entry-intro">Use your name once, then choose whether you are hosting a new room or joining a friend.</p>
+              </div>
             </div>
-          </div>
-          <label class="field-label" for="display-name">Your display name</label>
-          <input id="display-name" class="text-input" maxlength="40" placeholder="e.g. Alex" autocomplete="nickname" />
-          <div class="entry-tabs" role="tablist">
-            <button class="entry-tab active" data-entry-tab="create" type="button">Create a room</button>
-            <button class="entry-tab" data-entry-tab="join" type="button">Join a room</button>
-          </div>
-          <div id="create-panel" class="entry-panel active-panel">
-            <label class="field-label" for="room-name">Room name</label>
-            <input id="room-name" class="text-input" maxlength="60" value="Late-night listening" placeholder="e.g. Movie Night" />
-            <button id="create-room" class="primary-button full-button" type="button" disabled aria-disabled="true"><span>＋</span> Create private room</button>
-          </div>
-          <div id="join-panel" class="entry-panel">
-            <label class="field-label" for="room-code">Room code</label>
-            <input id="room-code" class="text-input code-input" maxlength="6" placeholder="ABC123" autocomplete="one-time-code" />
-            <button id="join-room" class="primary-button full-button" type="button" disabled aria-disabled="true"><span>→</span> Join room</button>
+            <label class="field-label" for="display-name">Your display name</label>
+            <input id="display-name" class="text-input" maxlength="40" placeholder="e.g. Alex" autocomplete="nickname" />
+            <div class="entry-tabs" role="tablist" aria-label="Choose how to enter the room">
+              <button id="create-tab" class="entry-tab active" data-entry-tab="create" role="tab" aria-selected="true" aria-controls="create-panel" type="button"><span class="entry-tab-title">Create a room</span><small>Start listening together</small></button>
+              <button id="join-tab" class="entry-tab" data-entry-tab="join" role="tab" aria-selected="false" aria-controls="join-panel" type="button"><span class="entry-tab-title">Join with a code</span><small>Use a host invite</small></button>
+            </div>
+            <div id="create-panel" class="entry-panel active-panel" role="tabpanel" aria-labelledby="create-tab">
+              <div class="entry-panel-heading"><span class="entry-step">01</span><div><strong>Host a private room</strong><p>Name the room and share the invite when you are ready.</p></div></div>
+              <label class="field-label" for="room-name">Room name</label>
+              <input id="room-name" class="text-input" maxlength="60" value="Late-night listening" placeholder="e.g. Movie Night" />
+              <button id="create-room" class="primary-button full-button" type="button" disabled aria-disabled="true"><span>＋</span> Create private room</button>
+            </div>
+            <div id="join-panel" class="entry-panel" role="tabpanel" aria-labelledby="join-tab" hidden>
+              <div class="entry-panel-heading"><span class="entry-step">02</span><div><strong>Join a shared room</strong><p>Paste the six-character code from your host to listen in.</p></div></div>
+              <label class="field-label" for="room-code">Room code</label>
+              <input id="room-code" class="text-input code-input" maxlength="6" placeholder="ABC123" autocomplete="one-time-code" />
+              <button id="join-room" class="primary-button full-button" type="button" disabled aria-disabled="true"><span>→</span> Join room</button>
           </div>
           <p class="entry-footnote" id="entry-footnote">Room creation and joining are anonymous after local access is active.</p>
           <section class="rewarded-access" id="rewarded-access" aria-labelledby="rewarded-access-title">
@@ -77,8 +80,17 @@
           <div class="room-crumb"><span class="crumb-room-name" id="top-room-name">Listening room</span><span class="crumb-separator">/</span><span class="room-code-small" id="top-room-code">------</span></div>
           <div class="topbar-actions">
             <span class="connection-chip" id="connection-chip"><span class="connection-dot"></span><span id="connection-label">Connecting</span></span>
-            <button id="share-room" class="ghost-button" type="button">↗ Share invite</button>
-            <button id="leave-room" class="icon-button" type="button" aria-label="Leave room">×</button>
+            <div class="room-actions">
+              <button id="settings-button" class="room-menu-button" type="button" aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">•••</span><span>Room menu</span></button>
+              <div id="room-actions-menu" class="room-actions-menu" role="menu" hidden>
+                <div class="room-actions-heading"><span class="section-label">ROOM ACTIONS</span><strong>Manage this room</strong></div>
+                <button id="share-room" class="room-menu-item" type="button" role="menuitem"><span class="menu-item-icon">↗</span><span><strong>Share invite</strong><small>Copy a link or send it to friends</small></span></button>
+                <button id="room-settings" class="room-menu-item" type="button" role="menuitem"><span class="menu-item-icon">⚙</span><span><strong>Room settings</strong><small>Notifications and room details</small></span></button>
+                <div class="room-menu-divider"></div>
+                <button id="leave-room" class="room-menu-item room-menu-danger" type="button" role="menuitem"><span class="menu-item-icon">←</span><span><strong>Leave room</strong><small>Stop listening on this device</small></span></button>
+                <button id="end-room" class="room-menu-item room-menu-danger" type="button" role="menuitem"><span class="menu-item-icon">■</span><span><strong>End room for everyone</strong><small>Only the host can do this</small></span></button>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -104,17 +116,24 @@
               <div class="source-status" id="source-status"><span class="status-pulse"></span><span id="source-status-label">Waiting</span></div>
             </div>
 
-            <div class="control-row" id="host-controls">
+            <div class="control-row host-control-row" id="host-controls" aria-label="Host audio controls">
               <button id="share-audio" class="primary-button" type="button"><span class="button-icon">◉</span> Share audio</button>
               <button id="takeover-audio" class="secondary-button hidden" type="button">Take control back</button>
               <button id="stop-audio" class="secondary-button hidden" type="button">Stop sharing</button>
               <button id="enable-audio" class="secondary-button hidden" type="button">Enable room audio</button>
             </div>
-            <div class="control-row" id="participant-controls">
-              <button id="request-audio" class="primary-button" type="button"><span>↗</span> Request to play</button>
-              <button id="cancel-request" class="secondary-button hidden" type="button">Cancel request</button>
-              <button id="ask-takeover" class="secondary-button hidden" type="button">Ask host to take control</button>
-              <button id="enable-audio-participant" class="secondary-button hidden" type="button">Enable room audio</button>
+            <div class="control-row request-control-surface" id="participant-controls" aria-labelledby="request-controls-title">
+              <div class="request-control-copy">
+                <span class="section-label">YOUR AUDIO REQUEST</span>
+                <strong id="request-controls-title">Ask to share audio</strong>
+                <span id="request-control-status" aria-live="polite">Request host approval when you want to play something for the room.</span>
+              </div>
+              <div class="request-control-actions">
+                <button id="request-audio" class="primary-button" type="button"><span>↗</span> Request to play</button>
+                <button id="cancel-request" class="secondary-button hidden" type="button">Cancel request</button>
+                <button id="ask-takeover" class="secondary-button hidden" type="button">Ask host to take control</button>
+                <button id="enable-audio-participant" class="secondary-button hidden" type="button">Enable room audio</button>
+              </div>
             </div>
 
             <div class="audio-controls-panel">
@@ -142,7 +161,7 @@
 
           <aside class="room-sidebar">
             <section class="panel roster-panel">
-              <div class="panel-heading"><div><span class="section-label">IN THE ROOM</span><h3>Listeners <span id="member-count">0</span></h3></div><button id="settings-button" class="more-button" type="button">•••</button></div>
+              <div class="panel-heading"><div><span class="section-label">IN THE ROOM</span><h3>Listeners <span id="member-count">0</span></h3></div></div>
               <div id="member-list" class="member-list"></div>
             </section>
 
@@ -161,6 +180,6 @@
     <footer class="site-footer"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="mailto:abuse@example.com">Report abuse</a></footer>
     <div id="toast-stack" class="toast-stack"></div>
     <div id="modal-root"></div>
-    <script type="module" src="/app.js?v=20261019-display-audio-1"></script>
+    <script type="module" src="/app.js?v=20261019-room-lifecycle-1"></script>
   </body>
 </html>
