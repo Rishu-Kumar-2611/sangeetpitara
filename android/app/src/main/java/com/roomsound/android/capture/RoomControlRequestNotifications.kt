@@ -10,7 +10,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import com.roomsound.android.MainActivity
 import com.roomsound.android.R
 import com.roomsound.android.room.RoomRequest
 
@@ -28,7 +27,7 @@ internal class RoomControlRequestNotifications(context: Context) {
 
         private const val CHANNEL_ID = "roomsound_control_requests"
         private const val NOTIFICATION_ID = 4201
-        private const val CONTENT_PENDING_INTENT_REQUEST_CODE = 4202
+        private const val CONTENT_PENDING_INTENT_REQUEST_CODE = 2_000_000
     }
 
     private val appContext = context.applicationContext
@@ -41,7 +40,7 @@ internal class RoomControlRequestNotifications(context: Context) {
         createNotificationChannel()
     }
 
-    fun show(request: RoomRequest) {
+    fun show(request: RoomRequest, prominent: Boolean = false) {
         val requestId = request.id.trim().takeIf { it.isNotEmpty() } ?: return
         if (!request.status.equals("PENDING", ignoreCase = true)) {
             dismiss(requestId)
@@ -56,14 +55,23 @@ internal class RoomControlRequestNotifications(context: Context) {
             return
         }
 
+        val wasAlreadyActive = requestId in activeRequestIds
         cancelExpiry(requestId)
         activeRequestIds += requestId
 
+        val contentIntent = contentPendingIntent(requestId)
+        val useFullScreenIntent = ControlRequestPresentationPolicy.shouldUseFullScreenIntent(
+            isNewRequest = prominent && !wasAlreadyActive,
+            notificationsEnabled = notificationManager.areNotificationsEnabled(),
+            channelImportance = controlRequestChannelImportance(),
+            fullScreenAccess = fullScreenIntentAvailable(),
+        )
+
         val builder = Notification.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_diya)
-            .setContentTitle("${request.requesterName} wants to share audio")
+            .setContentTitle(appContext.getString(R.string.control_request_requester, request.requesterName))
             .setContentText(appContext.getString(R.string.control_request_notification_text))
-            .setContentIntent(contentPendingIntent())
+            .setContentIntent(contentIntent)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_EVENT)
@@ -83,6 +91,7 @@ internal class RoomControlRequestNotifications(context: Context) {
                 ).build(),
             )
 
+        if (useFullScreenIntent) builder.setFullScreenIntent(contentIntent, true)
         if (timeout != null) builder.setTimeoutAfter(timeout)
 
         runCatching {
@@ -137,16 +146,29 @@ internal class RoomControlRequestNotifications(context: Context) {
         notificationManager.createNotificationChannel(channel)
     }
 
-    private fun contentPendingIntent(): PendingIntent {
-        val intent = Intent(appContext, MainActivity::class.java).apply {
+    private fun contentPendingIntent(requestId: String): PendingIntent {
+        val intent = Intent(appContext, RoomControlRequestActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
+        intent.putExtra(EXTRA_REQUEST_ID, requestId)
+        intent.data = Uri.parse("roomsound://control-request/${Uri.encode(requestId)}/open")
         return PendingIntent.getActivity(
             appContext,
-            CONTENT_PENDING_INTENT_REQUEST_CODE,
+            CONTENT_PENDING_INTENT_REQUEST_CODE + ((requestId.hashCode() and 0x3fffffff) % 1_000_000),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+    }
+
+    private fun controlRequestChannelImportance(): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return NotificationManager.IMPORTANCE_HIGH
+        return notificationManager.getNotificationChannel(CHANNEL_ID)?.importance
+            ?: NotificationManager.IMPORTANCE_NONE
+    }
+
+    private fun fullScreenIntentAvailable(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true
+        return notificationManager.canUseFullScreenIntent()
     }
 
     private fun actionPendingIntent(requestId: String, action: String, path: String): PendingIntent {

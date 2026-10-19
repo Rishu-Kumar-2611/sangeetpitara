@@ -10,7 +10,15 @@
     <string name="control_request_channel_name">SangeetPitara control requests</string>
     <string name="control_request_channel_description">Alerts that let a host or co-host approve or reject room control requests.</string>
     <string name="control_request_notification_title">SangeetPitara control request</string>
-    <string name="control_request_notification_text">A participant requested permission to share device audio.</string>
+    <string name="control_request_notification_text">Open to confirm or use Approve/Disapprove.</string>
+    <string name="control_request_requester">%1$s wants to share device audio</string>
+    <string name="control_request_prompt_eyebrow">LISTEN TOGETHER · APPROVAL REQUIRED</string>
+    <string name="control_request_prompt_title">Share audio request</string>
+    <string name="control_request_prompt_body">Allow this participant to play device audio for everyone in the room?</string>
+    <string name="control_request_prompt_note">Review the request before allowing audio to play for the room.</string>
+    <string name="control_request_stale_title">Request no longer available</string>
+    <string name="control_request_stale_text">This request expired, was already handled, or the room is no longer active.</string>
+    <string name="close_prompt">Close</string>
     <string name="approve_control_request">Approve</string>
-    <string name="reject_control_request">Reject</string>
+    <string name="reject_control_request">Disapprove</string>
 </resources>

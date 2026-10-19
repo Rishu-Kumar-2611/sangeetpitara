@@ -55,7 +55,7 @@ class PlaybackCaptureService : Service() {
             when (event) {
                 is RoomSoundEvent.Joined -> syncControlRequestNotifications(event.state)
                 is RoomSoundEvent.State -> syncControlRequestNotifications(event.state)
-                is RoomSoundEvent.ControlRequested -> showControlRequestIfAllowed(event.request)
+                is RoomSoundEvent.ControlRequested -> showControlRequestIfAllowed(event.request, prominent = true)
                 is RoomSoundEvent.RequestResult -> {
                     event.request?.id?.let { requestId ->
                         if (!event.status.equals("PENDING", ignoreCase = true)) {
@@ -207,10 +207,13 @@ class PlaybackCaptureService : Service() {
         if (!accepted) syncControlRequestNotifications(roomSession.currentRoomState())
     }
 
-    private fun showControlRequestIfAllowed(request: com.roomsound.android.room.RoomRequest) {
+    private fun showControlRequestIfAllowed(
+        request: com.roomsound.android.room.RoomRequest,
+        prominent: Boolean = false,
+    ) {
         val state = roomSession.currentRoomState() ?: return
         if (isModerator(state) && state.room.status.equals("ACTIVE", ignoreCase = true)) {
-            controlRequestNotifications.show(request)
+            controlRequestNotifications.show(request, prominent = prominent)
         }
     }
 
@@ -220,7 +223,7 @@ class PlaybackCaptureService : Service() {
             return
         }
         val pending = state.requests.filter { it.status.equals("PENDING", ignoreCase = true) }
-        pending.forEach(controlRequestNotifications::show)
+        pending.forEach { request -> controlRequestNotifications.show(request, prominent = false) }
         controlRequestNotifications.dismissExcept(pending.mapTo(mutableSetOf()) { it.id })
     }
 

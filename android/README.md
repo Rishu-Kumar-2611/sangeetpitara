@@ -76,6 +76,11 @@ package, RoomSound wire protocol, and
   13+ requests notification permission separately from playback-capture audio
   permission; the in-room approval controls remain available if notifications
   are denied.
+- A new participant request opens a request-specific confirmation surface with
+  the requester display name and large **Approve**/**Disapprove** actions. The
+  high-importance notification remains the fallback when Android or the user
+  blocks full-screen notification access, and repeated room-state refreshes do
+  not relaunch the prompt.
 
 The WebSocket client carries JSON control/signaling and the binary relay
 fallback. Its `rtc` events carry the same JSON signaling envelopes used by the

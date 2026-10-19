@@ -833,10 +833,10 @@ class MainActivity : Activity() {
                 text = "${request.requesterName}: ${request.note.ifBlank { "device audio" }}"
                 setPadding(0, dp(5), dp(6), dp(5))
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            row.addView(button("Approve") { approveRequest(request.id) }.apply {
+            row.addView(button(getString(R.string.approve_control_request)) { approveRequest(request.id) }.apply {
                 isEnabled = rewardedAccessGate.hasAccess()
             }, LinearLayout.LayoutParams(dp(100), LinearLayout.LayoutParams.WRAP_CONTENT))
-            row.addView(button("Reject", ButtonTone.DANGER) { rejectRequest(request.id) }.apply {
+            row.addView(button(getString(R.string.reject_control_request), ButtonTone.DANGER) { rejectRequest(request.id) }.apply {
                 isEnabled = rewardedAccessGate.hasAccess()
             }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT))
             approvalContainer.addView(row, matchWrap())
