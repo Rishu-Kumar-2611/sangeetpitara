@@ -62,7 +62,6 @@ const state = {
   captureType: null,
   captureLabel: null,
   audioContext: null,
-  testOscillator: null,
   audioElement: null,
   audioNeedsGesture: false,
   mediaRelay: { ...DEFAULT_MEDIA_RELAY_CONFIG },
@@ -305,7 +304,6 @@ function sourceLabel(type) {
     DEVICE_AUDIO: 'device audio',
     ANDROID_DEVICE_AUDIO: 'device audio',
     WEB_TAB_AUDIO: 'browser-tab audio',
-    TEST_TONE: 'test audio',
     IOS_REPLAYKIT: 'device audio',
   };
   return labels[type] || 'audio';
@@ -1542,7 +1540,7 @@ function openSourceModal(intent) {
   const isParticipantApproval = intent === 'participant';
   const insecure = typeof window !== 'undefined' && !window.isSecureContext;
   const insecureBanner = insecure
-    ? `<div class="settings-note" style="margin:0 0 14px;border-color:rgba(255,127,145,0.32);color:#ffb6c0;text-align:left;line-height:1.5"><strong style="color:#ff9aa8">\u26A0 Insecure origin \u2014 device-audio capture blocked</strong><br>Chrome blocks <code>getDisplayMedia</code> on <code>http://10.x</code> LAN URLs. <br>\u2022 <strong>Laptop:</strong> open <code>http://localhost:4173</code> instead of the 10.x IP \u2014 localhost <em>is</em> a secure context and device/browser audio capture will work.<br>\u2022 <strong>Phone browser:</strong> use the native Android app for device playback capture, or serve this page over <code>https</code>.<br><span style="color:#c8d1ec">Test Tone proves the whole WebRTC path even when the OS/browser blocks capture.</span></div>`
+    ? `<div class="settings-note" style="margin:0 0 14px;border-color:rgba(255,127,145,0.32);color:#ffb6c0;text-align:left;line-height:1.5"><strong style="color:#ff9aa8">\u26A0 Insecure origin \u2014 device-audio capture blocked</strong><br>Chrome blocks <code>getDisplayMedia</code> on <code>http://10.x</code> LAN URLs. <br>\u2022 <strong>Laptop:</strong> open <code>http://localhost:4173</code> instead of the 10.x IP \u2014 localhost <em>is</em> a secure context and device/browser audio capture will work.<br>\u2022 <strong>Phone browser:</strong> use the native Android app for device playback capture, or serve this page over <code>https</code>.</div>`
     : '';
   const hostNote = !insecure && /Mobi|Android/i.test(navigator.userAgent)
     ? `<div class="settings-note" style="margin:0 0 14px;text-align:left;line-height:1.5">\uD83D\uDCF1 You're on a phone browser. Chrome/Firefox on Android do not expose system-audio capture to the web. Use the <strong>Android app</strong> for device playback capture.</div>`
@@ -1552,7 +1550,7 @@ function openSourceModal(intent) {
     : '';
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="source-modal"><div class="modal-eyebrow">AUDIO SOURCE</div><h2>${intent === 'participant' ? 'You were approved to play' : 'Choose what to share'}</h2><p>SangeetPitara publishes supported device or browser playback only. It never opens or streams a microphone.</p>${insecureBanner}${hostNote}${browserAudioNote}<div class="source-options"><button class="source-option" data-source="DEVICE_AUDIO" ${insecure ? 'disabled title="Blocked \u2014 insecure origin (open localhost or use the Android app)"' : ''}><span class="option-icon">◉</span><span><strong>Device / browser audio</strong><small>${insecure ? 'Blocked on http LAN \u2014 use localhost / Android app' : 'Android playback capture or browser tab audio'}</small></span><span>›</span></button><button class="source-option" data-source="TEST_TONE"><span class="option-icon">∿</span><span><strong>Test audio</strong><small>Generate a private room-safe diagnostic signal \u2014 always works</small></span><span>›</span></button></div><button class="modal-close" type="button">Not now</button></div>`;
+  modal.innerHTML = `<div class="source-modal"><div class="modal-eyebrow">AUDIO SOURCE</div><h2>${intent === 'participant' ? 'You were approved to play' : 'Choose what to share'}</h2><p>SangeetPitara publishes supported device or browser playback only. It never opens or streams a microphone.</p>${insecureBanner}${hostNote}${browserAudioNote}<div class="source-options"><button class="source-option" data-source="DEVICE_AUDIO" ${insecure ? 'disabled title="Blocked \u2014 insecure origin (open localhost or use the Android app)"' : ''}><span class="option-icon">◉</span><span><strong>Device / browser audio</strong><small>${insecure ? 'Blocked on http LAN \u2014 use localhost / Android app' : 'Android playback capture or browser tab audio'}</small></span><span>›</span></button></div><button class="modal-close" type="button">Not now</button></div>`;
   $('#modal-root').append(modal);
   modal.querySelector('.modal-close').addEventListener('click', () => {
     modal.remove();
@@ -1573,10 +1571,10 @@ async function startLocalCapture(sourceType, intent = 'host') {
     // getDisplayMedia requires a secure context. http://localhost is secure,
     // but http://10.x LAN IPs are NOT secure, so browser device-audio capture
     // on an http LAN page will always throw.
-    if (sourceType !== 'TEST_TONE' && !window.isSecureContext) {
+    if (!window.isSecureContext) {
       const expected = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-        ? ' Use Test Tone to confirm the room in one click, or use the native Android app for device-audio, or serve this site over https so getDisplayMedia is allowed on LAN IPs.'
-        : ' On this browser, http LAN URLs like http://10.x or http://192.168.x cannot capture device audio by design (Secure Context). Use Test Tone here to verify the room, open the same site on the LAPTOP at http://localhost:4173, use the native Android app, or serve the page over https.';
+        ? ' Use the native Android app for device-audio, or serve this site over https so getDisplayMedia is allowed on LAN IPs.'
+        : ' On this browser, http LAN URLs like http://10.x or http://192.168.x cannot capture device audio by design (Secure Context). Open the same site on the LAPTOP at http://localhost:4173, use the native Android app, or serve the page over https.';
       throw new Error(`Audio capture blocked: this page is not a secure context (${location.protocol}//${location.host}).${expected}`);
     }
     if (sourceType === 'DEVICE_AUDIO') {
@@ -1585,7 +1583,7 @@ async function startLocalCapture(sourceType, intent = 'host') {
         stream = await navigator.mediaDevices.getDisplayMedia(displayAudioCaptureConstraints());
       } catch (e) {
         const n2 = e?.name || '';
-        if (n2 === 'NotAllowedError' || n2 === 'PermissionDeniedError') throw new Error('Display capture was denied. Allow access and tick Share audio, or use Test Tone.');
+        if (n2 === 'NotAllowedError' || n2 === 'PermissionDeniedError') throw new Error('Display capture was denied. Allow access and tick Share audio, then try again.');
         if (n2 === 'InvalidStateError') throw new Error('Display capture is already in use. Close the other picker and try again.');
         throw e;
       }
@@ -1597,20 +1595,6 @@ async function startLocalCapture(sourceType, intent = 'host') {
         throw new Error(`System audio was not captured.${hint} ${displayAudioCaptureGuidance(navigator.userAgent)}`);
       }
       label = 'device or browser audio';
-    } else if (sourceType === 'TEST_TONE') {
-      const context = createRoomAudioContext();
-      if (context.state !== 'running') await context.resume();
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      const destination = context.createMediaStreamDestination();
-      oscillator.frequency.value = 330;
-      gain.gain.value = 0.12;
-      oscillator.connect(gain).connect(destination);
-      oscillator.start();
-      state.audioContext = context;
-      state.testOscillator = oscillator;
-      stream = destination.stream;
-      label = 'test audio';
     } else {
       throw new Error('Only device or browser playback audio is supported. SangeetPitara never streams a microphone.');
     }
@@ -1646,10 +1630,6 @@ function stopLocalCapture(stopServer = true) {
   state.captureStream = null;
   state.captureType = null;
   state.captureLabel = null;
-  if (state.testOscillator) {
-    try { state.testOscillator.stop(); } catch {}
-    state.testOscillator = null;
-  }
   if (state.audioContext) {
     state.audioContext.close();
     state.audioContext = null;

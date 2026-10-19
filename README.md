@@ -95,6 +95,10 @@ cross-NAT connectivity. Set `MEDIA_RELAY_ENABLED=0` to opt back into the
 existing direct WebRTC peer path. The relay is a server bandwidth path: every
 source frame is uploaded to the RoomSound server and fanned out to listeners,
 so it is not free at scale and should be sized and metered accordingly.
+After every deployment, verify `GET /config` reports `mediaRelay.enabled: true`;
+if it reports `false`, set `MEDIA_RELAY_ENABLED=1` in the deployment environment
+and restart/redeploy the service before testing audio. A manually created Render
+service does not necessarily import later `render.yaml` environment changes.
 
 The relay frame is binary and starts with the 20-byte little-endian header
 `RSR1`, version `1`, channels, sample rate, source epoch, sequence, and

@@ -112,6 +112,8 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(app, /displayAudioCaptureConstraints/);
   assert.match(app, /displayAudioCaptureGuidance/);
   assert.match(app, /Firefox.*does not provide system audio/s);
+  assert.doesNotMatch(app, /data-source=["']TEST_TONE["']/);
+  assert.doesNotMatch(app, /Test Tone|Test audio|test audio/);
   assert.match(app, /sourceEpoch/);
   assert.match(app, /openRoomConfirmation/);
   assert.match(app, /type: 'leave-room'/);
