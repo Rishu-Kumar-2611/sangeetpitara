@@ -38,23 +38,25 @@ opens or publishes a microphone input.
   TURN credentials when the RoomSound server is configured with them; it
   falls back to the bundled Google STUN server if the config endpoint is
   unavailable.
-- The activity now exposes native room controls: WebSocket endpoint, display
-  name, create-room, join-room, connection state, room roster, source state,
-  and leave-room. The guest ID is generated once and persisted locally so a
-  reconnect can reattach to the same server-side member.
+- The activity now exposes native room controls: display name, create-room,
+  join-room, connection state, room roster, source state, and leave-room. The
+  WebSocket endpoint is embedded at build time rather than entered in the UI.
+  The guest ID is generated once and persisted locally so a reconnect can
+  reattach to the same server-side member.
 - Android room creation, joining, and device-audio capture use anonymous guest
   identity only. There is no account UI, account client, encrypted session
   restore, or bearer token on the native room socket.
-- It includes a connection probe and accepts `ws://`, `wss://`, `http://`, or
-  `https://` endpoint input. `http://` becomes `ws://`, and `https://` becomes
-  `wss://`, with a visible LAN/public endpoint hint.
+- Build-time endpoint configuration accepts `ws://`, `wss://`, `http://`, or
+  `https://`. `http://` becomes `ws://`, and `https://` becomes `wss://` before
+  the native client is created. The normal room UI does not display the raw
+  endpoint or provide a manual connection probe.
 - A local six-hour rewarded-access gate blocks room creation, joining, and
   capture until a 30-second completion callback. Offline builds use the
   explicit `LocalDemoRewardedAccessProvider` countdown; this is provider-neutral
   plumbing and **does not integrate a real ad SDK**.
-  Emulator builds default to `ws://10.0.2.2:4173`; physical devices start with
-  an empty endpoint so they do not accidentally try to connect to the
-  emulator-only address.
+  When `ROOMSOUND_DEFAULT_ENDPOINT` is omitted, debug emulator builds default
+  to `ws://10.0.2.2:4173`. Physical-device builds and release emulator builds
+  keep the endpoint unset rather than guessing a host.
 - The activity binds `RoomAudioTransport` to the capture service when the
   service is available. Relay mode does not initialize native WebRTC peers or
   require a native WebRTC audio backend for capture. The direct WebRTC opt-out
@@ -96,7 +98,7 @@ media backend.
 Typical wiring for a future media backend is:
 
 ```kotlin
-val client = RoomSoundWebSocketClient("wss://example.invalid/roomsound")
+val client = RoomSoundWebSocketClient(BuildConfig.ROOMSOUND_DEFAULT_ENDPOINT)
 val transport = RoomAudioTransport(client, verifiedNativePublisher)
 controller.start(resultCode, projectionData, sink = transport)
 ```
@@ -123,6 +125,32 @@ Once the toolchain and dependency access are available, run from this folder:
 ```text
 ./gradlew :app:assembleDebug --no-daemon --console=plain
 ```
+
+The RoomSound WebSocket endpoint is a build-time value. Set
+`ROOMSOUND_DEFAULT_ENDPOINT` as either a Gradle property or an environment
+variable; the Gradle property takes precedence when both are supplied. For
+example, the exact property name for an emulator APK is:
+
+```sh
+./gradlew :app:assembleDebug \
+  -PROOMSOUND_DEFAULT_ENDPOINT=ws://10.0.2.2:4173 \
+  --no-daemon --console=plain
+```
+
+For a physical device, replace the value with the real reachable server
+endpoint, or set the same name in the environment before building:
+
+```sh
+export ROOMSOUND_DEFAULT_ENDPOINT='ws://<reachable-lan-host>:4173'
+./gradlew :app:assembleDebug --no-daemon --console=plain
+```
+
+The generated `BuildConfig.ROOMSOUND_DEFAULT_ENDPOINT` value is normalized to
+the corresponding WebSocket scheme at runtime. A non-empty configured value is
+never replaced by the emulator fallback, even when it is invalid; the app
+reports a configuration failure without showing the raw endpoint. If no value
+is supplied on a physical device or release emulator build, create/join stays
+disabled and the room status reports that the APK needs a configured endpoint.
 
 The offline unit-test, debug-assemble, and lint check used for this Android
 slice is:
@@ -153,11 +181,11 @@ export ROOMSOUND_BUILD_DIR="${TMPDIR:-/tmp}/roomsound-android-build"
 `ROOMSOUND_BUILD_DIR` (or `-Proomsound.buildDir=...`) moves generated project
 output only; source files and the Gradle wrapper remain in this checkout.
 
-For a LAN endpoint, enter `ws://` or `http://` followed by the computer's
-reachable LAN address, for example `ws://192.168.1.20:4173`; the device must be
-on the same Wi-Fi. For a public endpoint, enter `wss://` or `https://` and the
-app converts it to a TLS WebSocket. The app shows the selected LAN/public
-guidance below the endpoint field. The local prototype still needs Android
+For a LAN build, set `ROOMSOUND_DEFAULT_ENDPOINT` to a reachable `ws://` or
+`http://` server endpoint; the device must be on the same Wi-Fi. For a public
+build, set it to the real `wss://` or `https://` server endpoint. The app
+converts HTTP(S) input to the corresponding TLS or cleartext WebSocket scheme
+without displaying the raw value. The local prototype still needs Android
 cleartext networking for `ws://`/`http://`; production deployments should use
 `wss://`/`https://` and remove broad cleartext allowances.
 
@@ -219,14 +247,14 @@ media app is needed to validate real playback capture. A real rewarded-ad
 provider has not been connected; the current 30-second local/demo countdown is
 only an offline-access stand-in.
 
-For a local RoomSound server, construct the client with the server's reachable
-WebSocket endpoint, for example `ws://192.168.1.20:4173`. The activity starts
-with the Android-emulator endpoint `ws://10.0.2.2:4173` only on an emulator;
-on a physical device enter the computer's LAN IPv4 address. The manifest
-permits cleartext traffic for this local prototype; production deployments
-should use `wss://` and remove that broad cleartext allowance. The device must
-be able to reach the host, and Windows Firewall must permit port 4173 on the
-active Private network.
+For a local RoomSound server, build the APK with the server's reachable
+WebSocket endpoint in `ROOMSOUND_DEFAULT_ENDPOINT`. A debug emulator uses
+`ws://10.0.2.2:4173` only when that build-time value is omitted; a physical
+device requires an explicitly supplied endpoint. The manifest permits
+cleartext traffic for this local prototype; production deployments should use
+`wss://` and remove that broad cleartext allowance. The device must be able to
+reach the host, and Windows Firewall must permit the server port on the active
+Private network.
 
 ## Expected platform limitations
 

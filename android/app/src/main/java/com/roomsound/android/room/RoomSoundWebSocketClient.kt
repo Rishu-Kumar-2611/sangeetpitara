@@ -358,7 +358,7 @@ class RoomSoundWebSocketClient(
                 .build()
         } catch (error: Throwable) {
             setConnectionState(RoomConnectionState.FAILED)
-            emit(RoomSoundEvent.Error("Invalid RoomSound WebSocket endpoint: ${error.message}"))
+            emit(RoomSoundEvent.Error("Invalid RoomSound WebSocket endpoint. Check the build-time endpoint configuration."))
             return
         }
 
@@ -414,7 +414,12 @@ class RoomSoundWebSocketClient(
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             if (!clearCurrentSocket(webSocket)) return
-            emit(RoomSoundEvent.Error("RoomSound WebSocket failed for $endpoint: ${t.message ?: t.javaClass.simpleName}"))
+            emit(
+                RoomSoundEvent.Error(
+                    "RoomSound WebSocket connection failed (${t.javaClass.simpleName}). " +
+                        "Check the configured server, port, Wi-Fi, and firewall.",
+                ),
+            )
             setConnectionState(RoomConnectionState.FAILED)
             scheduleReconnectIfNeeded()
         }

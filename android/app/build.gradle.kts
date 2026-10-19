@@ -13,6 +13,22 @@ fun configuredValue(name: String): String? = providers.gradleProperty(name)
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
 
+fun String.asBuildConfigStringLiteral(): String = buildString {
+    append('"')
+    for (character in this@asBuildConfigStringLiteral) {
+        when (character) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            else -> append(character)
+        }
+    }
+    append('"')
+}
+
+val configuredDefaultEndpoint = configuredValue("ROOMSOUND_DEFAULT_ENDPOINT").orEmpty()
 val releaseKeystorePath = configuredValue("ROOMSOUND_KEYSTORE")
 val releaseKeystorePassword = configuredValue("ROOMSOUND_KEYSTORE_PASSWORD")
 val releaseKeyAlias = configuredValue("ROOMSOUND_KEY_ALIAS")
@@ -35,6 +51,11 @@ android {
         targetSdk = 35
         versionCode = 2
         versionName = "1.0.0"
+        buildConfigField(
+            "String",
+            "ROOMSOUND_DEFAULT_ENDPOINT",
+            configuredDefaultEndpoint.asBuildConfigStringLiteral(),
+        )
     }
 
     compileOptions {

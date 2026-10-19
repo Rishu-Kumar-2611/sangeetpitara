@@ -36,7 +36,7 @@ import com.roomsound.android.capture.PlaybackCaptureCapabilities
 import com.roomsound.android.capture.PlaybackCaptureService
 import com.roomsound.android.capture.RoomSessionCoordinator
 import com.roomsound.android.room.RoomConnectionState
-import com.roomsound.android.room.RoomEndpointValidator
+import com.roomsound.android.room.RoomEndpointBootstrap
 import com.roomsound.android.room.RoomSoundEvent
 import com.roomsound.android.room.RoomState
 import java.io.PrintWriter
@@ -55,12 +55,10 @@ class MainActivity : Activity() {
         private const val STATE_PROJECTION_IN_FLIGHT = "projection_consent_in_flight"
         private const val PREFERENCES_NAME = "roomsound_android"
         private const val GUEST_ID_KEY = "guest_id"
-        private const val ENDPOINT_KEY = "room_endpoint"
         private const val DISPLAY_NAME_KEY = "display_name"
         private const val LAST_CRASH_DIAGNOSTIC_KEY = "last_uncaught_exception"
         private const val MAX_CRASH_DIAGNOSTIC_CHARS = 8192
         private const val MAX_CRASH_SUMMARY_CHARS = 180
-        private const val DEFAULT_EMULATOR_ENDPOINT = "ws://10.0.2.2:4173"
         private const val TRANSPORT_RENDER_INTERVAL_MS = 500L
         private val SENSITIVE_URL_PATTERN = Regex("""(?i)\b(?:https?|wss?)://[^\s]+""")
         private val SENSITIVE_VALUE_PATTERN = Regex(
@@ -72,8 +70,6 @@ class MainActivity : Activity() {
     private lateinit var statusText: TextView
     private lateinit var accessStatusText: TextView
     private lateinit var accessButton: Button
-    private lateinit var endpointInput: EditText
-    private lateinit var endpointHintText: TextView
     private lateinit var displayNameInput: EditText
     private lateinit var roomNameInput: EditText
     private lateinit var roomCodeInput: EditText
@@ -89,7 +85,6 @@ class MainActivity : Activity() {
     private lateinit var muteButton: Button
     private lateinit var createRoomButton: Button
     private lateinit var joinRoomButton: Button
-    private lateinit var testConnectionButton: Button
     private lateinit var sourceButton: Button
     private lateinit var takeoverButton: Button
     private lateinit var requestAudioButton: Button
@@ -317,6 +312,7 @@ class MainActivity : Activity() {
         val session = service.roomSession()
         if (captureService === service && roomSession === session) {
             serviceBound = true
+            configureRoomSession(session)
             renderAttachedServiceState()
             return
         }
@@ -327,6 +323,7 @@ class MainActivity : Activity() {
         // A started service may outlive this Activity (including rotation).
         session.addListener(roomListener)
         service.addListener(serviceListener)
+        configureRoomSession(session)
         renderAttachedServiceState()
         requestNotificationPermissionIfNeeded()
     }
@@ -385,19 +382,7 @@ class MainActivity : Activity() {
 
         val roomPanel = panelContainer()
         roomPanel.addView(sectionTitle("Room control"), matchWrap())
-        roomPanel.addView(sectionLabel("Connect to a listening room"), matchWrap())
-        endpointInput = inputText("WebSocket endpoint", preferences.getString(ENDPOINT_KEY, defaultRoomEndpoint()))
-        roomPanel.addView(endpointInput, matchWrap())
-        endpointHintText = labelText().apply {
-            text = "LAN: ws:// or http:// with the computer's LAN IP on the same Wi-Fi. Public: wss:// or https:// with TLS."
-            textSize = 11f
-            setTextColor(getColor(R.color.roomsound_cream_muted))
-            setLineSpacing(0f, 1.12f)
-            setPadding(dp(2), dp(7), dp(2), 0)
-        }
-        roomPanel.addView(endpointHintText, matchWrap())
-        testConnectionButton = button("Test room connection", ButtonTone.SECONDARY) { testRoomConnection() }
-        roomPanel.addView(testConnectionButton, marginLayout())
+        roomPanel.addView(sectionLabel("Create or join a listening room"), matchWrap())
 
         displayNameInput = inputText("Display name", preferences.getString(DISPLAY_NAME_KEY, "Android guest"))
         roomPanel.addView(displayNameInput, marginLayout())
@@ -517,7 +502,7 @@ class MainActivity : Activity() {
 
     private fun createRoom() {
         if (!requireRewardedAccess()) return
-        val session = roomClientForEndpoint() ?: return
+        val session = roomSessionForRoomAction() ?: return
         val displayName = displayNameInput.text.toString().trim().ifEmpty { "Android guest" }
         val roomName = roomNameInput.text.toString().trim().ifEmpty { "Listening room" }
         saveRoomInputs(displayName)
@@ -532,7 +517,7 @@ class MainActivity : Activity() {
 
     private fun joinRoom() {
         if (!requireRewardedAccess()) return
-        val session = roomClientForEndpoint() ?: return
+        val session = roomSessionForRoomAction() ?: return
         val displayName = displayNameInput.text.toString().trim().ifEmpty { "Android guest" }
         val roomCode = roomCodeInput.text.toString().trim().uppercase(Locale.US)
         if (roomCode.isEmpty()) {
@@ -549,39 +534,35 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun testRoomConnection() {
-        val session = roomClientForEndpoint() ?: return
-        if (session.connectionState() == RoomConnectionState.JOINED) {
-            appendRoomEvent("Already joined room ${session.currentRoomState()?.room?.code ?: ""}.")
-            return
+    private fun configureRoomSession(session: RoomSessionCoordinator): Boolean {
+        val endpoint = RoomEndpointBootstrap.selectEndpoint(
+            configuredEndpoint = BuildConfig.ROOMSOUND_DEFAULT_ENDPOINT,
+            isDebugBuild = BuildConfig.DEBUG,
+            isEmulator = isProbablyEmulator(),
+        )
+        if (endpoint == null) {
+            appendRoomEvent("Room endpoint is not configured. Build this APK with ROOMSOUND_DEFAULT_ENDPOINT.")
+            return false
         }
-        appendRoomEvent("Testing the RoomSound WebSocket endpoint…")
-        session.connect()
+        if (!session.configureEndpoint(endpoint)) {
+            appendRoomEvent("The configured room endpoint is invalid or the room service is not ready. Use a valid WebSocket server endpoint.")
+            return false
+        }
+        return true
     }
 
-    private fun roomClientForEndpoint(): RoomSessionCoordinator? {
-        val rawEndpoint = endpointInput.text.toString().trim()
-        val endpointInfo = RoomEndpointValidator.parse(rawEndpoint)
-        if (endpointInfo == null) {
-            appendRoomEvent(RoomEndpointValidator.INVALID_ENDPOINT_MESSAGE)
-            return null
-        }
-        val endpoint = endpointInfo.webSocketUrl
-        if (endpointInput.text.toString() != endpoint) endpointInput.setText(endpoint)
-        endpointHintText.text = RoomEndpointValidator.guidance(endpointInfo)
+    private fun roomSessionForRoomAction(): RoomSessionCoordinator? {
         val session = roomSession
-        if (session == null || !session.configureEndpoint(endpoint)) {
-            appendRoomEvent("The room service is not ready for that endpoint. Check the host, port, and Wi-Fi connection.")
+        if (session == null) {
+            appendRoomEvent("The room service is not ready. Try again in a moment.")
             return null
         }
-        preferences.edit().putString(ENDPOINT_KEY, endpoint).apply()
+        if (session.currentEndpoint() == null && !configureRoomSession(session)) return null
+        if (session.currentEndpoint() == null) {
+            appendRoomEvent("The room service has no configured endpoint. Rebuild the APK with ROOMSOUND_DEFAULT_ENDPOINT.")
+            return null
+        }
         return session
-    }
-
-    private fun defaultRoomEndpoint(): String {
-        val saved = preferences.getString(ENDPOINT_KEY, null)?.trim()
-        if (!saved.isNullOrEmpty()) RoomEndpointValidator.normalize(saved)?.let { return it }
-        return if (BuildConfig.DEBUG && isProbablyEmulator()) DEFAULT_EMULATOR_ENDPOINT else ""
     }
 
     private fun isProbablyEmulator(): Boolean = Build.FINGERPRINT.startsWith("generic") ||
@@ -687,8 +668,9 @@ class MainActivity : Activity() {
         if (!::createRoomButton.isInitialized) return
         val accessGranted = rewardedAccessGate.hasAccess()
         val joined = roomSession?.connectionState() == RoomConnectionState.JOINED
-        createRoomButton.isEnabled = accessGranted && !joined
-        joinRoomButton.isEnabled = accessGranted && !joined
+        val endpointConfigured = roomSession?.currentEndpoint() != null
+        createRoomButton.isEnabled = accessGranted && endpointConfigured && !joined
+        joinRoomButton.isEnabled = accessGranted && endpointConfigured && !joined
     }
 
     private fun formatAccessDuration(remainingMillis: Long): String {
@@ -765,11 +747,6 @@ class MainActivity : Activity() {
             roomConnectionText.text = "Connection: ${state.name.lowercase(Locale.US)}"
             val joined = state == RoomConnectionState.JOINED
             updateRoomEntryControls()
-            testConnectionButton.isEnabled = state !in setOf(
-            RoomConnectionState.CONNECTING,
-            RoomConnectionState.JOINED,
-            RoomConnectionState.CLOSING,
-        )
         if (!joined && latestRoomState == null) runCatching { renderRoomState(null) }
         } catch (t: Throwable) { android.util.Log.e("RoomSound", "renderRoomConnection failed", t) }
     }
