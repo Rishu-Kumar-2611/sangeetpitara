@@ -38,11 +38,16 @@ the relay provider or moving to a larger deployment architecture.
 ### Android to laptop
 
 - [ ] Stop the browser source.
+- [ ] In the Android app's **Playback sharing** panel, enable Android
+      Notification Access if automatic pause-on-handoff is required.
 - [ ] Request audio control from Android if the room requires approval.
 - [ ] Approve the request in the laptop browser.
 - [ ] Grant Android playback-capture consent.
 - [ ] Play an eligible Android audio source.
 - [ ] Confirm the laptop hears it.
+- [ ] Approve a competing source and confirm the Android media app pauses when
+      Notification Access is enabled; record any player that does not expose a
+      controllable media session.
 - [ ] Confirm native diagnostics show nonzero offered and ADM PCM samples.
 - [ ] Confirm `pcmAdmSamples` does not rapidly outrun captured samples and
       `underrunSamples` remains stable or grows slowly.

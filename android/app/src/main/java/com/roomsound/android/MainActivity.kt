@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -36,6 +37,7 @@ import com.roomsound.android.capture.CaptureStatus
 import com.roomsound.android.capture.PlaybackCaptureCapabilities
 import com.roomsound.android.capture.PlaybackCaptureService
 import com.roomsound.android.capture.RoomSessionCoordinator
+import com.roomsound.android.capture.SourcePlaybackController
 import com.roomsound.android.room.RoomConnectionState
 import com.roomsound.android.room.RoomEndpointBootstrap
 import com.roomsound.android.room.RoomSoundEvent
@@ -68,6 +70,8 @@ class MainActivity : Activity() {
     }
 
     private lateinit var statusText: TextView
+    private lateinit var handoffControlText: TextView
+    private lateinit var handoffControlButton: Button
     private lateinit var accessStatusText: TextView
     private lateinit var accessButton: Button
     private lateinit var displayNameInput: EditText
@@ -198,6 +202,7 @@ class MainActivity : Activity() {
         activityResumed = true
         ensureCaptureService()
         if (serviceBound) renderAttachedServiceState()
+        renderPlaybackHandoffControl()
         requestNotificationPermissionIfNeeded()
     }
 
@@ -497,12 +502,21 @@ class MainActivity : Activity() {
         capturePanel.addView(sectionTitle("Playback sharing"), matchWrap())
         statusText = diagnosticText().apply { setPadding(dp(12), dp(11), dp(12), dp(7)) }
         capturePanel.addView(statusText, marginLayout())
+        handoffControlText = labelText().apply {
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        capturePanel.addView(handoffControlText, matchWrap())
+        handoffControlButton = button("Enable pause on source handoff", ButtonTone.SECONDARY) {
+            openPlaybackHandoffSettings()
+        }
+        capturePanel.addView(handoffControlButton, marginLayout())
         content.addView(capturePanel, panelLayout())
 
         renderRoomState(null)
         renderTransportNow()
         updateMuteButton()
         renderAccessState()
+        renderPlaybackHandoffControl()
         return ScrollView(this).apply {
             isFillViewport = true
             isVerticalScrollBarEnabled = false
@@ -1290,7 +1304,27 @@ class MainActivity : Activity() {
             conciseCaptureMessage(snapshot)?.let { append("\n").append(it) }
         }
         renderCaptureControls(latestRoomState ?: roomSession?.currentRoomState())
+        renderPlaybackHandoffControl()
         requestTransportRender()
+    }
+
+    private fun renderPlaybackHandoffControl() {
+        if (!::handoffControlText.isInitialized || !::handoffControlButton.isInitialized) return
+        if (SourcePlaybackController.isNotificationAccessEnabled(this)) {
+            handoffControlText.text = "Pause-on-handoff is enabled. SangeetPitara can pause controllable media apps when this phone loses source control."
+            handoffControlButton.text = "Open pause-on-handoff settings"
+        } else {
+            handoffControlText.text = "Optional: enable Android Notification Access (different from normal notifications) so SangeetPitara can pause the current media app when another room source is approved."
+            handoffControlButton.text = "Enable pause on source handoff"
+        }
+    }
+
+    private fun openPlaybackHandoffSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        } catch (error: Throwable) {
+            appendRoomEvent("Android Notification Access settings could not open: ${error.message ?: error.javaClass.simpleName}")
+        }
     }
 
     private fun conciseCapabilityMessage(capability: CaptureCapabilityReport): String? = when {

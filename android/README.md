@@ -22,6 +22,10 @@ package, RoomSound wire protocol, and
 - Reads eligible playback as in-memory PCM16 frames at 48 kHz mono.
 - Displays captured and non-silent frame counts.
 - Stops and releases `AudioRecord` and `MediaProjection` when capture ends.
+- Can pause controllable external media sessions when this phone loses source
+  control. Android Notification Access must be enabled once from the Playback
+  sharing panel; apps that do not expose a controllable media session may keep
+  playing.
 - Uses pinned OkHttp `4.12.0` for a native `ws://`/`wss://` RoomSound client.
 - Sends the existing `create-room` and `join-room` commands using a stable
   caller-provided `guestId`.
@@ -82,6 +86,11 @@ package, RoomSound wire protocol, and
   high-importance notification remains the fallback when Android or the user
   blocks full-screen notification access, and repeated room-state refreshes do
   not relaunch the prompt.
+- When another source is approved or a host takes control back, the old Android
+  source capture is revoked and SangeetPitara attempts to pause the previous
+  phone media session. This is best-effort because Android does not expose a
+  universal pause command for every player. The web browser cannot pause a
+  captured desktop tab or another system app.
 - The installable APK uses the current public Render endpoint by default when
   no `ROOMSOUND_DEFAULT_ENDPOINT` override is supplied. Entering a name is
   required for every create/join action, and creating a room also requires a

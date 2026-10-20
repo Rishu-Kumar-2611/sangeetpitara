@@ -41,6 +41,7 @@ class PlaybackCaptureService : Service() {
     private val listeners = CopyOnWriteArraySet<(CaptureSnapshot) -> Unit>()
     private lateinit var controller: PlaybackCaptureController
     private lateinit var roomSession: RoomSessionCoordinator
+    private lateinit var sourcePlaybackController: SourcePlaybackController
     private lateinit var controlRequestNotifications: RoomControlRequestNotifications
     private var latestSnapshot = CaptureSnapshot(CaptureStatus.IDLE)
     private var foregroundStarted = false
@@ -80,12 +81,19 @@ class PlaybackCaptureService : Service() {
         super.onCreate()
         createNotificationChannel()
         controlRequestNotifications = RoomControlRequestNotifications(this)
-        roomSession = RoomSessionCoordinator(this) { id, message ->
-            controller.stop(id, message, publishStopped = false)
+        sourcePlaybackController = SourcePlaybackController(this)
+        roomSession = RoomSessionCoordinator(this) { id, message, pauseExternalPlayback ->
+            val pauseMessage = if (pauseExternalPlayback) {
+                sourcePlaybackController.pauseExternalPlayback().userMessage
+            } else {
+                null
+            }
+            val finalMessage = listOfNotNull(message, pauseMessage).joinToString(" ")
+            controller.stop(id, finalMessage, publishStopped = false)
             if (latestSnapshot.sessionId == id || foregroundSessionId == id ||
                 latestSnapshot.status !in setOf(CaptureStatus.STARTING, CaptureStatus.READY, CaptureStatus.CAPTURING, CaptureStatus.NO_ACTIVE_PLAYBACK)
             ) {
-                publish(CaptureSnapshot(CaptureStatus.STOPPED, message = message, sessionId = id))
+                publish(CaptureSnapshot(CaptureStatus.STOPPED, message = finalMessage, sessionId = id))
             }
             finishCapture(id)
         }

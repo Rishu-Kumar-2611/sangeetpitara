@@ -309,6 +309,19 @@ mesh room.
 
 Android-wide application audio also remains platform-dependent. The production Android client should use `MediaProjection` and Android playback-capture APIs; a web page cannot guarantee capture of Spotify, YouTube, or other native Android applications.
 
+On Android, the native client can attempt to pause the previous phone media app
+when another room source is approved or takes control. Enable Android
+Notification Access from the app's **Playback sharing** panel for that
+best-effort handoff control; players that do not expose a controllable media
+session may continue playing. A browser cannot pause a captured tab or another
+system app.
+
+Browser-to-browser audio is not disabled. Supported desktop Chrome/Edge
+browsers can capture a tab or system-audio surface and exchange PCM16 audio
+through the enabled server relay. A phone browser can listen, but it generally
+cannot capture playback from another native Android app, so Android-to-laptop
+source sharing requires the native Android app.
+
 ## Android client
 
 The `android/` folder contains the native Kotlin capture and RoomSound client.

@@ -27,7 +27,7 @@ data class PendingCapture(val id: String, val phase: ConsentPhase)
 /** Service-owned signaling, consent transaction, source lease, and native media. */
 class RoomSessionCoordinator(
     context: Context,
-    private val stopLocalCapture: (String, String) -> Unit,
+    private val stopLocalCapture: (String, String, Boolean) -> Unit,
 ) : Closeable {
     interface Listener {
         fun onConnectionStateChanged(state: RoomConnectionState)
@@ -514,7 +514,15 @@ class RoomSessionCoordinator(
         val pending = attempt
         if (pending != null) {
             adoptExpectedLiveSlot(pending)
-            if (!canContinue(pending)) abortAttempt("This phone lost its room source slot. Device capture stopped.", false)
+            val stillAuthorized = canContinue(pending)
+            if (!stillAuthorized) {
+                val pauseExternalPlayback = SourceHandoffPolicy.shouldPauseExternalPlayback(pending.phase, stillAuthorized)
+                abortAttempt(
+                    "This phone lost its room source slot. Device capture stopped.",
+                    releaseOwnSlot = false,
+                    pauseExternalPlayback = pauseExternalPlayback,
+                )
+            }
         } else {
             // The server may resume an old host as LIVE even though native
             // capture was stopped during handoff. Do not present that as audio.
@@ -555,13 +563,17 @@ class RoomSessionCoordinator(
         }
     }
 
-    private fun abortAttempt(message: String, releaseOwnSlot: Boolean) {
+    private fun abortAttempt(
+        message: String,
+        releaseOwnSlot: Boolean,
+        pauseExternalPlayback: Boolean = false,
+    ) {
         val pending = attempt ?: return
         if (releaseOwnSlot) adoptExpectedLiveSlot(pending)
         attempt = null
         mediaBinding = null
         if (releaseOwnSlot) pending.slot?.let(::releaseSlot)
-        stopLocalCapture(pending.id, message)
+        stopLocalCapture(pending.id, message, pauseExternalPlayback)
         status(message)
         changed()
     }
