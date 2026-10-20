@@ -1044,9 +1044,8 @@ function handleServerMessage(message) {
   }
   if (message.type === 'request-result') {
     if (message.status === 'APPROVED') {
-      toast('Your request was approved. Choose an audio source to begin.', 'success');
+      toast('Your request was approved. Tap Share audio to open the browser picker.', 'success');
       addActivity('You were approved to share audio.', true);
-      openSourceModal('participant');
     } else if (message.status === 'EXPIRED') {
       toast('Your request expired because the host did not respond.', 'error');
       addActivity('Your audio request expired.', true);
@@ -1205,13 +1204,15 @@ function renderControls() {
     $('#request-audio').textContent = '↗  Request to play';
     if (selfIsSource) {
       $('#request-audio').classList.remove('hidden');
-      $('#request-audio').textContent = 'Stop sharing';
+      $('#request-audio').textContent = state.captureStream ? 'Stop sharing' : 'Share audio';
     }
     $('#enable-audio-participant').classList.toggle('hidden', !state.audioNeedsGesture || selfIsSource);
     if (requestTitle && requestStatus) {
       if (selfIsSource) {
         requestTitle.textContent = 'You are sharing audio';
-        requestStatus.textContent = 'Your room audio is live. Stop sharing when you are done.';
+        requestStatus.textContent = state.captureStream
+          ? 'Your room audio is live. Stop sharing when you are done.'
+          : 'You were approved. Tap Share audio to open the browser picker.';
       } else if (myRequest) {
         requestTitle.textContent = 'Waiting for host approval';
         requestStatus.textContent = 'Your request is in the queue. You can cancel it here if you change your mind.';
@@ -1534,32 +1535,6 @@ function pollPeerTelemetry() {
     () => { if (state.telemetryPollPromise === task) state.telemetryPollPromise = null; },
   );
   return task;
-}
-
-function openSourceModal(intent) {
-  const isParticipantApproval = intent === 'participant';
-  const insecure = typeof window !== 'undefined' && !window.isSecureContext;
-  const insecureBanner = insecure
-    ? `<div class="settings-note" style="margin:0 0 14px;border-color:rgba(255,127,145,0.32);color:#ffb6c0;text-align:left;line-height:1.5"><strong style="color:#ff9aa8">\u26A0 Insecure origin \u2014 device-audio capture blocked</strong><br>Chrome blocks <code>getDisplayMedia</code> on <code>http://10.x</code> LAN URLs. <br>\u2022 <strong>Laptop:</strong> open <code>http://localhost:4173</code> instead of the 10.x IP \u2014 localhost <em>is</em> a secure context and device/browser audio capture will work.<br>\u2022 <strong>Phone browser:</strong> use the native Android app for device playback capture, or serve this page over <code>https</code>.</div>`
-    : '';
-  const hostNote = !insecure && /Mobi|Android/i.test(navigator.userAgent)
-    ? `<div class="settings-note" style="margin:0 0 14px;text-align:left;line-height:1.5">\uD83D\uDCF1 You're on a phone browser. Chrome/Firefox on Android do not expose system-audio capture to the web. Use the <strong>Android app</strong> for device playback capture.</div>`
-    : '';
-  const browserAudioNote = !insecure && /Firefox\/|FxiOS\//i.test(navigator.userAgent)
-    ? `<div class="settings-note" style="margin:0 0 14px;border-color:rgba(255,190,95,0.36);color:#ffe0a8;text-align:left;line-height:1.5">\u26A0 Firefox can share the picture of your screen, but this browser does not provide system audio to SangeetPitara. Use <strong>Google Chrome or Microsoft Edge</strong> on the laptop for music sharing; their picker offers Share tab audio or Share system audio.</div>`
-    : '';
-  const modal = document.createElement('div');
-  modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="source-modal"><div class="modal-eyebrow">AUDIO SOURCE</div><h2>${intent === 'participant' ? 'You were approved to play' : 'Choose what to share'}</h2><p>SangeetPitara publishes supported device or browser playback only. It never opens or streams a microphone.</p>${insecureBanner}${hostNote}${browserAudioNote}<div class="source-options"><button class="source-option" data-source="DEVICE_AUDIO" ${insecure ? 'disabled title="Blocked \u2014 insecure origin (open localhost or use the Android app)"' : ''}><span class="option-icon">◉</span><span><strong>Device / browser audio</strong><small>${insecure ? 'Blocked on http LAN \u2014 use localhost / Android app' : 'Android playback capture or browser tab audio'}</small></span><span>›</span></button></div><button class="modal-close" type="button">Not now</button></div>`;
-  $('#modal-root').append(modal);
-  modal.querySelector('.modal-close').addEventListener('click', () => {
-    modal.remove();
-    if (isParticipantApproval) send({ type: 'stop-source' });
-  });
-  modal.querySelectorAll('[data-source]').forEach((button) => button.addEventListener('click', async () => {
-    modal.remove();
-    await startLocalCapture(button.dataset.source, intent);
-  }));
 }
 
 async function startLocalCapture(sourceType, intent = 'host') {
@@ -2053,6 +2028,13 @@ function openRoomSettings() {
 
 function sendRequest() {
   if (isSelfSource()) {
+    if (!state.captureStream) {
+      // getDisplayMedia must be launched from a user gesture. A participant
+      // becomes the authorized source when the host approves the request, so
+      // this same button opens the native picker without another app modal.
+      void startLocalCapture('DEVICE_AUDIO', 'participant');
+      return;
+    }
     stopLocalCapture(false);
     send({ type: 'stop-source' });
     addActivity('You stopped sharing audio.', true);
@@ -2073,13 +2055,13 @@ function wireEvents() {
     connectAnd({ type: 'join', code });
   });
   $('#room-code').addEventListener('input', (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
-  $('#share-audio').addEventListener('click', () => openSourceModal('host'));
+  $('#share-audio').addEventListener('click', () => { void startLocalCapture('DEVICE_AUDIO', 'host'); });
   $('#takeover-audio').addEventListener('click', () => {
     if (state.captureStream) {
       send({ type: 'takeover', sourceType: state.captureType || 'DEVICE_AUDIO' });
       setTimeout(() => send({ type: 'start-source', sourceType: state.captureType, sourceLabel: state.captureLabel }), 100);
     } else {
-      openSourceModal('takeover');
+      void startLocalCapture('DEVICE_AUDIO', 'takeover');
     }
   });
   $('#stop-audio').addEventListener('click', () => { stopLocalCapture(false); send({ type: 'stop-source' }); addActivity('You stopped sharing audio.', true); });

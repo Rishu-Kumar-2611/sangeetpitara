@@ -21,14 +21,14 @@ the relay provider or moving to a larger deployment architecture.
 
 - [ ] Create a room in the laptop browser.
 - [ ] Join from Android.
-- [ ] Start browser **Test audio**.
+- [ ] Start browser **device/browser audio** and choose a tab or screen with audio.
 - [ ] Confirm Android hears the test signal.
 - [ ] Confirm browser telemetry reaches `connected` and shows received RTP.
 - [ ] Run continuously for 5 minutes without a force-close or UI stall.
 
 ### Laptop device/browser audio to Android
 
-- [ ] Stop Test audio.
+- [ ] Stop browser device/browser audio.
 - [ ] Start browser **Device / browser audio** from `localhost`.
 - [ ] Select a tab or window that is actively playing audio and enable
       **Share audio** in the browser picker.

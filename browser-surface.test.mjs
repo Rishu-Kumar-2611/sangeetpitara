@@ -52,10 +52,11 @@ test('browser-facing messages use SangeetPitara while retaining existing room in
 });
 
 test('browser surface is anonymous and exposes the local rewarded-access gate', async () => {
-  const [html, app, ads, relay, dockerfile] = await Promise.all([
+  const [html, app, ads, capture, relay, dockerfile] = await Promise.all([
     readFile(new URL('index.html', root), 'utf8'),
     readFile(new URL('app.js', root), 'utf8'),
     readFile(new URL('ads.mjs', root), 'utf8'),
+    readFile(new URL('capture-tracks.js', root), 'utf8'),
     readFile(new URL('media-relay.mjs', root), 'utf8'),
     readFile(new URL('Dockerfile.runtime', root), 'utf8'),
   ]);
@@ -111,7 +112,7 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(app, /event\.data instanceof Blob|handleRelayFrame\(event\.data\)/);
   assert.match(app, /displayAudioCaptureConstraints/);
   assert.match(app, /displayAudioCaptureGuidance/);
-  assert.match(app, /Firefox.*does not provide system audio/s);
+  assert.match(capture, /Firefox.*does not provide a live system-audio track/s);
   assert.doesNotMatch(app, /data-source=["']TEST_TONE["']/);
   assert.doesNotMatch(app, /Test Tone|Test audio|test audio/);
   assert.match(app, /sourceEpoch/);
@@ -128,6 +129,31 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(relay, /MEDIA_RELAY_CHANNELS = 1/);
   assert.match(relay, /sampleCount <= 0/);
   assert.match(relay, /payloadBytes !== sampleCount \* 2/);
+});
+
+test('browser audio sharing opens the native DEVICE_AUDIO picker without a source modal', async () => {
+  const [app, capture] = await Promise.all([
+    readFile(new URL('app.js', root), 'utf8'),
+    readFile(new URL('capture-tracks.js', root), 'utf8'),
+  ]);
+
+  assert.doesNotMatch(app, /openSourceModal/);
+  assert.doesNotMatch(app, /source-options|source-option|data-source=/);
+  assert.doesNotMatch(app, /<div class="source-modal"><div class="modal-eyebrow">AUDIO SOURCE/);
+  assert.doesNotMatch(app, /Choose what to share/);
+  assert.doesNotMatch(app, /TEST_TONE|Test Tone|Test audio|test audio/);
+
+  assert.match(app, /startLocalCapture\('DEVICE_AUDIO', 'participant'\)/);
+  assert.match(app, /startLocalCapture\('DEVICE_AUDIO', 'host'\)/);
+  assert.match(app, /startLocalCapture\('DEVICE_AUDIO', 'takeover'\)/);
+  assert.match(app, /Your request was approved\. Tap Share audio to open the browser picker\./);
+  assert.match(app, /if \(!state\.captureStream\) \{\s*\/\/ getDisplayMedia must be launched from a user gesture\./s);
+  assert.match(app, /navigator\.mediaDevices\.getDisplayMedia\(displayAudioCaptureConstraints\(\)\)/);
+  assert.match(app, /if \(sourceType === 'DEVICE_AUDIO'\)/);
+  assert.match(app, /if \(!window\.isSecureContext\)/);
+  assert.match(app, /displayAudioCaptureGuidance\(navigator\.userAgent\)/);
+  assert.doesNotMatch(capture, /Test Tone|Test audio|test audio/);
+  assert.match(app, /Display capture was denied\. Allow access and tick Share audio, then try again\./);
 });
 
 test('browser RTC keeps transiently disconnected peers for ICE recovery', async () => {

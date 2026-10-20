@@ -25,7 +25,7 @@ export function displayAudioCaptureGuidance(userAgent = '') {
   if (/Firefox\/|FxiOS\//i.test(String(userAgent))) {
     return 'Firefox can share the screen here, but this browser does not provide a live system-audio track for SangeetPitara. Open SangeetPitara in Google Chrome or Microsoft Edge on the laptop, then choose a Chrome tab with Share tab audio or a screen with Share system audio.';
   }
-  return 'The browser returned the screen without a live audio track. In Chrome or Edge, choose a tab or screen that is actively playing sound and enable Share tab audio or Share system audio. If the picker has no audio control, switch to Chrome or Edge or choose Test audio.';
+  return 'The browser returned the screen without a live audio track. In Chrome or Edge, choose a tab or screen that is actively playing sound and enable Share tab audio or Share system audio. If the picker has no audio control, switch to Chrome or Edge and choose a surface that supports audio sharing.';
 }
 
 export function prepareDisplayAudioStream(stream) {
