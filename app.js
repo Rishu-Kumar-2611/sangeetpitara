@@ -3,8 +3,9 @@ import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
+  mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261019-sangeetpitara-1';
+} from './capture-tracks.js?v=20261020-sangeetpitara-2';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
@@ -21,7 +22,7 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261019-sangeetpitara-1';
+} from './ads.mjs?v=20261020-sangeetpitara-2';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -309,6 +310,10 @@ function sourceLabel(type) {
   return labels[type] || 'audio';
 }
 
+function currentMobileAudioGuidance() {
+  return typeof navigator === 'undefined' ? null : mobileAudioCaptureGuidance(navigator.userAgent);
+}
+
 function isModerator() {
   return state.self?.role === 'HOST' || state.self?.role === 'CO_HOST';
 }
@@ -495,7 +500,7 @@ async function showControlRequestNotification(request) {
   try {
     await registration.showNotification(`${request.requesterName} wants to share audio`, {
       body: `${state.room.name} · Approve or reject this control request.`,
-      icon: '/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261019-sangeetpitara-1',
+      icon: '/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261020-sangeetpitara-2',
       tag: `roomsound-control-${request.id}`,
       renotify: true,
       data: {
@@ -787,6 +792,29 @@ function toast(message, kind = '') {
   setTimeout(() => item.remove(), 4300);
 }
 
+function openMobileAudioGuide() {
+  const guidance = currentMobileAudioGuidance();
+  if (!guidance) return false;
+  const roomCode = state.room?.code ? ` Room code: <strong>${escapeHtml(state.room.code)}</strong>.` : '';
+  const download = guidance.downloadHref
+    ? `<a class="primary-button mobile-audio-download" href="${escapeHtml(guidance.downloadHref)}" download>${escapeHtml(guidance.downloadLabel)}</a>`
+    : '';
+  const steps = guidance.downloadHref
+    ? '<ol class="mobile-audio-steps"><li>Open or install the SangeetPitara Android app.</li><li>Join this same room with the displayed code.</li><li>Request device audio, approve it on the laptop, then tap <strong>Share device audio</strong> in the app.</li></ol>'
+    : '<p class="mobile-audio-followup">Return to a supported desktop browser for browser audio sharing.</p>';
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `<div class="mobile-audio-modal" role="dialog" aria-modal="true" aria-labelledby="mobile-audio-guide-title"><div class="modal-eyebrow">PHONE AUDIO SHARING</div><h2 id="mobile-audio-guide-title">${escapeHtml(guidance.title)}</h2><p>${escapeHtml(guidance.message)}${roomCode}</p>${steps}<div class="mobile-audio-actions">${download}<button class="modal-close" type="button">Close</button></div></div>`;
+  $('#modal-root').replaceChildren(modal);
+  const dismiss = () => modal.remove();
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) dismiss();
+  });
+  modal.querySelector('.modal-close').addEventListener('click', dismiss);
+  (modal.querySelector('.mobile-audio-download') || modal.querySelector('.modal-close')).focus();
+  return true;
+}
+
 function setConnection(label, good = true) {
   $('#connection-label').textContent = label;
   $('#connection-chip').classList.toggle('bad', !good);
@@ -1044,7 +1072,9 @@ function handleServerMessage(message) {
   }
   if (message.type === 'request-result') {
     if (message.status === 'APPROVED') {
-      toast('Your request was approved. Tap Share audio to open the browser picker.', 'success');
+      toast(currentMobileAudioGuidance()
+        ? 'Your request was approved. Use the Android app to share phone audio.'
+        : 'Your request was approved. Tap Share audio to open the browser picker.', 'success');
       addActivity('You were approved to share audio.', true);
     } else if (message.status === 'EXPIRED') {
       toast('Your request expired because the host did not respond.', 'error');
@@ -1182,6 +1212,7 @@ function renderSource() {
 
 function renderControls() {
   const moderator = isModerator();
+  const mobileAudio = currentMobileAudioGuidance();
   const activeOther = Boolean(state.room?.activeSourceId && state.room.activeSourceId !== state.self?.id);
   const sourceIsParticipant = activeOther && state.members.find((member) => member.id === state.room.activeSourceId)?.role === 'PARTICIPANT';
   $('#host-controls').classList.toggle('hidden', !moderator);
@@ -1189,6 +1220,8 @@ function renderControls() {
 
   if (moderator) {
     $('#share-audio').classList.toggle('hidden', isSelfSource());
+    if (mobileAudio) $('#share-audio').textContent = 'Use Android app';
+    else $('#share-audio').innerHTML = '<span class="button-icon">◉</span> Share audio';
     $('#stop-audio').classList.toggle('hidden', !isSelfSource());
     $('#takeover-audio').classList.toggle('hidden', !activeOther);
     $('#enable-audio').classList.toggle('hidden', !state.audioNeedsGesture || isSelfSource());
@@ -1201,14 +1234,20 @@ function renderControls() {
     $('#cancel-request').classList.toggle('hidden', !myRequest);
     $('#cancel-request').dataset.requestId = myRequest?.id || '';
     $('#ask-takeover').classList.toggle('hidden', !sourceIsParticipant);
-    $('#request-audio').textContent = '↗  Request to play';
+    if (mobileAudio) $('#request-audio').textContent = 'Use Android app';
+    else $('#request-audio').innerHTML = '<span>↗</span> Request to play';
     if (selfIsSource) {
       $('#request-audio').classList.remove('hidden');
-      $('#request-audio').textContent = state.captureStream ? 'Stop sharing' : 'Share audio';
+      if (state.captureStream) $('#request-audio').textContent = 'Stop sharing';
+      else if (mobileAudio) $('#request-audio').textContent = 'Use Android app';
+      else $('#request-audio').textContent = 'Share audio';
     }
     $('#enable-audio-participant').classList.toggle('hidden', !state.audioNeedsGesture || selfIsSource);
     if (requestTitle && requestStatus) {
-      if (selfIsSource) {
+      if (mobileAudio && !sourceIsParticipant) {
+        requestTitle.textContent = 'Use the Android app to share phone audio';
+        requestStatus.textContent = 'Mobile browsers cannot capture playback from another phone app. Download or open the SangeetPitara Android app, join this room, and request device audio there.';
+      } else if (selfIsSource) {
         requestTitle.textContent = 'You are sharing audio';
         requestStatus.textContent = state.captureStream
           ? 'Your room audio is live. Stop sharing when you are done.'
@@ -1223,7 +1262,7 @@ function renderControls() {
         requestTitle.textContent = 'Ask to share audio';
         requestStatus.textContent = 'Request host approval when you want to play something for the room.';
       }
-      if (state.audioNeedsGesture && !selfIsSource) requestStatus.textContent += ' Tap Enable room audio to start playback.';
+      if (state.audioNeedsGesture && !selfIsSource && !mobileAudio) requestStatus.textContent += ' Tap Enable room audio to start playback.';
     }
   }
 }
@@ -1540,6 +1579,7 @@ function pollPeerTelemetry() {
 async function startLocalCapture(sourceType, intent = 'host') {
   stopLocalCapture(false);
   const nonce = ++state.captureNonce;
+  const mobileAudio = currentMobileAudioGuidance();
   try {
     let stream;
     let label;
@@ -1553,6 +1593,7 @@ async function startLocalCapture(sourceType, intent = 'host') {
       throw new Error(`Audio capture blocked: this page is not a secure context (${location.protocol}//${location.host}).${expected}`);
     }
     if (sourceType === 'DEVICE_AUDIO') {
+      if (mobileAudio) throw new Error(mobileAudio.message);
       if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('This browser does not expose display-audio capture. Try a current desktop browser or the Android app.');
       try {
         stream = await navigator.mediaDevices.getDisplayMedia(displayAudioCaptureConstraints());
@@ -1592,8 +1633,9 @@ async function startLocalCapture(sourceType, intent = 'host') {
     addActivity(`You started sharing ${label}.`, true);
   } catch (error) {
     if (intent === 'participant') send({ type: 'stop-source' });
-    toast(error.message || 'Audio capture was not available.', 'error');
-    addActivity('Audio sharing could not start.', true);
+    const openedMobileGuide = mobileAudio && openMobileAudioGuide();
+    if (!openedMobileGuide) toast(error.message || 'Audio capture was not available.', 'error');
+    addActivity(openedMobileGuide ? 'Use the Android app to share phone audio.' : 'Audio sharing could not start.', true);
   }
 }
 
@@ -2038,6 +2080,10 @@ function sendRequest() {
     stopLocalCapture(false);
     send({ type: 'stop-source' });
     addActivity('You stopped sharing audio.', true);
+    return;
+  }
+  if (currentMobileAudioGuidance()) {
+    openMobileAudioGuide();
     return;
   }
   send({ type: 'request-control', sourceType: 'DEVICE_AUDIO', note: 'I want to share device audio.' });

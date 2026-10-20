@@ -6,7 +6,7 @@ const root = new URL('.', import.meta.url);
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
-  const brandingVersion = '20261019-sangeetpitara-1';
+  const brandingVersion = '20261020-sangeetpitara-2';
   const pages = await Promise.all(['index.html', 'privacy.html', 'terms.html'].map(async (name) => ({
     name,
     html: await readFile(new URL(name, root), 'utf8'),
@@ -46,9 +46,9 @@ test('browser-facing messages use SangeetPitara while retaining existing room in
   assert.match(app, /roomsound-volume/);
   assert.match(ads, /roomsound-rewarded-access-expires-at/);
   assert.match(ads, /roomsound-ad-consent/);
-  assert.match(app, /from '\.\/ads\.mjs\?v=20261019-sangeetpitara-1'/);
-  assert.match(app, /from '\.\/capture-tracks\.js\?v=20261019-sangeetpitara-1'/);
-  assert.match(html, /src="\/app\.js\?v=20261019-sangeetpitara-1"/);
+  assert.match(app, /from '\.\/ads\.mjs\?v=20261020-sangeetpitara-2'/);
+  assert.match(app, /from '\.\/capture-tracks\.js\?v=20261020-sangeetpitara-2'/);
+  assert.match(html, /src="\/app\.js\?v=20261020-sangeetpitara-2"/);
 });
 
 test('browser surface is anonymous and exposes the local rewarded-access gate', async () => {
@@ -147,11 +147,14 @@ test('browser audio sharing opens the native DEVICE_AUDIO picker without a sourc
   assert.match(app, /startLocalCapture\('DEVICE_AUDIO', 'host'\)/);
   assert.match(app, /startLocalCapture\('DEVICE_AUDIO', 'takeover'\)/);
   assert.match(app, /Your request was approved\. Tap Share audio to open the browser picker\./);
+  assert.match(app, /Use the Android app to share phone audio/);
+  assert.match(app, /openMobileAudioGuide/);
   assert.match(app, /if \(!state\.captureStream\) \{\s*\/\/ getDisplayMedia must be launched from a user gesture\./s);
   assert.match(app, /navigator\.mediaDevices\.getDisplayMedia\(displayAudioCaptureConstraints\(\)\)/);
   assert.match(app, /if \(sourceType === 'DEVICE_AUDIO'\)/);
   assert.match(app, /if \(!window\.isSecureContext\)/);
   assert.match(app, /displayAudioCaptureGuidance\(navigator\.userAgent\)/);
+  assert.match(app, /mobileAudioCaptureGuidance/);
   assert.doesNotMatch(capture, /Test Tone|Test audio|test audio/);
   assert.match(app, /Display capture was denied\. Allow access and tick Share audio, then try again\./);
 });

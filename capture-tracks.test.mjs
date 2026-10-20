@@ -4,6 +4,7 @@ import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
+  mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
 } from './capture-tracks.js';
 
@@ -26,6 +27,14 @@ test('requests browser hints for system and tab audio', () => {
 test('explains that Firefox screen sharing does not provide room audio', () => {
   assert.match(displayAudioCaptureGuidance('Mozilla/5.0 Firefox/146.0'), /Firefox.*does not provide a live system-audio track/i);
   assert.match(displayAudioCaptureGuidance('Mozilla/5.0 Chrome/146.0'), /Chrome or Edge.*audio control/i);
+});
+
+test('directs mobile browsers to the native app for phone playback audio', () => {
+  const android = mobileAudioCaptureGuidance('Mozilla/5.0 (Linux; Android 15; Pixel 9) Chrome/146.0 Mobile');
+  assert.equal(android.downloadHref, '/downloads/SangeetPitara-debug.apk');
+  assert.match(android.title, /Android app/);
+  assert.match(android.message, /cannot capture playback/i);
+  assert.equal(mobileAudioCaptureGuidance('Mozilla/5.0 (X11; Linux x86_64) Chrome/146.0'), null);
 });
 
 test('keeps the display track live but returns only audio tracks', () => {

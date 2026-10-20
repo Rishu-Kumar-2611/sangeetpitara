@@ -28,6 +28,27 @@ export function displayAudioCaptureGuidance(userAgent = '') {
   return 'The browser returned the screen without a live audio track. In Chrome or Edge, choose a tab or screen that is actively playing sound and enable Share tab audio or Share system audio. If the picker has no audio control, switch to Chrome or Edge and choose a surface that supports audio sharing.';
 }
 
+export function mobileAudioCaptureGuidance(userAgent = '') {
+  const value = String(userAgent);
+  if (/Android/i.test(value)) {
+    return {
+      title: 'Use the Android app to share phone audio',
+      message: 'Android browsers cannot capture playback from another phone app. Join this room in the SangeetPitara Android app, then request and share device audio there.',
+      downloadHref: '/downloads/SangeetPitara-debug.apk',
+      downloadLabel: 'Download Android app',
+    };
+  }
+  if (/iPhone|iPad|iPod/i.test(value)) {
+    return {
+      title: 'Phone-browser audio sharing is unavailable',
+      message: 'Mobile browsers cannot capture playback from another phone app. Use a supported desktop browser for browser audio, or join this room from a supported native app.',
+      downloadHref: null,
+      downloadLabel: null,
+    };
+  }
+  return null;
+}
+
 export function prepareDisplayAudioStream(stream) {
   const videoTracks = stream?.getVideoTracks?.() || [];
   videoTracks.forEach((track) => {
