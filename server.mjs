@@ -587,8 +587,18 @@ async function handleAuthRequest(req, res, requestPath) {
   }
 }
 
+const ROOM_CODE_PATTERN = /^[A-F0-9]{6}$/;
+
+function normalizeRoomCode(value) {
+  if (typeof value !== 'string') return '';
+  const normalized = value.trim().replace(/[\s-]+/g, '').toUpperCase();
+  return ROOM_CODE_PATTERN.test(normalized) ? normalized : '';
+}
+
 function findRoomByCode(code) {
-  return [...rooms.values()].find((room) => room.code === String(code).toUpperCase());
+  const normalizedCode = normalizeRoomCode(code);
+  if (!normalizedCode) return null;
+  return [...rooms.values()].find((room) => room.code === normalizedCode);
 }
 
 function persistedRoomRecord(room) {

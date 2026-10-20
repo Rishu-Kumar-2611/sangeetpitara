@@ -200,6 +200,40 @@ test('phone request keeps source authorization through RTC signaling', async (t)
   assert.equal(rtc.signal.description.sdp, 'phone-offer');
 });
 
+test('joins when a pasted room code contains case changes, whitespace, and hyphens', async (t) => {
+  const { server, url } = await startServer();
+  const host = client(url);
+  const phone = client(url);
+  t.after(() => {
+    host.socket.close();
+    phone.socket.close();
+    server.kill();
+  });
+
+  await host.open();
+  host.socket.send(JSON.stringify({
+    type: 'create-room',
+    name: 'Pasted code regression',
+    displayName: 'Laptop',
+    guestId: 'pasted-code-laptop',
+  }));
+  const created = await host.wait((message) => message.type === 'joined');
+  const code = created.state.room.code;
+  const pastedCode = `  ${code.slice(0, 2).toLowerCase()} ${code.slice(2, 4)}-${code.slice(4)}  `;
+
+  await phone.open();
+  phone.socket.send(JSON.stringify({
+    type: 'join-room',
+    code: pastedCode,
+    displayName: 'Android',
+    guestId: 'pasted-code-android',
+  }));
+  const joined = await phone.wait((message) => message.type === 'joined');
+
+  assert.equal(joined.state.room.code, code);
+  assert.equal(joined.state.self.name, 'Android');
+});
+
 test('rejects microphone source requests', async (t) => {
   const { server, url } = await startServer();
   const host = client(url);
