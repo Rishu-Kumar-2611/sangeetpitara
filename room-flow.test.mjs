@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import WebSocket from 'ws';
@@ -82,6 +83,30 @@ test('config stays STUN-only when relay credentials exist but TURN is disabled',
   assert.equal(response.status, 200);
   const config = await response.json();
   assert.deepEqual(config.iceServers, [{ urls: 'stun:stun.l.google.com:19302' }]);
+});
+
+test('legacy public hostname redirects to the canonical room service', async (t) => {
+  const { server, http: httpUrl } = await startServer({
+    NODE_ENV: 'production',
+    CANONICAL_PUBLIC_HOST: 'canonical.example.test',
+    LEGACY_PUBLIC_HOSTS: 'legacy.example.test',
+  });
+  t.after(() => server.kill());
+
+  const port = Number(new URL(httpUrl).port);
+  const response = await new Promise((resolve, reject) => {
+    const request = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: '/?room=ABC123',
+      headers: { Host: 'legacy.example.test' },
+    }, resolve);
+    request.once('error', reject);
+    request.end();
+  });
+  response.resume();
+  assert.equal(response.statusCode, 308);
+  assert.equal(response.headers.location, 'https://canonical.example.test/?room=ABC123');
 });
 
 function client(url) {

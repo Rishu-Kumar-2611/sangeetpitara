@@ -42,6 +42,16 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 const rootPath = resolve(root);
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || '0.0.0.0';
+const canonicalPublicHost = String(
+  process.env.CANONICAL_PUBLIC_HOST
+    || (process.env.NODE_ENV === 'production' ? 'sangeet-pitaraa.onrender.com' : ''),
+).trim().toLowerCase();
+const legacyPublicHosts = new Set(
+  String(process.env.LEGACY_PUBLIC_HOSTS || 'sangeet-pitara.onrender.com')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean),
+);
 const rooms = new Map();
 const requestTtlMs = 45_000;
 
@@ -1200,10 +1210,30 @@ function buildTurnConfig() {
   };
 }
 
+function canonicalPublicRedirect(req, url) {
+  const requestHost = String(req.headers.host || '').split(':')[0].trim().toLowerCase();
+  if (!canonicalPublicHost || !legacyPublicHosts.has(requestHost) || requestHost === canonicalPublicHost) return null;
+  const target = new URL(url.href);
+  target.protocol = 'https:';
+  target.host = canonicalPublicHost;
+  return target.href;
+}
+
 const server = http.createServer(async (req, res) => {
   for (const [k, v] of Object.entries(securityHeaders)) res.setHeader(k, v);
   const url = new URL(req.url, `http://${req.headers.host}`);
   const requestPath = url.pathname;
+
+  const redirectLocation = canonicalPublicRedirect(req, url);
+  const operationalPath = ['/health', '/ready', '/metrics'].includes(requestPath);
+  if (redirectLocation && !operationalPath) {
+    res.writeHead(308, {
+      Location: redirectLocation,
+      'Cache-Control': 'no-store',
+    });
+    res.end();
+    return;
+  }
 
   const ip = getClientIp(req);
   if (!checkRateLimit(ip)) {
