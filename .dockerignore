@@ -2,7 +2,7 @@
 .env.*
 !.env.example
 .git/
-.gitignore
+# Keep .gitignore: the release packaging regression reads it during npm test.
 node_modules/
 *.log
 *.apk

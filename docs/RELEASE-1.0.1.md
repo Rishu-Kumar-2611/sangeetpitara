@@ -28,7 +28,8 @@ over the existing application; no uninstall or application-data reset is needed.
 
 ## Verified before publishing
 
-- `npm test`: 77 tests, plus origin, payload, and RTC checks passed.
+- `npm test`: 79 tests (including the build-context regressions), plus origin,
+  payload, and RTC checks passed on Node 22.14.0 and Node 26.8.1.
 - `npm run check` and `git diff --check`: passed.
 - `node checks/release-local.mjs`: isolated HTTP asset/APK hash checks and the
   room-control smoke flow passed; the smoke room is explicitly ended afterward.
@@ -37,10 +38,25 @@ over the existing application; no uninstall or application-data reset is needed.
 - APK signature verified, package/version inspected, both export hashes equal.
 - The rollback APK is byte-identical to the previous Git-tracked public APK.
 
-Local JavaScript checks ran on Node 26.8.1. The existing CI and production image
-pin Node 22.14.0. The local Docker engine was unavailable, so a local container
-build was not completed. Real browser capture and phone screen-off listening
-remain manual acceptance checks; automated results do not prove audible quality.
+Local JavaScript and isolated release checks also passed on the production-pinned
+Node 22.14.0 runtime. The local Docker engine was unavailable, so a local Linux
+container build was not completed. Real browser capture and phone screen-off
+listening remain manual acceptance checks; automated results do not prove audible
+quality.
+
+## Deployment build-context repair
+
+The deployed service used the default `Dockerfile` and its
+`RUN npm test && npm run check` step, rather than `Dockerfile.runtime` from the
+blueprint. The release guard reads `.gitignore`, but `.dockerignore` excluded that
+file from `COPY . .`, producing an `ENOENT` test failure in the build context.
+
+The repair keeps this non-secret test input in the context. Git history, private
+environment files, and local Android artifacts remain excluded. The new
+`docker-context.test.mjs` reproduces the missing-file failure in an isolated fixture
+and verifies that the actual release guard passes with the repaired inputs. No
+tests were skipped or removed, and the Android 1.0.1 binaries were not rebuilt or
+changed by this repair.
 
 ## Build and deployment verification
 
@@ -73,8 +89,9 @@ The smoke check creates its own test room and ends it on success.
 - Local ignored backup: `android/artifacts/rollback/SangeetPitara-before-1.0.1-debug.apk`.
 - Previous APK Git blob: `9c1b8416ce3a842ad59b7e464dbe5f36339fa862`.
 
-If a rollback is requested, revert the release commit and push a normal new
-commit; do not reset shared history or force-push. Verify the previous website
+If a rollback is requested, revert the release and its release-specific follow-up
+commits together, run the old release's checks, and push a normal new commit; do
+not reset shared history or force-push. Verify the previous website
 and download are live again. This does not downgrade applications already
 installed on phones: to restore the old behavior without requiring an uninstall,
 build the previous Android source with a version code above the installed code,
