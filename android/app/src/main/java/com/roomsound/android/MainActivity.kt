@@ -40,6 +40,7 @@ import com.roomsound.android.capture.RoomSessionCoordinator
 import com.roomsound.android.capture.SourcePlaybackController
 import com.roomsound.android.room.RoomConnectionState
 import com.roomsound.android.room.RoomEndpointBootstrap
+import com.roomsound.android.room.RoomEndpointValidator
 import com.roomsound.android.room.RoomSoundEvent
 import com.roomsound.android.room.RoomState
 import java.io.PrintWriter
@@ -79,6 +80,8 @@ class MainActivity : Activity() {
     private lateinit var roomCodeInput: EditText
     private lateinit var roomConnectionText: TextView
     private lateinit var roomStateText: TextView
+    private lateinit var roomCodePanel: LinearLayout
+    private lateinit var roomCodeText: TextView
     private lateinit var roomEventsText: TextView
     private lateinit var transportText: TextView
     private lateinit var approvalContainer: LinearLayout
@@ -304,8 +307,6 @@ class MainActivity : Activity() {
     private fun ensureCaptureService() {
         val intent = Intent(this, PlaybackCaptureService::class.java)
         if (serviceBound || serviceBindingInFlight) return
-        runCatching { startService(intent) }
-            .onFailure { appendRoomEvent("Room service could not start: ${it.message}") }
         serviceBindingInFlight = true
         val requested = runCatching { bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE) }
             .onFailure { appendRoomEvent("Room service could not bind: ${it.message}") }
@@ -317,7 +318,6 @@ class MainActivity : Activity() {
         val session = service.roomSession()
         if (captureService === service && roomSession === session) {
             serviceBound = true
-            configureRoomSession(session)
             renderAttachedServiceState()
             return
         }
@@ -328,7 +328,10 @@ class MainActivity : Activity() {
         // A started service may outlive this Activity (including rotation).
         session.addListener(roomListener)
         service.addListener(serviceListener)
-        configureRoomSession(session)
+        val savedVolume = session.playbackVolume()
+        muted = savedVolume == 0.0
+        if (!muted) volumeSeekBar.progress = (savedVolume * 100).toInt()
+        updateMuteButton()
         renderAttachedServiceState()
         requestNotificationPermissionIfNeeded()
     }
@@ -434,6 +437,29 @@ class MainActivity : Activity() {
         roomStatusPanel.addView(roomEventsText, marginLayout())
         roomPanel.addView(roomStatusPanel, marginLayout())
 
+        roomCodePanel = statusPanel().apply {
+            visibility = View.GONE
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
+        roomCodePanel.addView(sectionLabel("Room code"), matchWrap())
+        roomCodeText = TextView(this).apply {
+            textSize = 30f
+            setTextColor(getColor(R.color.roomsound_cream))
+            setTypeface(android.graphics.Typeface.create("monospace", android.graphics.Typeface.BOLD))
+            letterSpacing = 0.12f
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(7), dp(8), dp(7))
+            setTextIsSelectable(true)
+            contentDescription = "Room code will appear here after joining."
+        }
+        roomCodePanel.addView(roomCodeText, matchWrap())
+        roomCodePanel.addView(labelText().apply {
+            text = "Share this code with anyone joining the room."
+            gravity = Gravity.CENTER
+            setPadding(0, dp(6), 0, 0)
+        }, matchWrap())
+        roomPanel.addView(roomCodePanel, marginLayout())
+
         sourceButton = button("Share device audio") { handleSourceAction() }
         roomPanel.addView(sourceButton, marginLayout())
         takeoverButton = button("Take back control", ButtonTone.SECONDARY) { takeoverSource() }
@@ -527,7 +553,6 @@ class MainActivity : Activity() {
 
     private fun createRoom() {
         if (!requireRewardedAccess()) return
-        val session = roomSessionForRoomAction() ?: return
         val displayName = displayNameInput.text.toString().trim()
         if (displayName.isEmpty()) {
             displayNameInput.error = "Enter your name"
@@ -542,10 +567,12 @@ class MainActivity : Activity() {
             appendRoomEvent("Enter a room name before creating a room.")
             return
         }
+        val session = roomSessionForRoomAction() ?: return
         appendRoomEvent("Creating room '$roomName' as $displayName.")
         try {
             session.createRoom(roomName, displayName, guestId)
         } catch (t: Throwable) {
+            captureService?.cancelRoomPreparation()
             android.util.Log.e("RoomSound", "createRoom failed", t)
             appendRoomEvent(t.message ?: "The room could not be created: ${t.javaClass.simpleName}")
         }
@@ -553,7 +580,6 @@ class MainActivity : Activity() {
 
     private fun joinRoom() {
         if (!requireRewardedAccess()) return
-        val session = roomSessionForRoomAction() ?: return
         val displayName = displayNameInput.text.toString().trim()
         if (displayName.isEmpty()) {
             displayNameInput.error = "Enter your name"
@@ -566,21 +592,25 @@ class MainActivity : Activity() {
             appendRoomEvent("Enter a room code before joining.")
             return
         }
+        val session = roomSessionForRoomAction() ?: return
         appendRoomEvent("Joining room $roomCode as $displayName.")
         try {
             session.joinRoom(roomCode, displayName, guestId)
         } catch (t: Throwable) {
+            captureService?.cancelRoomPreparation()
             android.util.Log.e("RoomSound", "joinRoom failed", t)
             appendRoomEvent(t.message ?: "The room could not be joined: ${t.javaClass.simpleName}")
         }
     }
 
+    private fun configuredRoomEndpoint(): String? = RoomEndpointBootstrap.selectEndpoint(
+        configuredEndpoint = BuildConfig.ROOMSOUND_DEFAULT_ENDPOINT,
+        isDebugBuild = BuildConfig.DEBUG,
+        isEmulator = isProbablyEmulator(),
+    )?.let(RoomEndpointValidator::normalize)
+
     private fun configureRoomSession(session: RoomSessionCoordinator): Boolean {
-        val endpoint = RoomEndpointBootstrap.selectEndpoint(
-            configuredEndpoint = BuildConfig.ROOMSOUND_DEFAULT_ENDPOINT,
-            isDebugBuild = BuildConfig.DEBUG,
-            isEmulator = isProbablyEmulator(),
-        )
+        val endpoint = configuredRoomEndpoint()
         if (endpoint == null) {
             appendRoomEvent("Room endpoint is not configured. Build this APK with ROOMSOUND_DEFAULT_ENDPOINT.")
             return false
@@ -598,8 +628,23 @@ class MainActivity : Activity() {
             appendRoomEvent("The room service is not ready. Try again in a moment.")
             return null
         }
-        if (session.currentEndpoint() == null && !configureRoomSession(session)) return null
+        if (!activityResumed || isFinishing || !session.canSelectRoom()) return null
+        if (configuredRoomEndpoint() == null) {
+            appendRoomEvent("Room endpoint is not configured or is invalid.")
+            return null
+        }
+        // Foreground promotion happens now, inside this validated user action,
+        // before configureEndpoint can dispatch any asynchronous network work.
+        if (captureService?.prepareRoomPlayback() != true) {
+            appendRoomEvent("Background listening could not start. Try joining again while the app is visible.")
+            return null
+        }
+        if (session.currentEndpoint() == null && !configureRoomSession(session)) {
+            captureService?.cancelRoomPreparation()
+            return null
+        }
         if (session.currentEndpoint() == null) {
+            captureService?.cancelRoomPreparation()
             appendRoomEvent("The room service has no configured endpoint. Rebuild the APK with ROOMSOUND_DEFAULT_ENDPOINT.")
             return null
         }
@@ -705,9 +750,9 @@ class MainActivity : Activity() {
         if (!::createRoomButton.isInitialized) return
         val accessGranted = rewardedAccessGate.hasAccess()
         val joined = roomSession?.connectionState() == RoomConnectionState.JOINED
-        val endpointConfigured = roomSession?.currentEndpoint() != null
-        createRoomButton.isEnabled = accessGranted && endpointConfigured && !joined
-        joinRoomButton.isEnabled = accessGranted && endpointConfigured && !joined
+        val canSelect = roomSession?.canSelectRoom() == true && configuredRoomEndpoint() != null
+        createRoomButton.isEnabled = accessGranted && canSelect && !joined
+        joinRoomButton.isEnabled = accessGranted && canSelect && !joined
     }
 
     private fun formatAccessDuration(remainingMillis: Long): String {
@@ -805,6 +850,11 @@ class MainActivity : Activity() {
                 approvalContainer.visibility = View.GONE
             }
             runCatching {
+                roomCodeText.text = ""
+                roomCodeText.contentDescription = "Room code will appear here after joining."
+                roomCodePanel.visibility = View.GONE
+            }
+            runCatching {
                 moderationContainer.removeAllViews()
                 moderationContainer.visibility = View.GONE
             }
@@ -817,6 +867,9 @@ class MainActivity : Activity() {
         val isHost = self != null && self.id == room.hostId
         val isModerator = self != null && (isHost || self.id == room.cohostId)
         val sourceMember = state.members.firstOrNull { it.id == room.activeSourceId }
+        roomCodePanel.visibility = View.VISIBLE
+        roomCodeText.text = room.code
+        roomCodeText.contentDescription = "Room code ${room.code}. Share this code with anyone joining the room."
         roomStateText.text = buildString {
             append("Room ${room.code} · ${room.status}\n")
             append("Source: ${sourceMember?.name ?: "none"} · ${room.sourceStatus}")
@@ -825,11 +878,9 @@ class MainActivity : Activity() {
         val ownPendingRequest = self != null && state.requests.any {
             it.requesterId == self.id && it.status.equals("PENDING", ignoreCase = true)
         }
-        val sourceIsModerator = room.activeSourceId == null ||
-            room.activeSourceId == room.hostId || room.activeSourceId == room.cohostId
         requestAudioButton.text = if (ownPendingRequest) "Audio request pending" else "Request to share device audio"
         val accessGranted = rewardedAccessGate.hasAccess()
-        requestAudioButton.isEnabled = accessGranted && self != null && !isModerator && sourceIsModerator && !ownPendingRequest
+        requestAudioButton.isEnabled = accessGranted && self != null && !isModerator && !ownPendingRequest
         takeoverButton.isEnabled = accessGranted && isModerator && room.activeSourceId != null && self?.id != room.activeSourceId
         leaveRoomButton.isEnabled = true
         endRoomButton.isEnabled = isHost
@@ -853,18 +904,23 @@ class MainActivity : Activity() {
             return
         }
         pending.forEach { request ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            row.addView(labelText().apply {
+            val requestPanel = verticalContainer().apply {
+                setPadding(0, dp(6), 0, dp(7))
+            }
+            requestPanel.addView(labelText().apply {
                 text = "${request.requesterName}: ${request.note.ifBlank { "device audio" }}"
-                setPadding(0, dp(5), dp(6), dp(5))
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            row.addView(button(getString(R.string.approve_control_request)) { approveRequest(request.id) }.apply {
+                textSize = 14f
+                setPadding(0, dp(4), 0, dp(5))
+            }, matchWrap())
+            requestPanel.addView(button(getString(R.string.approve_control_request)) { approveRequest(request.id) }.apply {
                 isEnabled = rewardedAccessGate.hasAccess()
-            }, LinearLayout.LayoutParams(dp(100), LinearLayout.LayoutParams.WRAP_CONTENT))
-            row.addView(button(getString(R.string.reject_control_request), ButtonTone.DANGER) { rejectRequest(request.id) }.apply {
+                contentDescription = "Approve audio request from ${request.requesterName}"
+            }, requestButtonLayout())
+            requestPanel.addView(button(getString(R.string.reject_control_request), ButtonTone.DANGER) { rejectRequest(request.id) }.apply {
                 isEnabled = rewardedAccessGate.hasAccess()
-            }, LinearLayout.LayoutParams(dp(92), LinearLayout.LayoutParams.WRAP_CONTENT))
-            approvalContainer.addView(row, matchWrap())
+                contentDescription = "Disapprove audio request from ${request.requesterName}"
+            }, requestButtonLayout().apply { topMargin = dp(8) })
+            approvalContainer.addView(requestPanel, matchWrap())
         }
     }
 
@@ -1005,10 +1061,8 @@ class MainActivity : Activity() {
         val session = roomSession ?: return
         val state = session.currentRoomState()
         val self = state?.self
-        val sourceIsParticipant = state?.room?.activeSourceId != null &&
-            state.room.activeSourceId !in setOf(state.room.hostId, state.room.cohostId)
-        if (state == null || self == null || self.id == state.room.hostId || self.id == state.room.cohostId || sourceIsParticipant) {
-            appendRoomEvent("A request is available to a participant while the room is idle or the host/co-host is sharing.")
+        if (state == null || self == null || self.id == state.room.hostId || self.id == state.room.cohostId) {
+            appendRoomEvent("A request is available to a participant while the room is active.")
             return
         }
         if (session.requestControl("ANDROID_DEVICE_AUDIO", "I want to share Android playback audio.")) {
@@ -1207,7 +1261,9 @@ class MainActivity : Activity() {
             putExtra(PlaybackCaptureService.EXTRA_SESSION_ID, sessionId)
         }
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent) else startService(serviceIntent)
+            // The validated room-entry action already started/promoted the
+            // service. A stale consent result must not create a new FGS obligation.
+            startService(serviceIntent)
             renderSnapshot(CaptureSnapshot(CaptureStatus.STARTING, message = "Starting foreground playback capture; source activation waits for a successful AudioRecord read."))
         } catch (error: Throwable) {
             failPendingCapture("The foreground capture service could not start: ${error.message}")
@@ -1481,6 +1537,11 @@ class MainActivity : Activity() {
     private fun matchWrap() = LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT,
+    )
+
+    private fun requestButtonLayout() = LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        dp(52),
     )
 
     private fun marginLayout() = LinearLayout.LayoutParams(

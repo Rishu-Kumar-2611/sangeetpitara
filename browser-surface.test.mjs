@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
+const assetVersion = '20261021-playback-4';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
-  const brandingVersion = '20261020-sangeetpitara-2';
+  const brandingVersion = assetVersion;
   const pages = await Promise.all(['index.html', 'privacy.html', 'terms.html'].map(async (name) => ({
     name,
     html: await readFile(new URL(name, root), 'utf8'),
@@ -46,9 +47,64 @@ test('browser-facing messages use SangeetPitara while retaining existing room in
   assert.match(app, /roomsound-volume/);
   assert.match(ads, /roomsound-rewarded-access-expires-at/);
   assert.match(ads, /roomsound-ad-consent/);
-  assert.match(app, /from '\.\/ads\.mjs\?v=20261020-sangeetpitara-2'/);
-  assert.match(app, /from '\.\/capture-tracks\.js\?v=20261020-sangeetpitara-2'/);
-  assert.match(html, /src="\/app\.js\?v=20261020-sangeetpitara-2"/);
+  assert.ok(app.includes(`from './ads.mjs?v=${assetVersion}'`));
+  assert.ok(app.includes(`from './capture-tracks.js?v=${assetVersion}'`));
+  assert.ok(html.includes(`src="/app.js?v=${assetVersion}"`));
+});
+
+test('browser module graph uses one release cache version, including the capture worklet', async () => {
+  const [app, worklet] = await Promise.all([
+    readFile(new URL('app.js', root), 'utf8'),
+    readFile(new URL('relay-capture-worklet.js', root), 'utf8'),
+  ]);
+  const importPattern = /^import\s[\s\S]*?\sfrom ['"]([^'"]+)['"];/gm;
+  const imports = [...app.matchAll(importPattern)].map((match) => match[1]);
+  for (const name of ['guest-id.js', 'relay-pcm.js', 'capture-tracks.js', 'media-relay.mjs', 'ads.mjs']) {
+    assert.ok(imports.includes(`./${name}?v=${assetVersion}`), name);
+  }
+  for (const source of [app, worklet]) {
+    for (const [, url] of source.matchAll(importPattern)) {
+      assert.equal(new URL(url, root).search, `?v=${assetVersion}`, url);
+    }
+  }
+  assert.ok(app.includes(`audioWorklet.addModule('/relay-capture-worklet.js?v=${assetVersion}')`));
+  assert.ok(worklet.includes(`from './relay-pcm.js?v=${assetVersion}'`));
+});
+
+test('release download is labeled 1.0.1 and runtime packages both public APK names and audio modules', async () => {
+  const [html, dockerfile, gitignore, dockerignore, syntax] = await Promise.all([
+    readFile(new URL('index.html', root), 'utf8'),
+    readFile(new URL('Dockerfile.runtime', root), 'utf8'),
+    readFile(new URL('.gitignore', root), 'utf8'),
+    readFile(new URL('.dockerignore', root), 'utf8'),
+    readFile(new URL('checks/syntax.mjs', root), 'utf8'),
+  ]);
+  assert.match(html, /class="apk-download-card" href="\/downloads\/SangeetPitara-1\.0\.1-debug\.apk" download/);
+  assert.match(html, /Download SangeetPitara 1\.0\.1 for playback sharing on Android/);
+  const copies = dockerfile.split(/\r?\n/).filter((line) => /^COPY --chown=node:node /.test(line))
+    .map((line) => line.trim().split(/\s+/).slice(2));
+  for (const name of ['SangeetPitara-debug.apk', 'SangeetPitara-1.0.1-debug.apk']) {
+    assert.ok(copies.some((args) => args.at(-1) === './downloads/' && args.slice(0, -1).includes(`downloads/${name}`)), name);
+    assert.ok(dockerignore.split(/\r?\n/).includes(`!downloads/${name}`), name);
+  }
+  for (const name of ['capture-tracks.js', 'media-relay.mjs', 'relay-pcm.js', 'relay-capture-worklet.js']) {
+    assert.ok(copies.some((args) => args.at(-1) === './' && args.slice(0, -1).includes(name)), name);
+    assert.ok((await readFile(new URL(name, root), 'utf8')).length > 0, name);
+  }
+  const checkedFiles = syntax.match(/const files = \[([\s\S]*?)\];/)?.[1];
+  assert.ok(checkedFiles, 'syntax-check file list is present');
+  for (const [, name] of checkedFiles.matchAll(/'([^']+)'/g)) {
+    const packaged = name.startsWith('checks/')
+      ? copies.some((args) => args.includes('checks') && args.at(-1) === './checks')
+      : copies.some((args) => args.at(-1) === './' && args.slice(0, -1).includes(name));
+    assert.ok(packaged, `Docker must copy syntax-check input: ${name}`);
+  }
+  const ignoreRules = gitignore.split(/\r?\n/);
+  assert.ok(ignoreRules.includes('*.apk'));
+  assert.deepEqual(ignoreRules.filter((line) => /^!.*\.apk/.test(line)), [
+    '!downloads/SangeetPitara-debug.apk',
+    '!downloads/SangeetPitara-1.0.1-debug.apk',
+  ]);
 });
 
 test('browser surface is anonymous and exposes the local rewarded-access gate', async () => {
@@ -70,7 +126,7 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(html, /Demo\/local provider · offline development only/);
   assert.match(html, /id="create-room"[^>]+disabled/);
   assert.match(html, /id="join-room"[^>]+disabled/);
-  assert.match(html, /href="\/downloads\/SangeetPitara-debug\.apk"[^>]+download/);
+  assert.match(html, /href="\/downloads\/SangeetPitara-1\.0\.1-debug\.apk"[^>]+download/);
   assert.match(dockerfile, /downloads\/SangeetPitara-debug\.apk/);
   assert.match(html, /id="create-tab"[^>]+role="tab"[^>]+aria-selected="true"/);
   assert.match(html, /id="join-tab"[^>]+role="tab"[^>]+aria-selected="false"/);
@@ -105,9 +161,14 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(app, /decodePcm16Frame/);
   assert.match(app, /encodePcm16Frame/);
   assert.match(app, /createScriptProcessor/);
-  assert.match(app, /RELAY_PROCESSOR_BUFFER_SAMPLES = 512/);
+  assert.match(app, /RELAY_PROCESSOR_BUFFER_SAMPLES = 2048/);
+  assert.match(app, /new AudioWorkletNode/);
+  assert.match(app, /syncRelayCaptureLease/);
   assert.match(app, /RELAY_MAX_BUFFERED_BYTES/);
   assert.match(app, /RELAY_MAX_PLAYAHEAD_SECONDS/);
+  assert.match(app, /state\.relayPlaybackNextTime > now \+ RELAY_MAX_PLAYAHEAD_SECONDS/);
+  assert.match(app, /Math\.max\(now \+ 0\.01, state\.relayPlaybackNextTime \|\| 0\)/);
+  assert.match(app, /state\.relayLastSequence = frame\.sequence/);
   assert.match(app, /muted sink/);
   assert.match(app, /event\.data instanceof Blob|handleRelayFrame\(event\.data\)/);
   assert.match(app, /displayAudioCaptureConstraints/);
@@ -131,6 +192,21 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(relay, /payloadBytes !== sampleCount \* 2/);
 });
 
+test('landing page presents the browser room as the primary path and clarifies the room code', async () => {
+  const [html, css] = await Promise.all([
+    readFile(new URL('index.html', root), 'utf8'),
+    readFile(new URL('styles.css', root), 'utf8'),
+  ]);
+
+  assert.match(html, /class="browser-first-panel"/);
+  assert.match(html, /listen live, chat with the room, request audio, and approve or reject requests without downloading anything/);
+  assert.match(html, /Prefer the Android app\?/);
+  assert.match(html, /<small>Share this code with listeners<\/small>/);
+  assert.match(css, /\.room-code-display strong \{[^}]*font-size: clamp\(28px, 3\.2vw, 38px\)/s);
+  assert.match(css, /\.request-actions \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.request-actions button \{[^}]*min-height: 34px/s);
+});
+
 test('browser audio sharing opens the native DEVICE_AUDIO picker without a source modal', async () => {
   const [app, capture] = await Promise.all([
     readFile(new URL('app.js', root), 'utf8'),
@@ -149,6 +225,8 @@ test('browser audio sharing opens the native DEVICE_AUDIO picker without a sourc
   assert.match(app, /Your request was approved\. Tap Share audio to open the browser picker\./);
   assert.match(app, /Use the Android app to share phone audio/);
   assert.match(app, /openMobileAudioGuide/);
+  assert.doesNotMatch(app, /Boolean\(myRequest \|\| selfIsSource \|\| sourceIsParticipant\)/);
+  assert.match(app, /Request your turn to share audio/);
   assert.match(app, /if \(!state\.captureStream\) \{\s*\/\/ getDisplayMedia must be launched from a user gesture\./s);
   assert.match(app, /navigator\.mediaDevices\.getDisplayMedia\(displayAudioCaptureConstraints\(\)\)/);
   assert.match(app, /if \(sourceType === 'DEVICE_AUDIO'\)/);

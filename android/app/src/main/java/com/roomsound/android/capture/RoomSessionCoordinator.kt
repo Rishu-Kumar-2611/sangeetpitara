@@ -34,6 +34,8 @@ class RoomSessionCoordinator(
         fun onEvent(event: RoomSoundEvent)
         fun onPublisherStatus(message: String)
         fun onSessionChanged() = Unit
+        /** Intentional teardown/failure, unlike a recoverable socket disconnect. */
+        fun onRoomSessionStopped() = Unit
     }
 
     private data class Slot(val roomId: String, val memberId: String, val epoch: Long)
@@ -75,6 +77,7 @@ class RoomSessionCoordinator(
     private var requestPending = false
     private var endPending = false
     private var volume = 1.0
+    private var playbackAllowed = false
     private var closed = false
     @Volatile private var mediaBinding: MediaBinding? = null
 
@@ -92,6 +95,8 @@ class RoomSessionCoordinator(
     fun pendingCapture(): PendingCapture? = attempt?.let { PendingCapture(it.id, it.phase) }
     fun isTakeoverPending(): Boolean = takeover != null
     fun isRoomSelectionPending(): Boolean = roomSelectionPending
+    fun canSelectRoom(): Boolean = !closed && !roomSelectionPending && client?.currentRoomState() == null
+    fun playbackVolume(): Double = volume
     fun hasMediaBackend(): Boolean = transport?.hasMediaBackend() == true
     fun transportSnapshot(): RoomAudioTransportSnapshot? = transport?.snapshot()
 
@@ -103,7 +108,7 @@ class RoomSessionCoordinator(
             status("Leave the current room before changing its endpoint.")
             return false
         }
-        disposeRoom()
+        disposeRoom(notifyStopped = false)
         val nextClient = RoomSoundWebSocketClient(next)
         client = nextClient
         endpoint = next
@@ -171,8 +176,9 @@ class RoomSessionCoordinator(
             val createdPublisher = requireNotNull(nextPublisher)
             publisher = createdPublisher
             relayPlayer = nextRelayPlayer
-            if (createdPublisher is WebRtcPcmPublisher) createdPublisher.setPlaybackVolume(volume)
-            nextRelayPlayer?.setVolume(volume)
+            val effectiveVolume = if (playbackAllowed) volume else 0.0
+            if (createdPublisher is WebRtcPcmPublisher) createdPublisher.setPlaybackVolume(effectiveVolume)
+            nextRelayPlayer?.setVolume(effectiveVolume)
             transport = RoomAudioTransport(nextClient, createdPublisher, nextRelayPlayer)
         } catch (error: Throwable) {
             runCatching { nextPublisher?.close() }
@@ -220,6 +226,7 @@ class RoomSessionCoordinator(
     private fun dispatchRoomAction(active: RoomSoundWebSocketClient, action: (RoomSoundWebSocketClient) -> Unit) {
         try { action(active) } catch (error: Throwable) {
             roomSelectionPending = false
+            disposeRoom()
             val msg = error.message ?: error.javaClass.simpleName
             status("Room request failed before WebSocket send: $msg")
             android.util.Log.e("RoomSound", "selectRoom failed", error)
@@ -291,6 +298,7 @@ class RoomSessionCoordinator(
         val sent = client?.endRoom() == true
         if (sent) {
             endPending = true
+            notifyRoomSessionStopped()
             abortAttempt("The host is ending the room.", releaseOwnSlot = false)
             changed()
         }
@@ -393,11 +401,23 @@ class RoomSessionCoordinator(
 
     fun setPlaybackVolume(value: Double) {
         volume = value.coerceIn(0.0, 1.0)
-        (publisher as? WebRtcPcmPublisher)?.setPlaybackVolume(volume)
-        relayPlayer?.setVolume(volume)
+        applyPlaybackVolume()
+    }
+
+    /** Focus gates the output without changing the user's volume/mute setting. */
+    fun setPlaybackAllowed(allowed: Boolean) {
+        playbackAllowed = allowed
+        applyPlaybackVolume()
+    }
+
+    private fun applyPlaybackVolume() {
+        val effectiveVolume = if (playbackAllowed) volume else 0.0
+        (publisher as? WebRtcPcmPublisher)?.setPlaybackVolume(effectiveVolume)
+        relayPlayer?.setVolume(effectiveVolume)
     }
 
     fun leaveRoom() {
+        notifyRoomSessionStopped()
         abortAttempt("Left the room.", true)
         client?.leaveRoom()
         disposeRoom()
@@ -476,6 +496,7 @@ class RoomSessionCoordinator(
                     if (endPending) endPending = false
                 }
                 is RoomSoundEvent.Removed, is RoomSoundEvent.RoomEnded -> {
+                    notifyRoomSessionStopped()
                     abortAttempt("The room ended or this phone was removed.", false)
                     disposeRoom()
                 }
@@ -607,7 +628,8 @@ class RoomSessionCoordinator(
         return selfId == state.room.hostId || selfId == state.room.cohostId
     }
 
-    private fun disposeRoom() {
+    private fun disposeRoom(notifyStopped: Boolean = true) {
+        if (notifyStopped) notifyRoomSessionStopped()
         mediaBinding = null
         clientListener?.let { client?.removeListener(it) }
         clientListener = null
@@ -631,9 +653,11 @@ class RoomSessionCoordinator(
 
     private fun status(message: String) { listeners.forEach { it.onPublisherStatus(message) } }
     private fun changed() { listeners.forEach { it.onSessionChanged() } }
+    private fun notifyRoomSessionStopped() { listeners.forEach { it.onRoomSessionStopped() } }
 
     override fun close() {
         if (closed) return
+        notifyRoomSessionStopped()
         abortAttempt("The room service stopped.", true)
         closed = true
         disposeRoom()

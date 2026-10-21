@@ -14,7 +14,12 @@ const files = [
   'ads.mjs',
   'media-relay.mjs',
   'app.js',
+  'relay-pcm.js',
+  'relay-capture-worklet.js',
   'notifications-sw.js',
+  'checks/release.mjs',
+  'checks/release-local.mjs',
+  'smoke.mjs',
 ];
 
 for (const file of files) {

@@ -1015,9 +1015,6 @@ async function handleMessage(ws, message) {
 
   if (type === 'request-control') {
     if (room.activeSourceId === member.id) return sendError(ws, 'You are already the active source.');
-    if (room.activeSourceId && room.activeSourceId !== room.hostId && room.activeSourceId !== room.cohostId) {
-      return sendError(ws, 'Control requests are paused while another participant is sharing.');
-    }
     const sourceType = requestedSourceType(message.sourceType);
     if (!isSupportedSourceType(sourceType)) return sendError(ws, 'Only device playback audio is supported.');
     const hasPending = [...room.requests.values()].some((request) => request.requesterId === member.id && request.status === 'PENDING');
@@ -1343,6 +1340,10 @@ const server = http.createServer(async (req, res) => {
     const headers = { 'Content-Type': mime };
     if (ext === '.html') {
       headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'";
+      headers['Cache-Control'] = 'no-cache';
+    } else if (fileName === 'downloads/SangeetPitara-debug.apk') {
+      // The stable filename changes between releases; revalidate it rather
+      // than letting a browser keep serving a superseded Android download.
       headers['Cache-Control'] = 'no-cache';
     } else {
       headers['Cache-Control'] = 'public, max-age=3600';

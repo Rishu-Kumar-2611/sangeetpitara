@@ -10,6 +10,10 @@ export function displayAudioCaptureConstraints() {
     audio: {
       // Do not ask the browser to mute the local source while it is captured.
       suppressLocalAudioPlayback: false,
+      // This is already mixed program audio, not a noisy microphone/call.
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
     },
     // These are browser hints, not guarantees. Chromium uses them to expose
     // the system/tab-audio choices when the selected surface supports them.

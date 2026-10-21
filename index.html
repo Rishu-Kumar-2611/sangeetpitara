@@ -13,8 +13,8 @@
     <meta name="roomsound-media-relay" content="server-configured-pcm16" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'" />
     <title>SangeetPitara — listen together</title>
-    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261020-sangeetpitara-2" />
-    <link rel="stylesheet" href="/styles.css?v=20261020-sangeetpitara-2" />
+    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261021-playback-4" />
+    <link rel="stylesheet" href="/styles.css?v=20261021-playback-4" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -22,13 +22,18 @@
     <main id="app" class="shell">
       <section id="landing-view" class="landing-view">
         <div class="landing-copy">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261020-sangeetpitara-2" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261021-playback-4" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="eyebrow">PRIVATE LIVE AUDIO ROOMS</div>
           <h1>Listen together.</h1>
           <p class="landing-hint">Create a room or join with an invite code.</p>
-          <a class="apk-download-card" href="/downloads/SangeetPitara-debug.apk" download>
+          <section class="browser-first-panel" aria-labelledby="browser-first-title">
+            <div class="browser-first-heading"><span class="browser-first-icon" aria-hidden="true">↗</span><div><span class="section-label">BROWSER-FIRST LISTENING</span><h2 id="browser-first-title">Everything you need, right here.</h2></div></div>
+            <p>Create or join a room in your browser—then listen live, chat with the room, request audio, and approve or reject requests without downloading anything.</p>
+            <div class="browser-first-points" aria-label="Browser room features"><span>Create or join</span><span>Listen live</span><span>Chat</span><span>Request audio</span><span>Approve / reject</span></div>
+          </section>
+          <a class="apk-download-card" href="/downloads/SangeetPitara-1.0.1-debug.apk" download>
             <span class="apk-download-icon" aria-hidden="true">↓</span>
-            <span class="apk-download-copy"><strong>Get the Android app</strong><small>Download SangeetPitara for playback sharing on Android.</small></span>
+            <span class="apk-download-copy"><strong>Prefer the Android app?</strong><small>Download SangeetPitara 1.0.1 for playback sharing on Android.</small></span>
             <span class="apk-download-arrow" aria-hidden="true">→</span>
           </a>
         </div>
@@ -83,7 +88,7 @@
 
       <section id="room-view" class="room-view hidden">
         <header class="topbar">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261020-sangeetpitara-2" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261021-playback-4" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="room-crumb"><span class="crumb-room-name" id="top-room-name">Listening room</span><span class="crumb-separator">/</span><span class="room-code-small" id="top-room-code">------</span></div>
           <div class="topbar-actions">
             <span class="connection-chip" id="connection-chip"><span class="connection-dot"></span><span id="connection-label">Connecting</span></span>
@@ -110,7 +115,7 @@
                 <div class="eyebrow">PRIVATE ROOM</div>
                 <h1 id="room-title">Late-night listening</h1>
               </div>
-              <div class="room-code-display"><span>ROOM CODE</span><strong id="room-code-display">------</strong></div>
+              <div class="room-code-display"><span>ROOM CODE</span><strong id="room-code-display">------</strong><small>Share this code with listeners</small></div>
             </div>
 
             <div class="source-card" id="source-card">
@@ -187,6 +192,6 @@
     <footer class="site-footer"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="mailto:abuse@example.com">Report abuse</a></footer>
     <div id="toast-stack" class="toast-stack"></div>
     <div id="modal-root"></div>
-    <script type="module" src="/app.js?v=20261020-sangeetpitara-2"></script>
+    <script type="module" src="/app.js?v=20261021-playback-4"></script>
   </body>
 </html>

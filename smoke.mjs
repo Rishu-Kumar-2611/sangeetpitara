@@ -1,7 +1,15 @@
 import WebSocket from 'ws';
 
+const endpoint = new URL(process.env.ROOMSOUND_SMOKE_WS_URL || 'ws://localhost:4173');
+if (!['ws:', 'wss:'].includes(endpoint.protocol) || endpoint.username || endpoint.password) {
+  throw new Error('ROOMSOUND_SMOKE_WS_URL must be a WebSocket URL without credentials.');
+}
+const sockets = [];
+process.once('exit', () => sockets.forEach((socket) => socket.terminate()));
+
 function client() {
-  const socket = new WebSocket('ws://localhost:4173');
+  const socket = new WebSocket(endpoint);
+  sockets.push(socket);
   const events = [];
   const waiters = [];
   socket.on('message', (raw) => {
@@ -41,7 +49,7 @@ const host = client();
 await host.open();
 host.socket.send(JSON.stringify({ type: 'create-room', name: 'Smoke Room', displayName: 'Alex', guestId: 'smoke-host' }));
 const created = await host.wait((message) => message.type === 'joined');
-console.log('created', created.state.room.code);
+console.log('smoke room created');
 
 const hostSawGuest = host.wait((message) => message.type === 'state' && message.state.members.length === 2);
 const guest = client();
@@ -77,10 +85,13 @@ const secondGuest = client();
 await secondGuest.open();
 secondGuest.socket.send(JSON.stringify({ type: 'join-room', code: created.state.room.code, displayName: 'Taylor', guestId: 'smoke-second-guest' }));
 await secondGuest.wait((message) => message.type === 'joined');
-const blockedRequest = secondGuest.wait((message) => message.type === 'error' && message.message.includes('paused'));
-secondGuest.socket.send(JSON.stringify({ type: 'request-control', sourceType: 'DEVICE_AUDIO', note: 'Blocked while another participant shares' }));
-await blockedRequest;
-console.log('second request correctly blocked');
+const competingRequestState = host.wait((message) => message.type === 'state' && message.state.requests.length === 1 && message.state.requests[0].note === 'Another participant is sharing');
+secondGuest.socket.send(JSON.stringify({ type: 'request-control', sourceType: 'DEVICE_AUDIO', note: 'Another participant is sharing' }));
+const competingRequest = await competingRequestState;
+const competingRequestRejected = secondGuest.wait((message) => message.type === 'request-result' && message.status === 'REJECTED');
+host.socket.send(JSON.stringify({ type: 'reject-request', requestId: competingRequest.state.requests[0].id }));
+await competingRequestRejected;
+console.log('second request can be reviewed while another participant shares');
 
 const hostSawTakeover = host.wait((message) => message.type === 'state' && message.state.room.activeSourceId === message.state.room.hostId);
 host.socket.send(JSON.stringify({ type: 'takeover', sourceType: 'TEST_TONE' }));
@@ -110,7 +121,10 @@ host.socket.send(JSON.stringify({ type: 'leave-room' }));
 await promotedState;
 console.log('co-host promotion after host leave succeeded');
 
-console.log(JSON.stringify({ roomCode: created.state.room.code, joinedMembers: 3, rejectionDelivered: true, requestApproved: true, competingRequestBlocked: true, hostTakeover: true, offlineApprovalBlocked: true, cohostAssigned: true, hostLeavePromotion: true }));
+const roomEnded = guest.wait((message) => message.type === 'room-ended');
+guest.socket.send(JSON.stringify({ type: 'end-room' }));
+await roomEnded;
+console.log(JSON.stringify({ joinedMembers: 3, rejectionDelivered: true, requestApproved: true, competingRequestReviewed: true, hostTakeover: true, offlineApprovalBlocked: true, cohostAssigned: true, hostLeavePromotion: true, smokeRoomEnded: true }));
 if (host.socket.readyState === WebSocket.OPEN) host.socket.close();
 guest.socket.close();
 secondGuest.socket.close();

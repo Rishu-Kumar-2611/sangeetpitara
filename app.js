@@ -1,17 +1,18 @@
-import { createGuestId } from './guest-id.js';
+import { createGuestId } from './guest-id.js?v=20261021-playback-4';
+import { RelayPcmPacketizer } from './relay-pcm.js?v=20261021-playback-4';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261020-sangeetpitara-2';
+} from './capture-tracks.js?v=20261021-playback-4';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs';
+} from './media-relay.mjs?v=20261021-playback-4';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -22,7 +23,7 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261020-sangeetpitara-2';
+} from './ads.mjs?v=20261021-playback-4';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -40,8 +41,7 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
   sampleRate: MEDIA_RELAY_SAMPLE_RATE,
   channels: MEDIA_RELAY_CHANNELS,
 };
-const RELAY_FRAME_SAMPLES = 960; // 20 ms at 48 kHz
-const RELAY_PROCESSOR_BUFFER_SAMPLES = 512; // 10.7 ms; lower capture latency than 2048
+const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
 const RELAY_MAX_BUFFERED_BYTES = 12 * 1024; // Keep browser WebSocket backlog near 125 ms.
 const RELAY_MAX_PLAYAHEAD_SECONDS = 0.12; // Prefer a gap over playing stale audio.
 
@@ -72,6 +72,8 @@ const state = {
   relaySink: null,
   relayPacketizer: null,
   relayCaptureEpoch: null,
+  relayPublisherGeneration: 0,
+  relayPublisherStarting: null,
   relaySequence: 0,
   relayPlaybackContext: null,
   relayPlaybackGain: null,
@@ -541,46 +543,6 @@ function send(payload) {
   if (state.ws?.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify(payload));
 }
 
-class RelayPcmPacketizer {
-  constructor() {
-    this.pending = [];
-  }
-
-  reset() {
-    this.pending.length = 0;
-  }
-
-  push(input, inputSampleRate, onFrame) {
-    const sourceRate = Number(inputSampleRate) || MEDIA_RELAY_SAMPLE_RATE;
-    if (sourceRate === MEDIA_RELAY_SAMPLE_RATE) {
-      for (const sample of input) this.pending.push(sample);
-    } else {
-      // AudioContext is usually 48 kHz on the target devices, but some
-      // browsers choose 44.1 kHz. Resample each callback so the wire format
-      // remains the strict 48 kHz protocol required by the server.
-      const outputLength = Math.max(1, Math.floor(input.length * MEDIA_RELAY_SAMPLE_RATE / sourceRate));
-      const ratio = sourceRate / MEDIA_RELAY_SAMPLE_RATE;
-      for (let index = 0; index < outputLength; index += 1) {
-        const sourceIndex = index * ratio;
-        const lower = Math.min(input.length - 1, Math.floor(sourceIndex));
-        const upper = Math.min(input.length - 1, lower + 1);
-        const fraction = sourceIndex - lower;
-        this.pending.push(input[lower] + (input[upper] - input[lower]) * fraction);
-      }
-    }
-
-    while (this.pending.length >= RELAY_FRAME_SAMPLES) {
-      const samples = new Int16Array(RELAY_FRAME_SAMPLES);
-      for (let index = 0; index < RELAY_FRAME_SAMPLES; index += 1) {
-        const sample = Math.max(-1, Math.min(1, this.pending[index]));
-        samples[index] = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7FFF);
-      }
-      this.pending.splice(0, RELAY_FRAME_SAMPLES);
-      onFrame(samples);
-    }
-  }
-}
-
 function audioContextConstructor() {
   return globalThis.AudioContext || globalThis.webkitAudioContext || null;
 }
@@ -600,11 +562,11 @@ function applyOutputVolume() {
   if (state.relayPlaybackGain) state.relayPlaybackGain.gain.value = state.muted ? 0 : state.volume;
 }
 
-function sendRelayPcmFrame(samples, sourceEpoch) {
-  if (!isMediaRelayEnabled() || !isSelfSource() || state.room?.sourceEpoch !== sourceEpoch) return;
+function sendRelayPcmFrame(samples, sourceEpoch, capturedSequence = null) {
+  if (!isMediaRelayEnabled() || !isSelfSource() || state.room?.sourceEpoch !== sourceEpoch || state.room?.sourceStatus !== 'LIVE') return;
   if (state.ws?.readyState !== WebSocket.OPEN) return;
-  const sequence = state.relaySequence;
-  state.relaySequence = (state.relaySequence + 1) >>> 0;
+  const sequence = capturedSequence ?? state.relaySequence;
+  state.relaySequence = (sequence + 1) >>> 0;
   const frameBytes = 20 + samples.byteLength;
   if ((Number(state.ws.bufferedAmount) || 0) + frameBytes > RELAY_MAX_BUFFERED_BYTES) return;
   try {
@@ -620,7 +582,14 @@ function sendRelayPcmFrame(samples, sourceEpoch) {
 }
 
 function stopRelayCapture() {
+  state.relayPublisherGeneration += 1;
+  state.relayPublisherStarting = null;
   if (state.relayProcessor) {
+    if (state.relayProcessor.port) {
+      state.relayProcessor.port.postMessage({ type: 'stop' });
+      state.relayProcessor.port.onmessage = null;
+      state.relayProcessor.port.close();
+    }
     state.relayProcessor.onaudioprocess = null;
     try { state.relayProcessor.disconnect(); } catch {}
   }
@@ -636,60 +605,101 @@ function stopRelayCapture() {
   state.relaySequence = 0;
 }
 
-function ensureRelayPublisher() {
+function syncRelayCaptureLease() {
+  const epoch = isSelfSource() && state.room?.sourceStatus === 'LIVE' ? state.room.sourceEpoch : null;
+  if (state.relayCaptureEpoch === epoch) return;
+  state.relayCaptureEpoch = epoch;
+  state.relaySequence = 0;
+  state.relayPacketizer?.reset();
+  state.relayProcessor?.port?.postMessage({ type: 'lease', epoch });
+}
+
+async function ensureRelayPublisher() {
   if (!isMediaRelayEnabled() || !state.captureStream) return false;
-  if (state.relayCaptureStream === state.captureStream && state.relayProcessor) return true;
+  if (state.relayCaptureStream === state.captureStream && state.relayProcessor) {
+    syncRelayCaptureLease();
+    return true;
+  }
+  if (state.relayPublisherStarting === state.captureStream) return false;
 
   stopRelayCapture();
+  const generation = state.relayPublisherGeneration;
+  const stream = state.captureStream;
+  state.relayPublisherStarting = stream;
+  let source;
+  let processor;
+  let sink;
   try {
     const context = state.audioContext && state.audioContext.state !== 'closed'
       ? state.audioContext
       : createRoomAudioContext();
-    const source = context.createMediaStreamSource(state.captureStream);
-    const processor = context.createScriptProcessor(RELAY_PROCESSOR_BUFFER_SAMPLES, 1, 1);
-    const sink = context.createGain();
+    state.audioContext = context;
+    // Resume before awaiting module loading so the user gesture is not lost.
+    if (context.state !== 'running') void context.resume().catch(() => {});
+    const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
+    if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
+      try {
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261021-playback-4');
+        if (!current()) return false;
+        processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
+          numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
+          channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers',
+        });
+        const node = processor;
+        node.port.onmessage = ({ data }) => {
+          if (!current() || state.relayProcessor !== node) return;
+          node.port.postMessage({ type: 'ack' });
+          if (!(data?.samples instanceof Int16Array)) return;
+          // Messages delayed by a long UI stall must not replay seconds-old audio.
+          if (context.currentTime - data.capturedAt > 0.24) return;
+          sendRelayPcmFrame(data.samples, data.sourceEpoch, data.sequence);
+        };
+      } catch (error) {
+        if (!current()) return false;
+        console.warn('[SangeetPitara] AudioWorklet unavailable; using compatible capture.', error);
+      }
+    }
+    if (!current()) return false;
+    if (!processor) {
+      processor = context.createScriptProcessor(RELAY_PROCESSOR_BUFFER_SAMPLES, 1, 1);
+      const packetizer = new RelayPcmPacketizer();
+      const node = processor;
+      node.onaudioprocess = (event) => {
+        if (!current() || state.relayProcessor !== node) return;
+        syncRelayCaptureLease();
+        const epoch = state.relayCaptureEpoch;
+        if (epoch === null) { packetizer.reset(); return; }
+        packetizer.push(event.inputBuffer.getChannelData(0), context.sampleRate, (samples) => sendRelayPcmFrame(samples, epoch));
+      };
+      state.relayPacketizer = packetizer;
+    }
+    source = context.createMediaStreamSource(stream);
+    sink = context.createGain();
     sink.gain.value = 0;
     source.connect(processor);
-    // A muted sink keeps ScriptProcessorNode alive without playing the local
-    // capture back through the laptop speakers.
+    // A muted sink keeps capture processing pulled without local echo.
     processor.connect(sink);
     sink.connect(context.destination);
-    const stream = state.captureStream;
-    const packetizer = new RelayPcmPacketizer();
-    processor.onaudioprocess = (event) => {
-      if (state.relayProcessor !== processor || state.captureStream !== stream || !isMediaRelayEnabled() || !isSelfSource()) {
-        packetizer.reset();
-        return;
-      }
-      const sourceEpoch = state.room?.sourceEpoch;
-      if (!Number.isInteger(sourceEpoch)) {
-        packetizer.reset();
-        return;
-      }
-      if (state.relayCaptureEpoch !== sourceEpoch) {
-        packetizer.reset();
-        state.relayCaptureEpoch = sourceEpoch;
-        state.relaySequence = 0;
-      }
-      packetizer.push(event.inputBuffer.getChannelData(0), context.sampleRate, (samples) => {
-        sendRelayPcmFrame(samples, sourceEpoch);
-      });
-    };
-    state.audioContext = context;
     state.relayCaptureStream = stream;
     state.relayCaptureSource = source;
     state.relayProcessor = processor;
     state.relaySink = sink;
-    state.relayPacketizer = packetizer;
-    if (context.state !== 'running') void context.resume().catch(() => {});
+    state.relayCaptureEpoch = null;
+    syncRelayCaptureLease();
     return true;
   } catch (error) {
+    try { source?.disconnect(); } catch {}
+    try { processor?.disconnect(); processor?.port?.close(); } catch {}
+    try { sink?.disconnect(); } catch {}
+    if (generation !== state.relayPublisherGeneration) return false;
     stopRelayCapture();
     if (!state.relayUnavailableNotified) {
       state.relayUnavailableNotified = true;
       toast(error?.message || 'This browser could not start PCM16 audio relay.', 'error');
     }
     return false;
+  } finally {
+    if (generation === state.relayPublisherGeneration) state.relayPublisherStarting = null;
   }
 }
 
@@ -1142,10 +1152,9 @@ function applyRoomState(next) {
   if (sourceChanged || sourceEpochChanged) {
     closePeerConnections();
     state.relayPacketizer?.reset();
-    state.relayCaptureEpoch = null;
-    state.relaySequence = 0;
     resetRelayPlaybackQueue(state.room?.sourceEpoch ?? null);
   }
+  syncRelayCaptureLease();
   // Keep the host's capture alive while a participant temporarily broadcasts so
   // the server can return control without asking the host to grant capture again.
   // A participant/co-host source is released when control moves away from it.
@@ -1230,7 +1239,7 @@ function renderControls() {
     const selfIsSource = isSelfSource();
     const requestTitle = $('#request-controls-title');
     const requestStatus = $('#request-control-status');
-    $('#request-audio').classList.toggle('hidden', Boolean(myRequest || selfIsSource || sourceIsParticipant));
+    $('#request-audio').classList.toggle('hidden', Boolean(myRequest || selfIsSource));
     $('#cancel-request').classList.toggle('hidden', !myRequest);
     $('#cancel-request').dataset.requestId = myRequest?.id || '';
     $('#ask-takeover').classList.toggle('hidden', !sourceIsParticipant);
@@ -1244,7 +1253,7 @@ function renderControls() {
     }
     $('#enable-audio-participant').classList.toggle('hidden', !state.audioNeedsGesture || selfIsSource);
     if (requestTitle && requestStatus) {
-      if (mobileAudio && !sourceIsParticipant) {
+      if (mobileAudio && !selfIsSource) {
         requestTitle.textContent = 'Use the Android app to share phone audio';
         requestStatus.textContent = 'Mobile browsers cannot capture playback from another phone app. Download or open the SangeetPitara Android app, join this room, and request device audio there.';
       } else if (selfIsSource) {
@@ -1256,8 +1265,8 @@ function renderControls() {
         requestTitle.textContent = 'Waiting for host approval';
         requestStatus.textContent = 'Your request is in the queue. You can cancel it here if you change your mind.';
       } else if (sourceIsParticipant) {
-        requestTitle.textContent = 'Another listener is sharing';
-        requestStatus.textContent = 'Ask the host to take control before you request your turn.';
+        requestTitle.textContent = 'Request your turn to share audio';
+        requestStatus.textContent = 'Another listener is sharing now, but you can still ask the host to review your request. Approval will hand control to you and preserve the current source for resumption.';
       } else {
         requestTitle.textContent = 'Ask to share audio';
         requestStatus.textContent = 'Request host approval when you want to play something for the room.';
@@ -1626,12 +1635,18 @@ async function startLocalCapture(sourceType, intent = 'host') {
         toast('The audio capture session ended.', 'error');
       }
     }));
-    if (isMediaRelayEnabled()) ensureRelayPublisher();
+    if (isMediaRelayEnabled() && !(await ensureRelayPublisher())) {
+      if (nonce !== state.captureNonce) return;
+      throw new Error('Audio capture could not initialize. Please try sharing again.');
+    }
+    if (nonce !== state.captureNonce) return;
     if (intent === 'takeover') send({ type: 'takeover', sourceType });
     send({ type: 'start-source', sourceType, sourceLabel: label });
     toast(`Sharing ${label}.`, 'success');
     addActivity(`You started sharing ${label}.`, true);
   } catch (error) {
+    if (nonce !== state.captureNonce) return;
+    stopLocalCapture(false);
     if (intent === 'participant') send({ type: 'stop-source' });
     const openedMobileGuide = mobileAudio && openMobileAudioGuide();
     if (!openedMobileGuide) toast(error.message || 'Audio capture was not available.', 'error');

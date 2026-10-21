@@ -6,7 +6,11 @@
     <string name="capture_notification_text">Capturing eligible device playback for this room</string>
     <string name="stop_capture">Stop device audio</string>
     <string name="capture_notification_channel_name">SangeetPitara audio capture</string>
-    <string name="capture_notification_channel_description">Shows while SangeetPitara captures supported device playback.</string>
+    <string name="capture_notification_channel_description">Shows while SangeetPitara captures or plays room audio in the background.</string>
+    <string name="room_playback_notification_title">SangeetPitara room playback</string>
+    <string name="room_playback_notification_text">Listening stays available when you leave the app</string>
+    <string name="stop_listening">Stop listening / leave</string>
+    <string name="leave_room_notification">Leave room</string>
     <string name="control_request_channel_name">SangeetPitara control requests</string>
     <string name="control_request_channel_description">Alerts that let a host or co-host approve or reject room control requests.</string>
     <string name="control_request_notification_title">SangeetPitara control request</string>

@@ -344,3 +344,59 @@ test('leave releases the host before reconnect so the host can end the same room
   }));
   assert.match((await unavailable).message, /unavailable|ended/i);
 });
+
+test('participant can request browser audio while another participant is sharing', async (t) => {
+  const { server, url } = await startServer();
+  const host = client(url);
+  const firstGuest = client(url);
+  const secondGuest = client(url);
+  t.after(() => {
+    host.socket.close();
+    firstGuest.socket.close();
+    secondGuest.socket.close();
+    server.kill();
+  });
+
+  await host.open();
+  host.socket.send(JSON.stringify({
+    type: 'create-room',
+    name: 'Participant request handoff',
+    displayName: 'Host',
+    guestId: 'handoff-host',
+  }));
+  const created = await host.wait((message) => message.type === 'joined');
+
+  await firstGuest.open();
+  firstGuest.socket.send(JSON.stringify({
+    type: 'join-room',
+    code: created.state.room.code,
+    displayName: 'First browser source',
+    guestId: 'handoff-first',
+  }));
+  const firstJoined = await firstGuest.wait((message) => message.type === 'joined');
+  await host.wait((message) => message.type === 'state' && message.state.members.length === 2);
+
+  const firstRequestState = host.wait((message) => message.type === 'state' && message.state.requests.length === 1);
+  firstGuest.socket.send(JSON.stringify({ type: 'request-control', sourceType: 'DEVICE_AUDIO', note: 'First browser source' }));
+  const firstRequest = (await firstRequestState).state.requests[0];
+  host.socket.send(JSON.stringify({ type: 'approve-request', requestId: firstRequest.id }));
+  await firstGuest.wait((message) => message.type === 'request-result' && message.status === 'APPROVED');
+  const firstLiveState = host.wait((message) => message.type === 'state' && message.state.room.activeSourceId === firstJoined.state.self.id && message.state.room.sourceStatus === 'LIVE');
+  firstGuest.socket.send(JSON.stringify({ type: 'start-source', sourceType: 'DEVICE_AUDIO', sourceLabel: 'browser playback' }));
+  await firstLiveState;
+
+  await secondGuest.open();
+  secondGuest.socket.send(JSON.stringify({
+    type: 'join-room',
+    code: created.state.room.code,
+    displayName: 'Second browser source',
+    guestId: 'handoff-second',
+  }));
+  const secondJoined = await secondGuest.wait((message) => message.type === 'joined');
+
+  const secondRequestState = host.wait((message) => message.type === 'state' && message.state.requests.length === 1 && message.state.requests[0].requesterId === secondJoined.state.self.id);
+  secondGuest.socket.send(JSON.stringify({ type: 'request-control', sourceType: 'DEVICE_AUDIO', note: 'Second browser source' }));
+  const request = (await secondRequestState).state.requests[0];
+  assert.equal(request.requesterId, secondJoined.state.self.id);
+  assert.equal(request.sourceType, 'DEVICE_AUDIO');
+});

@@ -12,10 +12,15 @@ function track(kind, readyState = 'live') {
   return { kind, readyState, enabled: true };
 }
 
-test('requests browser hints for system and tab audio', () => {
+test('requests system and tab audio without microphone-style processing', () => {
   assert.deepEqual(displayAudioCaptureConstraints(), {
     video: true,
-    audio: { suppressLocalAudioPlayback: false },
+    audio: {
+      suppressLocalAudioPlayback: false,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    },
     systemAudio: 'include',
     windowAudio: 'system',
     selfBrowserSurface: 'exclude',

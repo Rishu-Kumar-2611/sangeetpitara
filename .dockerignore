@@ -6,6 +6,8 @@
 node_modules/
 *.log
 *.apk
+!downloads/SangeetPitara-debug.apk
+!downloads/SangeetPitara-1.0.1-debug.apk
 android/.gradle/
 android/build/
 android/app/build/

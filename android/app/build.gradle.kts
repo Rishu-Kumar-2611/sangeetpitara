@@ -52,8 +52,8 @@ android {
         applicationId = "com.roomsound.android"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.0"
+        versionCode = 3
+        versionName = "1.0.1"
         buildConfigField(
             "String",
             "ROOMSOUND_DEFAULT_ENDPOINT",
@@ -143,6 +143,33 @@ tasks.register<Copy>("exportDebugApk") {
     from(project.layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
     into(rootProject.layout.projectDirectory.dir("artifacts"))
     rename { "SangeetPitara-debug.apk" }
+}
+
+tasks.register("exportPublicDebugApk") {
+    group = "distribution"
+    description = "Back up the previous public debug APK once and export the current version."
+    dependsOn("assembleDebug")
+
+    val builtApk = project.layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+    val downloads = rootProject.layout.projectDirectory.dir("../downloads")
+    val stableApk = downloads.file("SangeetPitara-debug.apk").asFile
+    val versionedApk = downloads.file("SangeetPitara-1.0.1-debug.apk").asFile
+    val rollbackApk = rootProject.layout.projectDirectory
+        .file("artifacts/rollback/SangeetPitara-before-1.0.1-debug.apk").asFile
+
+    doLast {
+        val sourceApk = builtApk.get().asFile
+        if (!sourceApk.isFile) {
+            throw GradleException("Cannot export public debug APK: built APK is missing at ${sourceApk.path}")
+        }
+        if (stableApk.isFile && !rollbackApk.exists()) {
+            rollbackApk.parentFile.mkdirs()
+            stableApk.copyTo(rollbackApk, overwrite = false)
+        }
+        downloads.asFile.mkdirs()
+        sourceApk.copyTo(versionedApk, overwrite = true)
+        sourceApk.copyTo(stableApk, overwrite = true)
+    }
 }
 
 dependencies {
