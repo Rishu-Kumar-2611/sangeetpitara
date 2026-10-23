@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261021-playback-4';
+const assetVersion = '20261023-clarity-1';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
@@ -169,8 +169,17 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(app, /state\.relayPlaybackNextTime > now \+ RELAY_MAX_PLAYAHEAD_SECONDS/);
   assert.match(app, /Math\.max\(now \+ 0\.01, state\.relayPlaybackNextTime \|\| 0\)/);
   assert.match(app, /state\.relayLastSequence = frame\.sequence/);
+  assert.match(app, /createMediaStreamDestination\(\)/);
+  assert.match(app, /audio\.srcObject = destination\.stream/);
+  assert.match(app, /audio\.volume = 1/);
+  assert.match(app, /gain\.connect\(destination\)/);
+  assert.match(app, /relayAudio\.play\(\)/);
   assert.match(app, /muted sink/);
   assert.match(app, /event\.data instanceof Blob|handleRelayFrame\(event\.data\)/);
+  assert.match(app, /resumeRoomMediaAfterVisibility/);
+  assert.match(app, /visibilitychange/);
+  assert.match(app, /document\.addEventListener\('resume'/);
+  assert.match(app, /pageshow/);
   assert.match(app, /displayAudioCaptureConstraints/);
   assert.match(app, /displayAudioCaptureGuidance/);
   assert.match(capture, /Firefox.*does not provide a live system-audio track/s);

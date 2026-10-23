@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
-import { RelayPcmPacketizer } from './relay-pcm.js';
+import { RelayPcmClarityFilter, RelayPcmPacketizer } from './relay-pcm.js';
 import { decodePcm16Frame, encodePcm16Frame } from './media-relay.mjs';
 
 function packetize(input, rate, blockSize) {
@@ -48,6 +48,18 @@ test('capture quantization clips finite audio and replaces invalid samples witho
   const input = new Float32Array(960);
   input.set([-2, -1, -0.5, 0, 0.5, 1, 2, NaN, Infinity, -0, -1e-8, 1e-8]);
   assert.deepEqual(packetize(input, 48_000, 128).samples.slice(0, 12), [-32768, -32768, -16384, 0, 16384, 32767, 32767, 0, 0, 0, 0, 0]);
+});
+
+test('clarity filter leaves ordinary program audio untouched and removes sustained bias', () => {
+  const clean = new RelayPcmClarityFilter();
+  const music = Float32Array.from({ length: 960 }, (_, i) => 0.8 * Math.sin(2 * Math.PI * 997 * i / 48_000));
+  assert.deepEqual([...music].map((sample) => clean.process(sample)), [...music]);
+
+  const biased = new RelayPcmClarityFilter();
+  let last = 0;
+  for (let index = 0; index < 12_000; index += 1) last = biased.process(0.12);
+  assert.ok(last < 0.06, `sustained DC bias should be reduced, got ${last}`);
+  assert.ok(last > -0.01, `conditioner must not invert the source, got ${last}`);
 });
 
 test('reset and sample-rate changes discard only partial old capture, never mix leases', () => {

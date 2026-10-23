@@ -226,6 +226,16 @@ class PlaybackCaptureService : Service() {
 
     override fun onBind(intent: Intent?): IBinder = binder
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // The Activity task is disposable; an active room/capture session is
+        // owned by this started foreground service. Reassert its protection so
+        // task removal, screen-off, and launcher process cleanup do not turn a
+        // valid room session into an unprotected background service.
+        if (lifecycle.protected && !syncProtection()) roomSession.leaveRoom()
+        else if (!lifecycle.protected && !destroyed) stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         destroyed = true
         roomSession.removeListener(roomNotificationListener)
@@ -452,23 +462,36 @@ class PlaybackCaptureService : Service() {
             (state?.room?.activeSourceId != null && state.room.activeSourceId == state.self?.id)
         val remoteAudio = state != null && !capturing && state.room.activeSourceId != null &&
             state.room.sourceStatus in setOf("STARTING", "LIVE")
-        if (capturing || (!remoteAudio && lifecycle.phase != RoomPlaybackLifecycle.Phase.RECOVERING)) {
+        val focusMode = RoomAudioFocusPolicy.mode(capturing, remoteAudio)
+        if (focusMode == RoomAudioFocusPolicy.Mode.NONE) {
             abandonAudioFocus()
         } else if (remoteAudio && focusRequest == null && !focusSuppressed) {
             val roomId = lifecycle.sessionId
             lateinit var request: AudioFocusRequest
-            request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
                 .setAudioAttributes(mediaAudioAttributes())
-                .setWillPauseWhenDucked(true)
+                .setWillPauseWhenDucked(false)
                 .setOnAudioFocusChangeListener({ change ->
                     if (destroyed || lifecycle.sessionId != roomId || focusRequest !== request) return@setOnAudioFocusChangeListener
-                    hasAudioFocus = change == AudioManager.AUDIOFOCUS_GAIN
-                    if (change == AudioManager.AUDIOFOCUS_LOSS) {
-                        focusSuppressed = true
-                        abandonAudioFocus()
+                    when (change) {
+                        AudioManager.AUDIOFOCUS_GAIN,
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
+                        -> {
+                            // A competing app may ask us to duck, but that must
+                            // not pause the relay. The native output is already
+                            // a media stream and Android applies the ducking
+                            // policy at the focus boundary when appropriate.
+                            hasAudioFocus = true
+                        }
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                            hasAudioFocus = false
+                        }
+                        AudioManager.AUDIOFOCUS_LOSS -> {
+                            focusSuppressed = true
+                            abandonAudioFocus()
+                        }
                     }
-                    // Transient loss/duck pauses locally; gain restores the saved
-                    // user level. Never request focus in response to a loss.
+                    // Never request focus in response to a loss.
                     roomSession.setPlaybackAllowed(hasAudioFocus)
                     updateMediaPlaybackState()
                 }, main)

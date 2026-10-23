@@ -1,7 +1,8 @@
-import { RelayPcmPacketizer } from './relay-pcm.js?v=20261021-playback-4';
+import { RelayPcmPacketizer } from './relay-pcm.js?v=20261023-clarity-1';
 
 // This processor only captures playback already selected by getDisplayMedia.
-// No microphone, filters, AGC, timers, or local echo are introduced here.
+// No microphone, AGC, timers, or local echo are introduced here. The shared
+// packetizer applies only its gated, conservative clarity cleanup.
 class RelayCaptureProcessor extends AudioWorkletProcessor {
   constructor() {
     super();

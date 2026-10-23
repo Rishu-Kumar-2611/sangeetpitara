@@ -111,6 +111,25 @@ short playback look-ahead, and drops stale frames for slow listeners instead
 of letting old audio accumulate. This favors a short gap over delayed audio
 when a device or network falls behind.
 
+### Android Chrome background boundary
+
+Browser listeners route relay PCM through an audible `<audio>` element backed by
+the Web Audio graph. This gives Chrome Android the normal media-playback path,
+and the page retries the media element and audio contexts on `visibilitychange`,
+`resume`, and `pageshow`. It improves playback when Chrome is sent to the
+background but remains alive in Recents.
+
+This is still a web lifecycle boundary, not a background-service guarantee.
+Chrome may freeze a hidden page (suspending JavaScript and network callbacks),
+or discard/terminate it without a page callback. A service worker cannot take
+over the live PCM WebSocket and Web Audio renderer. Therefore no web-only
+change can guarantee continuous relay playback after Chrome is swiped away,
+the browser process is killed, the tab is discarded, or Android reclaims the
+process. The smallest guaranteed path for long-running locked/background
+playback is the existing Android foreground-service client; an installed PWA
+can reuse the same media-element and Media Session behavior, but it does not
+remove Chrome's page-lifecycle limits.
+
 `demo-local` is an explicitly named offline development simulation. It does not
 load a real ad network, make a production ad-impression claim, or provide
 production monetization. The browser stores only an access expiry timestamp in

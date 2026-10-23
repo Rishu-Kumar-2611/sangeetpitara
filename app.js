@@ -1,18 +1,18 @@
-import { createGuestId } from './guest-id.js?v=20261021-playback-4';
-import { RelayPcmPacketizer } from './relay-pcm.js?v=20261021-playback-4';
+import { createGuestId } from './guest-id.js?v=20261023-clarity-1';
+import { RelayPcmPacketizer } from './relay-pcm.js?v=20261023-clarity-1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261021-playback-4';
+} from './capture-tracks.js?v=20261023-clarity-1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261021-playback-4';
+} from './media-relay.mjs?v=20261023-clarity-1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -23,7 +23,7 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261021-playback-4';
+} from './ads.mjs?v=20261023-clarity-1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -77,6 +77,8 @@ const state = {
   relaySequence: 0,
   relayPlaybackContext: null,
   relayPlaybackGain: null,
+  relayPlaybackAudio: null,
+  relayPlaybackDestination: null,
   relayPlaybackEpoch: null,
   relayPlaybackNextTime: 0,
   relayPlaybackSources: new Set(),
@@ -94,6 +96,7 @@ const state = {
   lastRoomCode: null,
   lastDisplayName: null,
   captureNonce: 0,
+  captureRecoveryPending: false,
   telemetry: new Map(),
   telemetryTimer: null,
   telemetryGeneration: 0,
@@ -639,7 +642,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261021-playback-4');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261023-clarity-1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -708,10 +711,41 @@ function ensureRelayPlaybackContext() {
   try {
     const context = createRoomAudioContext();
     const gain = context.createGain();
-    gain.connect(context.destination);
+    // Route PCM through a real media element. On Android, Web Audio alone does
+    // not reliably participate in the browser's media session/audio-focus path
+    // while Chrome is backgrounded; an audible <audio> stream is the web API's
+    // compatible background-playback boundary. PCM scheduling remains exactly
+    // the same and still terminates at this destination node.
+    const destination = context.createMediaStreamDestination();
+    gain.connect(destination);
+    const audio = document.createElement('audio');
+    audio.autoplay = true;
+    audio.playsInline = true;
+    audio.controls = false;
+    audio.volume = 1;
+    audio.srcObject = destination.stream;
+    audio.setAttribute('aria-label', 'Room audio — use Your listening controls to adjust volume');
+    audio.style.position = 'fixed';
+    audio.style.width = '1px';
+    audio.style.height = '1px';
+    audio.style.opacity = '0';
+    audio.style.pointerEvents = 'none';
+    document.body.append(audio);
     state.relayPlaybackContext = context;
     state.relayPlaybackGain = gain;
+    state.relayPlaybackDestination = destination;
+    state.relayPlaybackAudio = audio;
     applyOutputVolume();
+    if (typeof navigator !== 'undefined' && navigator.mediaSession && typeof MediaMetadata !== 'undefined') {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: 'Room audio',
+        artist: state.room?.name || 'SangeetPitara',
+      });
+    }
+    void audio.play().catch(() => {
+      state.audioNeedsGesture = true;
+      renderControls();
+    });
     return context;
   } catch (error) {
     if (!state.relayUnavailableNotified) {
@@ -735,9 +769,17 @@ function resetRelayPlaybackQueue(nextEpoch = null) {
 
 function closeRelayPlayback() {
   resetRelayPlaybackQueue();
+  const audio = state.relayPlaybackAudio;
+  if (audio) {
+    try { audio.pause(); } catch {}
+    audio.srcObject = null;
+    audio.remove();
+  }
   try { state.relayPlaybackGain?.disconnect(); } catch {}
   const context = state.relayPlaybackContext;
   state.relayPlaybackGain = null;
+  state.relayPlaybackDestination = null;
+  state.relayPlaybackAudio = null;
   state.relayPlaybackContext = null;
   if (context && context.state !== 'closed') void context.close().catch(() => {});
 }
@@ -1001,7 +1043,7 @@ function connectAnd(action, isReconnect = false) {
     if (state.room) {
       closePeerConnections();
       resetRelayPlaybackQueue();
-      if (state.room.activeSourceId === state.self?.id) stopLocalCapture(false);
+      if (state.room.activeSourceId === state.self?.id && state.captureStream) state.captureRecoveryPending = true;
       $('#room-banner').textContent = 'Connection lost — reconnecting…';
       $('#room-banner').classList.remove('hidden');
       addActivity('Connection lost — reconnecting…', true);
@@ -1160,6 +1202,14 @@ function applyRoomState(next) {
   // A participant/co-host source is released when control moves away from it.
   const wasHostSource = wasSelfSource && state.self?.role === 'HOST';
   if (wasSelfSource && state.room.activeSourceId !== state.self?.id && !wasHostSource) stopLocalCapture(false);
+  if (state.captureRecoveryPending && wasHostSource && state.captureStream && !state.room.activeSourceId && state.room.sourceStatus === 'NONE') {
+    // A temporary background/network disconnect makes the server release the
+    // host lease. Keep the already-approved capture stream alive and reacquire
+    // the host source slot after the room reconnects instead of forcing a new
+    // browser picker gesture.
+    send({ type: 'start-source', sourceType: state.captureType || 'DEVICE_AUDIO', sourceLabel: state.captureLabel || 'Browser device audio' });
+    state.captureRecoveryPending = false;
+  }
   // Peer cleanup: if a listener just went offline, drop its peer to free RTC resources
   {
     const onlineNow = new Set(state.members.filter((m) => m.online).map((m) => m.id));
@@ -1656,6 +1706,7 @@ async function startLocalCapture(sourceType, intent = 'host') {
 
 function stopLocalCapture(stopServer = true) {
   state.captureNonce += 1;
+  state.captureRecoveryPending = false;
   if (state.peers.size) closePeerConnections();
   stopRelayCapture();
   if (state.captureStream) state.captureStream.getTracks().forEach((track) => track.stop());
@@ -1976,12 +2027,18 @@ async function handleRtcSignal(message) {
 
 function enableRoomAudio() {
   const audio = state.audioElement ? ensureAudioElement() : null;
+  const relayAudio = state.relayPlaybackAudio;
   const playbackContext = state.relayPlaybackContext;
   const tasks = [];
   if (audio) {
     audio.muted = false;
     applyOutputVolume();
     tasks.push(audio.play());
+  }
+  if (relayAudio) {
+    relayAudio.muted = false;
+    applyOutputVolume();
+    tasks.push(relayAudio.play());
   }
   if (playbackContext?.state === 'suspended') tasks.push(playbackContext.resume());
   if (!tasks.length) {
@@ -1993,6 +2050,18 @@ function enableRoomAudio() {
     state.audioNeedsGesture = false;
     renderControls();
   }).catch(() => toast('Room audio is not ready yet.', 'error'));
+}
+
+async function resumeRoomMediaAfterVisibility() {
+  if (state.explicitLeave || !state.room) return;
+  const tasks = [];
+  for (const context of [state.audioContext, state.relayPlaybackContext]) {
+    if (context?.state === 'suspended') tasks.push(context.resume());
+  }
+  if (state.audioElement?.srcObject && state.audioElement.paused) tasks.push(state.audioElement.play());
+  if (state.relayPlaybackAudio?.srcObject && state.relayPlaybackAudio.paused) tasks.push(state.relayPlaybackAudio.play());
+  if (state.captureStream && isMediaRelayEnabled()) tasks.push(ensureRelayPublisher());
+  await Promise.allSettled(tasks);
 }
 
 function closeRoomMenu() {
@@ -2158,6 +2227,14 @@ function wireEvents() {
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeRoomMenu();
   });
+  document.addEventListener('visibilitychange', () => {
+    // Do not stop capture or playback when the tab is hidden. Mobile browsers
+    // can suspend an AudioContext while backgrounded; retry only when the page
+    // is visible again and keep the existing user gesture state intact.
+    if (!document.hidden) void resumeRoomMediaAfterVisibility();
+  });
+  document.addEventListener('resume', () => { void resumeRoomMediaAfterVisibility(); });
+  window.addEventListener('pageshow', () => { void resumeRoomMediaAfterVisibility(); });
   $('#chat-form').addEventListener('submit', (event) => {
     event.preventDefault();
     const text = $('#chat-input').value.trim();

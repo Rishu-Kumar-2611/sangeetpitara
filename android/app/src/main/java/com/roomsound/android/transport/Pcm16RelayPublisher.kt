@@ -22,6 +22,7 @@ class Pcm16RelayPublisher(
     private var started = false
     private var activeEpoch: Long? = null
     private var nextSequence = 0L
+    private val clarityConditioner = Pcm16ClarityConditioner()
 
     override fun isAvailable(): Boolean = synchronized(lock) { !closed }
 
@@ -39,6 +40,7 @@ class Pcm16RelayPublisher(
             started = true
             activeEpoch = sourceEpoch
             nextSequence = 0L
+            clarityConditioner.reset()
         }
         return true
     }
@@ -70,9 +72,17 @@ class Pcm16RelayPublisher(
             return Pcm16PublishResult.DROPPED_STALE_EPOCH
         }
 
+        val conditionedSamples = synchronized(lock) {
+            if (closed || !started || activeEpoch != frame.sourceEpoch) {
+                droppedFrames.incrementAndGet()
+                return Pcm16PublishResult.DROPPED_STALE_EPOCH
+            }
+            clarityConditioner.process(frame.samples, frame.sampleCount)
+        }
+
         val encoded = runCatching {
             Pcm16RelayPacketCodec.encodeByteString(
-                samples = frame.samples,
+                samples = conditionedSamples,
                 sampleCount = frame.sampleCount,
                 sampleRate = frame.format.sampleRate,
                 channels = frame.format.channels,
@@ -98,6 +108,7 @@ class Pcm16RelayPublisher(
             if (activeEpoch != sourceEpoch) return
             started = false
             activeEpoch = null
+            clarityConditioner.reset()
         }
     }
 
@@ -112,6 +123,7 @@ class Pcm16RelayPublisher(
             closed = true
             started = false
             activeEpoch = null
+            clarityConditioner.reset()
         }
     }
 

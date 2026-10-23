@@ -6,11 +6,11 @@
 - Android version: `1.0.1`, version code `3`.
 - Distribution: debug-signed sideload APK, not a Google Play release.
 - Public server: `https://sangeet-pitaraa.onrender.com`.
-- Browser asset version: `20261021-playback-4`.
+- Browser asset version: `20261023-clarity-1`.
 - APK: `downloads/SangeetPitara-1.0.1-debug.apk`.
 - Compatible stable alias: `downloads/SangeetPitara-debug.apk`.
-- Both APK files: 28,969,706 bytes.
-- APK SHA-256: `f7043e7947404d6a5392c8849b80802c3cec9ddda52bffef438f392632b5bd95`.
+- Both APK files: 28,974,182 bytes.
+- APK SHA-256: `1f33b146ff2f95401b5d38ed114e0df6ef005633d1d25624b075c84129116c9b`.
 
 The signing certificate matches the previous public APK. Install the update
 over the existing application; no uninstall or application-data reset is needed.
@@ -28,7 +28,7 @@ over the existing application; no uninstall or application-data reset is needed.
 
 ## Verified before publishing
 
-- `npm test`: 79 tests (including the build-context regressions), plus origin,
+- `npm test`: 80 tests (including the build-context regressions), plus origin,
   payload, and RTC checks passed on Node 22.14.0 and Node 26.8.1.
 - `npm run check` and `git diff --check`: passed.
 - `node checks/release-local.mjs`: isolated HTTP asset/APK hash checks and the
