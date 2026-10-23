@@ -341,16 +341,20 @@ function notificationPermissionState() {
   return Notification.permission;
 }
 
+function normalizeRoomCodeInput(value) {
+  return String(value || '').replace(/[\s-]+/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
 function roomUrlForCode(roomCode) {
   const url = new URL('/', location.origin);
-  const code = String(roomCode || '').trim().toUpperCase();
+  const code = normalizeRoomCodeInput(roomCode);
   if (code) url.searchParams.set('room', code);
   return url.href;
 }
 
 function notificationRoomCodeFromLocation() {
   try {
-    return new URLSearchParams(location.search).get('room')?.trim().toUpperCase() || null;
+    return normalizeRoomCodeInput(new URLSearchParams(location.search).get('room')) || null;
   } catch {
     return null;
   }
@@ -394,9 +398,9 @@ function registerNotificationServiceWorker() {
 function normalizeNotificationAction(data) {
   const action = data?.action === 'approve' || data?.action === 'reject' ? data.action : '';
   const requestId = String(data?.requestId || '').trim();
-  let roomCode = String(data?.roomCode || '').trim().toUpperCase();
+  let roomCode = normalizeRoomCodeInput(data?.roomCode);
   if (!roomCode && data?.roomUrl) {
-    try { roomCode = new URL(data.roomUrl, location.origin).searchParams.get('room')?.trim().toUpperCase() || ''; } catch {}
+    try { roomCode = normalizeRoomCodeInput(new URL(data.roomUrl, location.origin).searchParams.get('room')); } catch {}
   }
   if (!action || !requestId || !roomCode) return null;
   return { type: notificationActionMessageType, action, requestId, roomCode };
@@ -981,18 +985,21 @@ function connectAnd(action, isReconnect = false) {
     $('#room-name')?.focus();
     return;
   }
-  state.pendingIntent = { ...action, displayName };
+  const normalizedAction = action.type === 'join'
+    ? { ...action, code: normalizeRoomCodeInput(action.code) }
+    : action;
+  state.pendingIntent = { ...normalizedAction, displayName };
   if (!isReconnect) {
     state.explicitLeave = false;
     if (action.type === 'create') state.lastDisplayName = displayName;
-    else { state.lastDisplayName = displayName; state.lastRoomCode = action.code?.toUpperCase() || state.lastRoomCode; }
+    else { state.lastDisplayName = displayName; state.lastRoomCode = normalizedAction.code || state.lastRoomCode; }
     state.reconnectAttempts = 0;
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
   }
   $('#entry-error').classList.add('hidden');
   setConnection(isReconnect ? 'Reconnecting' : 'Connecting', true);
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.close();
+  if (state.ws && state.ws.readyState !== WebSocket.CLOSED) state.ws.close();
   if (state.reconnectTimer && !isReconnect) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
   const socket = new WebSocket(`${protocol}//${location.host}`);
   socket.binaryType = 'arraybuffer';
@@ -1003,11 +1010,14 @@ function connectAnd(action, isReconnect = false) {
     setConnection('Live', true);
     state.reconnectAttempts = 0;
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
-    const intent = state.pendingIntent;
+    const intent = { ...state.pendingIntent };
+    const sendOnSocket = (payload) => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
+    };
     if (intent.type === 'create') {
-      send({ type: 'create-room', name: intent.roomName, displayName: intent.displayName, guestId });
+      sendOnSocket({ type: 'create-room', name: intent.roomName, displayName: intent.displayName, guestId });
     } else {
-      send({ type: 'join-room', code: intent.code, displayName: intent.displayName, guestId });
+      sendOnSocket({ type: 'join-room', code: intent.code, displayName: intent.displayName, guestId });
     }
   });
   socket.addEventListener('close', (event) => {
@@ -1293,24 +1303,21 @@ function renderControls() {
     $('#cancel-request').classList.toggle('hidden', !myRequest);
     $('#cancel-request').dataset.requestId = myRequest?.id || '';
     $('#ask-takeover').classList.toggle('hidden', !sourceIsParticipant);
-    if (mobileAudio) $('#request-audio').textContent = 'Use Android app';
-    else $('#request-audio').innerHTML = '<span>↗</span> Request to play';
+    $('#request-audio').innerHTML = '<span>↗</span> Request to play';
     if (selfIsSource) {
       $('#request-audio').classList.remove('hidden');
       if (state.captureStream) $('#request-audio').textContent = 'Stop sharing';
-      else if (mobileAudio) $('#request-audio').textContent = 'Use Android app';
       else $('#request-audio').textContent = 'Share audio';
     }
     $('#enable-audio-participant').classList.toggle('hidden', !state.audioNeedsGesture || selfIsSource);
     if (requestTitle && requestStatus) {
-      if (mobileAudio && !selfIsSource) {
-        requestTitle.textContent = 'Use the Android app to share phone audio';
-        requestStatus.textContent = 'Mobile browsers cannot capture playback from another phone app. Download or open the SangeetPitara Android app, join this room, and request device audio there.';
-      } else if (selfIsSource) {
+      if (selfIsSource) {
         requestTitle.textContent = 'You are sharing audio';
         requestStatus.textContent = state.captureStream
           ? 'Your room audio is live. Stop sharing when you are done.'
-          : 'You were approved. Tap Share audio to open the browser picker.';
+          : mobileAudio
+            ? 'You were approved. Mobile browsers cannot capture playback from another phone app; use the Android app to share phone audio.'
+            : 'You were approved. Tap Share audio to open the browser picker.';
       } else if (myRequest) {
         requestTitle.textContent = 'Waiting for host approval';
         requestStatus.textContent = 'Your request is in the queue. You can cancel it here if you change your mind.';
@@ -1319,9 +1326,11 @@ function renderControls() {
         requestStatus.textContent = 'Another listener is sharing now, but you can still ask the host to review your request. Approval will hand control to you and preserve the current source for resumption.';
       } else {
         requestTitle.textContent = 'Ask to share audio';
-        requestStatus.textContent = 'Request host approval when you want to play something for the room.';
+        requestStatus.textContent = mobileAudio
+          ? 'Request host approval here. Mobile browsers cannot capture playback from another phone app; use the Android app for phone audio after approval.'
+          : 'Request host approval when you want to play something for the room.';
       }
-      if (state.audioNeedsGesture && !selfIsSource && !mobileAudio) requestStatus.textContent += ' Tap Enable room audio to start playback.';
+      if (state.audioNeedsGesture && !selfIsSource) requestStatus.textContent += ' Tap Enable room audio to start playback.';
     }
   }
 }
@@ -2166,10 +2175,6 @@ function sendRequest() {
     addActivity('You stopped sharing audio.', true);
     return;
   }
-  if (currentMobileAudioGuidance()) {
-    openMobileAudioGuide();
-    return;
-  }
   send({ type: 'request-control', sourceType: 'DEVICE_AUDIO', note: 'I want to share device audio.' });
   toast('Waiting for host approval…');
   addActivity('You requested audio control.', true);
@@ -2180,11 +2185,12 @@ function wireEvents() {
 
   $('#create-room').addEventListener('click', () => connectAnd({ type: 'create', roomName: $('#room-name').value.trim() }));
   $('#join-room').addEventListener('click', () => {
-    const code = $('#room-code').value.trim().toUpperCase();
-    if (code.length < 4) return showLanding('Enter the room code your host shared with you.');
+    const code = normalizeRoomCodeInput($('#room-code').value);
+    $('#room-code').value = code;
+    if (code.length !== 6) return showLanding('Enter the six-character room code your host shared with you.');
     connectAnd({ type: 'join', code });
   });
-  $('#room-code').addEventListener('input', (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+  $('#room-code').addEventListener('input', (event) => { event.target.value = normalizeRoomCodeInput(event.target.value); });
   $('#share-audio').addEventListener('click', () => { void startLocalCapture('DEVICE_AUDIO', 'host'); });
   $('#takeover-audio').addEventListener('click', () => {
     if (state.captureStream) {
@@ -2285,6 +2291,6 @@ if (initialNotificationAction) {
   const queryRoom = locationParams.get('room');
   if (queryRoom) {
     selectEntryTab('join');
-    $('#room-code').value = queryRoom.toUpperCase();
+    $('#room-code').value = normalizeRoomCodeInput(queryRoom);
   }
 }

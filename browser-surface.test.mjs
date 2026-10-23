@@ -246,6 +246,19 @@ test('browser audio sharing opens the native DEVICE_AUDIO picker without a sourc
   assert.match(app, /Display capture was denied\. Allow access and tick Share audio, then try again\./);
 });
 
+test('mobile browsers can request audio before the native-app capture guidance appears', async () => {
+  const app = await readFile(new URL('app.js', root), 'utf8');
+
+  assert.match(app, /function normalizeRoomCodeInput/);
+  assert.match(app, /if \(state\.ws && state\.ws\.readyState !== WebSocket\.CLOSED\) state\.ws\.close\(\)/);
+  assert.match(app, /const intent = \{ \.\.\.state\.pendingIntent \};/);
+  assert.match(app, /sendOnSocket\(\{ type: 'join-room', code: intent\.code/);
+  assert.match(app, /Mobile browsers cannot capture playback from another phone app/);
+  assert.match(app, /send\(\{ type: 'request-control', sourceType: 'DEVICE_AUDIO'/);
+  assert.doesNotMatch(app, /function sendRequest\(\) \{[\s\S]*?if \(currentMobileAudioGuidance\(\)\) \{[\s\S]*?openMobileAudioGuide\(\);[\s\S]*?return;[\s\S]*?\n  \}/);
+  assert.match(app, /You were approved\. Mobile browsers cannot capture playback from another phone app; use the Android app to share phone audio\./);
+});
+
 test('browser RTC keeps transiently disconnected peers for ICE recovery', async () => {
   const app = await readFile(new URL('app.js', root), 'utf8');
 

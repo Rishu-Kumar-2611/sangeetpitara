@@ -109,8 +109,8 @@ test('legacy public hostname redirects to the canonical room service', async (t)
   assert.equal(response.headers.location, 'https://canonical.example.test/?room=ABC123');
 });
 
-function client(url) {
-  const socket = new WebSocket(url);
+function client(url, options = {}) {
+  const socket = new WebSocket(url, options);
   const messages = [];
   const waiters = [];
   socket.on('message', (raw) => {
@@ -257,6 +257,43 @@ test('joins when a pasted room code contains case changes, whitespace, and hyphe
 
   assert.equal(joined.state.room.code, code);
   assert.equal(joined.state.self.name, 'Android');
+});
+
+test('same-origin invite page and browser websocket can join with the canonical room code', async (t) => {
+  const { server, url, http: httpUrl } = await startServer();
+  const host = client(url, { headers: { Origin: httpUrl } });
+  t.after(() => {
+    host.socket.close();
+    server.kill();
+  });
+
+  await host.open();
+  host.socket.send(JSON.stringify({
+    type: 'create-room',
+    name: 'Same-origin invite regression',
+    displayName: 'Host',
+    guestId: 'same-origin-host',
+  }));
+  const created = await host.wait((message) => message.type === 'joined');
+  const code = created.state.room.code;
+
+  const page = await fetch(`${httpUrl}/?room=${code.slice(0, 3).toLowerCase()}-${code.slice(3)}`);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /id="join-room"/);
+
+  const guest = client(url, { headers: { Origin: httpUrl } });
+  t.after(() => guest.socket.close());
+  await guest.open();
+  guest.socket.send(JSON.stringify({
+    type: 'join-room',
+    code: ` ${code.slice(0, 3).toLowerCase()}-${code.slice(3)} `,
+    displayName: 'Browser listener',
+    guestId: 'same-origin-guest',
+  }));
+  const joined = await guest.wait((message) => message.type === 'joined');
+
+  assert.equal(joined.state.room.code, code);
+  assert.equal(joined.state.self.name, 'Browser listener');
 });
 
 test('rejects microphone source requests', async (t) => {
