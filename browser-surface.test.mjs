@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261024-prod';
+const assetVersion = '20261025-redesign';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
@@ -211,9 +211,13 @@ test('landing page presents the browser room as the primary path and clarifies t
   assert.match(html, /listen live, chat with the room, request audio, and approve or reject requests without downloading anything/);
   assert.match(html, /Prefer the Android app\?/);
   assert.match(html, /<small>Share this code with listeners<\/small>/);
-  assert.match(css, /\.room-code-display strong \{[^}]*font-size: clamp\(28px, 3\.2vw, 38px\)/s);
+  assert.match(css, /\.room-code-display strong \{[^}]*letter-spacing: 0\.2em/s);
   assert.match(css, /\.request-actions \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
-  assert.match(css, /\.request-actions button \{[^}]*min-height: 34px/s);
+  // Approve/decline are touch targets: at least 44 px tall.
+  assert.match(css, /\.request-actions button \{[^}]*min-height: 44px/s);
+  // Fonts are self-hosted so the CSP keeps default-src 'self'.
+  assert.match(css, /@font-face \{ font-family: 'Poppins';[^}]*url\('\/fonts\/poppins-600-latin\.woff2'\)/);
+  assert.doesNotMatch(html, /fonts\.googleapis\.com/);
 });
 
 test('browser audio sharing opens the native DEVICE_AUDIO picker without a source modal', async () => {

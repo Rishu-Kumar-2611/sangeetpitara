@@ -1,4 +1,4 @@
-import { RelayPcmPacketizer } from './relay-pcm.js?v=20261024-prod';
+import { RelayPcmPacketizer } from './relay-pcm.js?v=20261025-redesign';
 
 // This processor only captures playback already selected by getDisplayMedia or
 // the in-app audio file player. No microphone, AGC, timers, or local echo are

@@ -1,19 +1,19 @@
-import { createGuestId } from './guest-id.js?v=20261024-prod';
-import { RelayPcmPacketizer } from './relay-pcm.js?v=20261024-prod';
+import { createGuestId } from './guest-id.js?v=20261025-redesign';
+import { RelayPcmPacketizer } from './relay-pcm.js?v=20261025-redesign';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261024-prod';
+} from './capture-tracks.js?v=20261025-redesign';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261024-prod';
+} from './media-relay.mjs?v=20261025-redesign';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -25,7 +25,7 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261024-prod';
+} from './ads.mjs?v=20261025-redesign';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -786,7 +786,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261024-prod');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261025-redesign');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -860,7 +860,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261024-prod')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261025-redesign')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1511,12 +1511,14 @@ function renderSource() {
   const starting = state.room.sourceStatus === 'STARTING';
   const card = $('#source-card');
   card.classList.toggle('live', live);
-  $('#source-kicker').textContent = live ? (starting ? 'CONNECTING SOURCE' : 'ACTIVE AUDIO SOURCE') : 'NO ACTIVE SOURCE';
+  $('#source-kicker').textContent = live ? (starting ? 'Connecting…' : `Now playing · ${sourceLabel(state.room.activeSourceType)}`) : 'Nothing playing';
   $('#source-title').textContent = live ? `${sourceMember.name} is sharing` : 'The room is quiet';
   $('#source-detail').textContent = live
-    ? `${sourceLabel(state.room.activeSourceType)} · ${starting ? 'waiting for the source device' : 'everyone can listen now'}`
+    ? (starting ? 'Waiting for the source device…' : 'Everyone in the room can listen.')
     : 'Choose an audio source to start sharing with the room.';
-  $('#source-status-label').textContent = live ? (starting ? 'Starting' : 'Live now') : 'Waiting';
+  $('#source-status-label').textContent = live ? (starting ? 'Starting' : 'Live') : 'Waiting';
+  // Draw resting bars once the card has a size; the live loop takes over while audio plays.
+  if (!state.visualizerRaf && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { if (!state.visualizerRaf) drawSourceWaveform(null); });
 }
 
 function renderControls() {

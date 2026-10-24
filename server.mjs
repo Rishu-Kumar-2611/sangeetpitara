@@ -159,7 +159,7 @@ const mimeTypes = {
   '.webp': 'image/webp',
   '.wasm': 'application/wasm',
   '.ico': 'image/x-icon',
-  '.apk': 'application/vnd.android.package-archive',
+  '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
   '.xml': 'application/xml; charset=utf-8',
 };
@@ -1471,7 +1471,7 @@ const server = http.createServer(async (req, res) => {
     res.end('Forbidden');
     return;
   }
-  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.xml']);
+  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.xml', '.woff2']);
   if (!allowedExts.has(extname(filePath))) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not found');
