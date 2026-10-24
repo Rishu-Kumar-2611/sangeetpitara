@@ -15,7 +15,7 @@ const AD_CONSENT_STORAGE_KEY = 'roomsound-ad-consent';
 
 export const REWARDED_ACCESS_STORAGE_KEY = 'roomsound-rewarded-access-expires-at';
 export const DEFAULT_REWARDED_ACCESS_CONFIG = Object.freeze({
-  enabled: true,
+  enabled: false,
   provider: 'demo-local',
   mode: 'offline',
   rewardDurationSeconds: 30,
@@ -82,8 +82,10 @@ export function normalizeRewardedAccessConfig(config = {}) {
     DEFAULT_REWARDED_ACCESS_CONFIG.accessDurationHours,
     { min: 1 / 60, max: 24 * 365 },
   );
+  const hasEnabled = Object.prototype.hasOwnProperty.call(source, 'enabled');
+  const enabled = hasEnabled ? source.enabled !== false : DEFAULT_REWARDED_ACCESS_CONFIG.enabled;
   return {
-    enabled: source.enabled !== false,
+    enabled,
     provider: String(source.provider || DEFAULT_REWARDED_ACCESS_CONFIG.provider).trim().toLowerCase(),
     mode: String(source.mode || DEFAULT_REWARDED_ACCESS_CONFIG.mode).trim().toLowerCase(),
     rewardDurationSeconds,

@@ -159,11 +159,13 @@ render account controls. The protected HTTP account, moderation, billing, and
 administrator APIs remain available for internal workflows and continue to
 require their own authenticated session.
 
-Browser room entry also requires the rewarded-access gate published by `/config`.
-The default `demo-local` provider runs a 30-second offline simulation and stores
-a six-hour local expiry. It is not a real ad network. Do not enable a production
-rewarded provider until its adapter, consent flow, privacy notice, and
-verification/fulfillment contract have been reviewed.
+Browser room access is currently unrestricted: `REWARDED_ACCESS_ENABLED=0`
+(the default) sends `rewardedAccess.enabled:false` via `/config` and the browser
+shows "Instant room access active" with no timer. The `demo-local` 30-second
+simulation and six-hour local expiry still exist in `ads.mjs` for a future
+opt-in phase — re-enable with `REWARDED_ACCESS_ENABLED=1` once the provider
+adapter, consent flow, privacy disclosure, and verification/fulfillment contract
+have been reviewed. Do not label the offline simulation as a real rewarded ad.
 
 Administrators can revoke an account through the protected
 `POST /api/admin/accounts/:userId/revoke` endpoint. Revocation marks the account

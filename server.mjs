@@ -101,7 +101,7 @@ const adsense = {
   roomSlot: adsenseRoomSlot,
 };
 const rewardedAccess = normalizeRewardedAccessConfig({
-  enabled: !['0', 'false', 'off'].includes(String(process.env.REWARDED_ACCESS_ENABLED || '').trim().toLowerCase()),
+  enabled: ['1', 'true', 'yes', 'on', 'enabled'].includes(String(process.env.REWARDED_ACCESS_ENABLED || '').trim().toLowerCase()),
   provider: process.env.REWARDED_AD_PROVIDER || DEFAULT_REWARDED_ACCESS_CONFIG.provider,
   mode: process.env.REWARDED_AD_MODE || DEFAULT_REWARDED_ACCESS_CONFIG.mode,
   rewardDurationSeconds: process.env.REWARDED_AD_DURATION_SECONDS || DEFAULT_REWARDED_ACCESS_CONFIG.rewardDurationSeconds,
@@ -153,6 +153,7 @@ const mimeTypes = {
   '.ico': 'image/x-icon',
   '.apk': 'application/vnd.android.package-archive',
   '.txt': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
 };
 
 const securityHeaders = {
@@ -1432,7 +1433,7 @@ const server = http.createServer(async (req, res) => {
     res.end('Forbidden');
     return;
   }
-  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.apk']);
+  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.xml', '.apk']);
   if (!allowedExts.has(extname(filePath))) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not found');

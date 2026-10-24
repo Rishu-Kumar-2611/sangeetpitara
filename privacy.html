@@ -1,5 +1,49 @@
 <!doctype html>
 <html lang="en">
-  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="description" content="SangeetPitara privacy information for private live audio rooms." /><title>SangeetPitara privacy</title><link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod" /><link rel="stylesheet" href="/styles.css?v=20261024-prod" /></head>
-  <body><main class="legal-page"><a class="brand-mark" href="/"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></a><h1>Privacy</h1><h2>What we process</h2><p>SangeetPitara processes room and chat metadata, temporary guest identifiers, moderation records, subscription metadata, WebRTC signaling, and operational security data needed to run the live listening service.</p><h2>Audio</h2><p>SangeetPitara never records or stores room audio on disk. Live audio frames are transiently relayed in memory through the SangeetPitara media relay server or a configured TURN relay only while a room source is actively streaming.</p><h2>Advertising</h2><p>Advertising is disabled by default. If Google AdSense is enabled, Google and its partners may use cookies or similar technologies to serve and measure ads based on visits to this site or other sites. Users can opt out of personalized advertising through <a href="https://www.google.com/settings/ads" rel="noopener noreferrer">Google Ads Settings</a>. SangeetPitara asks for consent before loading any configured advertising provider and stores a local consent choice.</p><h2>Requests</h2><p>For privacy, access, correction, export, or deletion inquiries, contact the SangeetPitara administrator via the official repository issue tracker or support channel.</p><p class="legal-back"><a href="/">Back to SangeetPitara</a></p></main></body>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="SangeetPitara — Privacy Policy for SangeetPitara — data, cookies, AdSense." />
+<title>SangeetPitara — Privacy Policy</title>
+<link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod" />
+<link rel="stylesheet" href="/styles.css?v=20261024-prod" />
+<link rel="canonical" href="https://sangeet-pitaraa.onrender.com/privacy.html" />
+</head>
+<body>
+<main class="legal-page">
+<a class="brand-mark" href="/"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></a>
+<h1>Privacy Policy</h1>
+<p class="legal-muted">Effective 24 Oct 2024 · Updated 24 Oct 2026 · DG, India · <a href="/contact.html">Contact</a> · <a href="mailto:support@sangeet-pitaraa.onrender.com">support@sangeet-pitaraa.onrender.com</a></p>
+<p>SangeetPitara runs private live audio rooms at sangeet-pitaraa.onrender.com. Audio is relayed live in memory and never stored on disk. We collect only what is needed to keep rooms working.</p>
+<h2>Data we process</h2>
+<ul>
+<li>Display name + device guest ID in localStorage (no account needed).</li>
+<li>Room code, roster, host role, source requests, ephemeral chat (200/100) and live PCM16/WebRTC signals — in memory, gone when room closes.</li>
+<li>Security: IP (X-Forwarded-For only behind trusted proxy), User-Agent, rate limits, redacted audit logs, Report/Block/Ban records.</li>
+<li>Optional admin auth: email + hashed password and HttpOnly cookie roomsound_session (7–30 days).</li>
+<li>Preferences: ad consent, volume — in localStorage. (Rewarded-access gate is currently disabled; no expiry is stored.)</li>
+</ul>
+<h2>Cookies</h2>
+<table class="legal-table">
+<tr><th>Name</th><th>Purpose</th><th>Duration</th></tr>
+<tr><td>roomsound_session</td><td>Keep admin session</td><td>Up to 30 days</td></tr>
+<tr><td>roomsound-ad-consent</td><td>Remember Allow / Deny</td><td>Until changed</td></tr>
+<tr><td>Google (_gads etc.)</td><td>Serve &amp; measure ads — only after Allow</td><td>Per Google</td></tr>
+</table>
+<p>You can withdraw anytime via Cookie preferences link or browser settings — rooms still work, only ads stay hidden.</p>
+<h2>Advertising — Google AdSense</h2>
+<p>Display ads are <b>off by default</b>. After you tap <b>Allow</b>, Google may load <code>pagead2.googlesyndication.com/pagead/js/adsbygoogle.js</code>.</p>
+<ul>
+<li>Google uses cookies (incl. DoubleClick) to serve/measure ads based on visits here or elsewhere. See <a href="https://policies.google.com/technologies/ads" target="_blank" rel="noopener">How Google uses data on partner sites</a>.</li>
+<li>Google may process cookie IDs, device IDs, IP, pages viewed, ad interactions for personalisation &amp; fraud prevention.</li>
+<li>Before Allow, no Google script loads — slots show SPONSORED SPACE.</li>
+<li>Opt out: <a href="https://adssettings.google.com/" target="_blank" rel="noopener">Google Ads Settings</a>, <a href="https://www.aboutads.info/choices" target="_blank" rel="noopener">aboutads.info</a>, <a href="https://youronlinechoices.eu/" target="_blank" rel="noopener">youronlinechoices.eu</a>, or Deny here.</li>
+<li>After approval, <a href="/ads.txt">/ads.txt</a> lists <code>google.com, pub-XXXXXXXXXX, DIRECT, f08c47fec0942fa0</code>.</li>
+</ul>
+<h2>Sharing &amp; rights</h2>
+<p>We share only with providers to run the service (host, DB, optional TURN/Stripe, Google only after consent). Access/correction/deletion — email via Contact; 30-day reply. Not directed at under-13s.</p>
+<p class="legal-back"><a href="/">Back to SangeetPitara</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a> · <a href="/contact.html">Contact</a> · <a href="#" id="reopen-consent">Cookie preferences</a></p>
+</main>
+<script>document.getElementById('reopen-consent')?.addEventListener('click',function(e){e.preventDefault();try{localStorage.removeItem('roomsound-ad-consent');}catch{}var m=document.querySelector('meta[name="roomsound-ad-consent"]');if(m)m.content='denied';var b=document.getElementById('cookie-banner');if(b)b.hidden=false;else location.href='/#cookie-banner';});</script>
+</body>
 </html>

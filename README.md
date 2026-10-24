@@ -28,7 +28,7 @@ sessions remain compatible. It includes:
 - Durable room directory, moderation records, billing events, and subscription entitlements when PostgreSQL is enabled
 - Production health (`/health`, `/ready`), bounded Prometheus metrics, structured redacted logs, and abuse-report APIs
 - Privacy-gated, opt-in advertising boundary with a Google AdSense adapter that is disabled until deployment configuration and consent exist
-- Provider-neutral rewarded-access gate: a completed 30-second offline demo reward grants six hours of browser room access in local storage
+- Free, unrestricted room access: the rewarded-access gate is currently disabled (code remains for future opt-in use)
 - No audio recording
 
 ## Run it

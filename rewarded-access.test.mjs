@@ -56,7 +56,8 @@ test('the demo-local provider completes after exactly the configured duration wi
     },
   };
 
-  const completion = runRewardedAccess(DEFAULT_REWARDED_ACCESS_CONFIG, {
+  const enabledConfig = { ...DEFAULT_REWARDED_ACCESS_CONFIG, enabled: true };
+  const completion = runRewardedAccess(enabledConfig, {
     timerApi,
     onTick: (remaining) => ticks.push(remaining),
   });

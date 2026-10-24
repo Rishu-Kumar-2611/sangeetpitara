@@ -72,7 +72,7 @@ test('legacy production auth settings do not gate anonymous rooms while internal
   const config = await fetch(`${running.http}/config`).then((response) => response.json());
   assert.equal(config.authRequired, false);
   assert.deepEqual(config.rewardedAccess, {
-    enabled: true,
+    enabled: false,
     provider: 'demo-local',
     mode: 'offline',
     rewardDurationSeconds: 30,
