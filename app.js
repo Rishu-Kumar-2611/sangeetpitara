@@ -47,8 +47,8 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
   channels: MEDIA_RELAY_CHANNELS,
 };
 const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
-const RELAY_MAX_BUFFERED_BYTES = 64 * 1024; // Cap sender socket backlog at 64 KiB (~660 ms mono) so mobile/Wi-Fi bursts do not drop frames.
-const RELAY_MAX_PLAYAHEAD_SECONDS = 0.22; // Cap fallback playahead at 220 ms so delay never accumulates.
+const RELAY_MAX_BUFFERED_BYTES = 192 * 1024; // Allow 192 KiB (~2.0 s) of WebSocket backlog so long-distance WAN TCP bursts never drop frames.
+const RELAY_MAX_PLAYAHEAD_SECONDS = 2.5; // Allow up to 2.5 s fallback playahead for long-distance WAN links without resetting the queue.
 
 function clampVolume(v) {
   const n = Number(v);
@@ -58,8 +58,8 @@ function clampVolume(v) {
 
 function clampSyncOffsetMs(v) {
   const n = Number(v);
-  if (!Number.isFinite(n)) return 120;
-  return Math.min(400, Math.max(40, Math.round(n / 10) * 10));
+  if (!Number.isFinite(n)) return 280;
+  return Math.min(1000, Math.max(60, Math.round(n / 20) * 20));
 }
 
 function enhanceOpusSdpForMusic(sdp) {
@@ -124,7 +124,7 @@ const state = {
   liveAudioLevel: 0,
   muted: false,
   volume: clampVolume(localStorage.getItem('roomsound-volume') ?? 0.9),
-  syncOffsetMs: clampSyncOffsetMs(localStorage.getItem('roomsound-sync-offset-ms') ?? 120),
+  syncOffsetMs: clampSyncOffsetMs(localStorage.getItem('roomsound-sync-offset-ms') ?? 280),
   peers: new Map(),
   pendingIntent: null,
   lastSourceId: null,
@@ -703,14 +703,14 @@ async function ensureRelayPublisher() {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
           channelCount: 2, channelCountMode: 'max', channelInterpretation: 'speakers',
         });
-        processor.port.postMessage({ type: 'config', maxInFlight: 8 });
+        processor.port.postMessage({ type: 'config', maxInFlight: 64 });
         const node = processor;
         node.port.onmessage = ({ data }) => {
           if (!current() || state.relayProcessor !== node) return;
           node.port.postMessage({ type: 'ack' });
           if (!(data?.samples instanceof Int16Array)) return;
           // Allow up to 640 ms for background-tab message delivery before dropping.
-          if (context.currentTime - data.capturedAt > 0.18) return;
+          if (context.currentTime - data.capturedAt > 1.8) return;
           sendRelayPcmFrame(data.samples, data.sourceEpoch, data.sequence);
         };
       } catch (error) {
@@ -738,6 +738,7 @@ async function ensureRelayPublisher() {
       pubAnalyser.fftSize = 64;
       source.connect(pubAnalyser);
       state.relayPublisherAnalyser = pubAnalyser;
+      ensureVisualizerLoop();
     }
     sink = context.createGain();
     sink.gain.value = 0;
@@ -782,6 +783,8 @@ function setupRelayPlaybackWorklet(context, gain) {
       worklet.port.onmessage = ({ data }) => {
         if (data?.type === 'stats') {
           state.relayWorkletBufferedMs = data.bufferedMs ?? 0;
+          state.relayWorkletTargetMs = data.targetMs ?? state.syncOffsetMs;
+          state.relayWorkletJitterMs = data.jitterMs ?? 0;
           state.relayWorkletUnderruns = data.underruns ?? 0;
           renderTelemetry();
         }
@@ -1368,6 +1371,9 @@ function applyRoomState(next) {
     }
   }
   renderAll();
+  if (state.room.activeSourceId && state.room.activeSourceId !== state.self?.id && isMediaRelayEnabled()) {
+    ensureRelayPlaybackContext();
+  }
   if (state.room.activeSourceId === state.self?.id && state.captureStream) {
     if (isMediaRelayEnabled()) ensureRelayPublisher();
     else ensurePublisherConnections();
@@ -1713,7 +1719,7 @@ function renderTelemetry() {
     const bufferLabel = isSender
       ? `${Math.round((Number(state.ws?.bufferedAmount) || 0) / 1024)} KB socket`
       : state.relayPlaybackWorkletReady
-        ? `${state.relayWorkletBufferedMs} ms (${state.syncOffsetMs} ms target)`
+        ? `${state.relayWorkletBufferedMs} ms (${state.relayWorkletTargetMs || state.syncOffsetMs} ms auto)`
         : `${state.syncOffsetMs} ms cushion`;
     const engineLabel = isSender
       ? (state.relayProcessor && typeof AudioWorkletNode !== 'undefined' && state.relayProcessor instanceof AudioWorkletNode ? 'AudioWorklet capture' : 'Web Audio capture')

@@ -676,7 +676,7 @@ class RoomSoundWebSocketClient(
         private const val CONFIG_TIMEOUT_SECONDS = 20L
         // Keep sender backlog near 500 ms of PCM16 so Wi-Fi bursts do not drop
         // frames prematurely while avoiding multi-second stale queues.
-        private const val MAX_RELAY_QUEUED_BYTES = 16_000L
+        private const val MAX_RELAY_QUEUED_BYTES = 96_000L
 
         private fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
             .pingInterval(20, TimeUnit.SECONDS)

@@ -331,8 +331,8 @@ class Pcm16RelayPlayer internal constructor(
 
     companion object {
         const val DEFAULT_MAX_QUEUED_FRAMES = 12
-        const val PRODUCTION_MAX_QUEUED_FRAMES = 16
-        const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 160 / 1_000
+        const val PRODUCTION_MAX_QUEUED_FRAMES = 75
+        const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 1_500 / 1_000
         val FORMAT = Pcm16AudioFormat(48_000, 1)
         private const val UINT32_MAX = Pcm16RelayPacketCodec.UINT32_MAX
         private const val MAX_QUEUED_BYTES = 48_000 * 2 * 120 / 1_000

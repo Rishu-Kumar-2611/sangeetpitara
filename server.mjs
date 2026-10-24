@@ -70,10 +70,10 @@ const BINARY_FRAME_WINDOW_MS = 5_000;
 // Android playback capture emits 10 ms PCM frames (100 frames/sec). Keep a
 // little headroom above that cadence while still bounding a client's relay
 // work; browser packetizers use 20 ms frames and remain well below this cap.
-const BINARY_FRAME_RATE_MAX = 600;
+const BINARY_FRAME_RATE_MAX = 1200;
 // Allow up to 64 KiB (~680 ms at 48 kHz mono PCM16) per listener socket so
 // normal mobile/Wi-Fi TCP retransmission bursts do not drop audio frames.
-const MAX_RELAY_BUFFERED_BYTES = 64 * 1024;
+const MAX_RELAY_BUFFERED_BYTES = 192 * 1024;
 const STREAMING_STATIC_THRESHOLD_BYTES = 256 * 1024;
 const turnEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.TURN_ENABLED || '').trim().toLowerCase());
 const TURN_URLS = turnEnabled && process.env.TURN_URLS

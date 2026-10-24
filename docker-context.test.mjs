@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 
 const root = new URL('./', import.meta.url);
 const fixtureFiles = [
-  'browser-surface.test.mjs', 'index.html', 'Dockerfile.runtime', '.dockerignore',
+  'browser-surface.test.mjs', 'index.html', 'about.html', 'contact.html', 'privacy.html', 'terms.html',
+  'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'Dockerfile.runtime', '.dockerignore',
   '.gitignore', 'checks/syntax.mjs', 'capture-tracks.js', 'media-relay.mjs',
   'relay-pcm.js', 'relay-capture-worklet.js', 'relay-playout-worklet.js', 'manifest.webmanifest',
 ];

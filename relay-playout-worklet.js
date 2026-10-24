@@ -1,11 +1,13 @@
-// Dedicated AudioWorklet playout ring buffer with Proportional-Integral (PI)
-// hardware clock-drift compensation, 4-point Hermite cubic interpolation,
-// raised-cosine startup fade-in, smooth underrun concealment, and automatic
-// latency catch-up so playout never drifts into multi-second delay.
-const CAPACITY_SAMPLES = 48_000; // 1000 ms ring buffer capacity at 48 kHz
-const DEFAULT_TARGET_FILL = 5_760; // 120 ms default target - cuts underruns on phone Wi-Fi / Render
-const MIN_PREFILL_SAMPLES = 2_880; // 60 ms initial prefill before starting playout
-const FADE_SAMPLES = 960; // 20 ms cosine fade-in / PLC crossfade for inaudible catch-up
+// Dedicated AudioWorklet playout ring buffer with Adaptive WAN Jitter Cushion,
+// Proportional-Integral (PI) hardware clock-drift compensation, 4-point Hermite
+// cubic interpolation, raised-cosine crossfading, and pitch-cycle Packet Loss
+// Concealment (PLC) for glitch-free long-distance (500–10,000+ km) streaming.
+const CAPACITY_SAMPLES = 240_000; // 5,000 ms (5.0 s) ring buffer capacity at 48 kHz
+const DEFAULT_TARGET_FILL = 13_440; // 280 ms default WAN jitter cushion
+const MIN_PREFILL_SAMPLES = 9_600; // 200 ms initial prefill before starting playout
+const FADE_SAMPLES = 960; // 20 ms cosine fade-in / crossfade for inaudible transitions
+const PLC_HOLD_SAMPLES = 4_800; // Up to 100 ms of pitch-synchronous waveform continuation before silence decay
+const PLC_PERIOD_SAMPLES = 480; // 10 ms history window for seamless concealment
 
 class RelayPlayoutProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -17,13 +19,19 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.available = 0;
     this.playing = false;
     this.fadeProgress = 0;
+    this.baseTargetFill = DEFAULT_TARGET_FILL;
+    this.adaptiveExtraFill = 0;
     this.targetFill = DEFAULT_TARGET_FILL;
     this.avgFill = DEFAULT_TARGET_FILL;
     this.lastL = 0;
     this.lastR = 0;
     this.underruns = 0;
+    this.concealedSamples = 0;
     this.framesPlayed = 0;
     this.reportCountdown = 0;
+    this.lastEnqueueTime = null;
+    this.jitterSeconds = 0.015; // EWMA inter-arrival jitter estimate
+    this._smoothedRate = 1.0;
 
     this.port.onmessage = ({ data }) => {
       if (!data) return;
@@ -33,8 +41,9 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       }
       if (data.type === 'config') {
         if (Number.isFinite(data.targetDelayMs)) {
-          const clampedMs = Math.max(40, Math.min(400, Number(data.targetDelayMs)));
-          this.targetFill = Math.round((clampedMs / 1000) * 48_000);
+          const clampedMs = Math.max(60, Math.min(1200, Number(data.targetDelayMs)));
+          this.baseTargetFill = Math.round((clampedMs / 1000) * 48_000);
+          this.updateTargetFill();
         }
         return;
       }
@@ -44,12 +53,24 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     };
   }
 
+  updateTargetFill() {
+    // Combine user slider base delay + RFC 3550 jitter margin (3.5x jitter) + underrun auto-cushion
+    const jitterSamples = Math.round(Math.min(0.60, this.jitterSeconds * 3.5) * 48_000);
+    const desired = this.baseTargetFill + jitterSamples + this.adaptiveExtraFill;
+    this.targetFill = Math.max(2_880, Math.min(96_000, desired)); // Clamp between 60 ms and 2,000 ms
+  }
+
   resetBuffer() {
     this.writePos = 0;
     this.readPos = 0;
     this.available = 0;
     this.playing = false;
     this.fadeProgress = 0;
+    this.concealedSamples = 0;
+    this.adaptiveExtraFill = 0;
+    this.lastEnqueueTime = null;
+    this.jitterSeconds = 0.015;
+    this.updateTargetFill();
     this.avgFill = this.targetFill;
   }
 
@@ -58,15 +79,31 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     const frameCount = Math.floor(int16Samples.length / ch);
     if (frameCount <= 0) return;
 
-    // Hard latency ceiling: never let the ring buffer exceed targetFill + 140 ms (6,720 samples).
-    // If a network burst delivers a sudden batch of old frames, fast-forward to targetFill
-    // with a smooth 5 ms cosine crossfade so latency stays locked under ~200 ms.
-    const maxAllowedSamples = Math.min(CAPACITY_SAMPLES - 8, this.targetFill + 6_720);
+    // Measure RFC 3550 inter-arrival jitter using the audio thread's high-precision clock
+    const now = currentTime;
+    const expectedInterval = frameCount / 48_000;
+    if (this.lastEnqueueTime !== null) {
+      const actualInterval = Math.max(0, now - this.lastEnqueueTime);
+      const deviation = Math.abs(actualInterval - expectedInterval);
+      // Ignore multi-second pauses (e.g., track change), track WAN burst jitter up to 1.5s
+      if (deviation < 1.5) {
+        this.jitterSeconds += (deviation - this.jitterSeconds) * 0.0625;
+      }
+    }
+    this.lastEnqueueTime = now;
+    this.updateTargetFill();
+
+    // Long-distance WAN burst ceiling: allow up to targetFill + 2,500 ms (120,000 samples)
+    // before ever fast-forwarding, so 500–5,000 km TCP retransmission bursts are absorbed
+    // without dropping a single sample.
+    const maxAllowedSamples = Math.min(CAPACITY_SAMPLES - 16, this.targetFill + 120_000);
     if (this.available + frameCount > maxAllowedSamples) {
-      const dropSamples = (this.available + frameCount) - this.targetFill;
-      this.readPos = (this.readPos + dropSamples) % CAPACITY_SAMPLES;
-      this.available = Math.max(0, this.available - dropSamples);
-      this.fadeProgress = 0;
+      const dropSamples = (this.available + frameCount) - (this.targetFill + 24_000);
+      if (dropSamples > 0) {
+        this.readPos = (this.readPos + dropSamples) % CAPACITY_SAMPLES;
+        this.available = Math.max(0, this.available - dropSamples);
+        this.fadeProgress = 0;
+      }
     }
 
     for (let i = 0; i < frameCount; i += 1) {
@@ -83,11 +120,16 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.writePos = (this.writePos + frameCount) % CAPACITY_SAMPLES;
     this.available += frameCount;
 
-    const requiredPrefill = Math.max(MIN_PREFILL_SAMPLES, Math.min(this.targetFill, 4_800));
+    const requiredPrefill = Math.max(MIN_PREFILL_SAMPLES, Math.min(this.targetFill, 38_400));
     if (!this.playing && this.available >= requiredPrefill) {
       this.playing = true;
       this.fadeProgress = 0;
+      this.concealedSamples = 0;
       this.avgFill = this.available;
+    } else if (this.playing && this.concealedSamples > 0) {
+      // Smoothly crossfade back from PLC concealment into newly arrived live samples
+      this.concealedSamples = 0;
+      this.fadeProgress = 0;
     }
   }
 
@@ -98,15 +140,10 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     const outR = output[1] || outL;
     const blockLength = outL.length;
 
-    if (!this.playing || this.available < 4) {
-      if (this.playing) {
-        this.playing = false;
-        this.underruns += 1;
-      }
-      // Smooth exponential decay to zero instead of a hard step discontinuity.
+    if (!this.playing) {
       for (let i = 0; i < blockLength; i += 1) {
-        this.lastL *= 0.965;
-        this.lastR *= 0.965;
+        this.lastL *= 0.985;
+        this.lastR *= 0.985;
         if (Math.abs(this.lastL) < 1e-6) this.lastL = 0;
         if (Math.abs(this.lastR) < 1e-6) this.lastR = 0;
         outL[i] = this.lastL;
@@ -116,25 +153,50 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Two-stage PI clock-drift: coarse when error>40ms, fine otherwise; LPF on avgFill.
-    this.avgFill = 0.985 * this.avgFill + 0.015 * this.available;
+    // Slowly decay adaptive extra cushion during stable playback (~2.5 ms/sec)
+    if (this.adaptiveExtraFill > 0 && this.available > this.targetFill * 0.75) {
+      this.adaptiveExtraFill = Math.max(0, this.adaptiveExtraFill - 0.32);
+      this.updateTargetFill();
+    }
+
+    // Gentle PI clock-drift & WAN buffer controller with deadband around targetFill.
+    // Keeps pitch rock-steady while smoothly absorbing 500+ km network bursts.
+    this.avgFill = 0.992 * this.avgFill + 0.008 * this.available;
     const fillErrorMs = (this.avgFill - this.targetFill) / 48;
-    const gain = Math.abs(fillErrorMs) > 40 ? 0.005 : 0.010;
-    const fillErrorSeconds = fillErrorMs / 1000;
-    const rateRaw = 1.0 + fillErrorSeconds * gain;
-    const rateClamped = Math.max(0.997, Math.min(1.006, rateRaw));
-    // One-pole LPF on rate to avoid wobble
-    this._smoothedRate = this._smoothedRate == null ? rateClamped : 0.9 * this._smoothedRate + 0.1 * rateClamped;
+    let rateTarget = 1.0;
+    if (Math.abs(fillErrorMs) > 35) {
+      const effectiveErrorSeconds = (fillErrorMs - Math.sign(fillErrorMs) * 35) / 1000;
+      rateTarget = Math.max(0.996, Math.min(1.005, 1.0 + effectiveErrorSeconds * 0.0045));
+    }
+    this._smoothedRate = 0.96 * this._smoothedRate + 0.04 * rateTarget;
     const rate = this._smoothedRate;
 
     for (let i = 0; i < blockLength; i += 1) {
       if (this.available < 4) {
+        // Packet Loss Concealment (PLC): instead of immediately dropping out during a
+        // brief WAN stall, smoothly replay the last 10 ms waveform cycle with a gentle
+        // cosine attenuation envelope for up to 100 ms before entering rebuffering.
+        if (this.concealedSamples === 0) {
+          // Step up adaptive cushion by +80 ms (3,840 samples) so the next cycle won't underrun
+          this.adaptiveExtraFill = Math.min(38_400, this.adaptiveExtraFill + 3_840);
+          this.updateTargetFill();
+        }
+        if (this.concealedSamples < PLC_HOLD_SAMPLES) {
+          const plcIndex = (Math.floor(this.readPos) - PLC_PERIOD_SAMPLES + (this.concealedSamples % PLC_PERIOD_SAMPLES) + CAPACITY_SAMPLES) % CAPACITY_SAMPLES;
+          const attenuation = Math.cos((this.concealedSamples / PLC_HOLD_SAMPLES) * (Math.PI * 0.5)) * 0.92;
+          this.lastL = this.lastL * 0.25 + (this.left[plcIndex] * attenuation) * 0.75;
+          this.lastR = this.lastR * 0.25 + (this.right[plcIndex] * attenuation) * 0.75;
+          this.concealedSamples += 1;
+          outL[i] = this.lastL;
+          if (outR !== outL) outR[i] = this.lastR;
+          continue;
+        }
+        // Stall exceeded 100 ms: pause playout and wait for clean prefill cushion
         this.playing = false;
         this.underruns += 1;
-        this.lastL *= 0.992;
-        this.lastR *= 0.992;
-        if (Math.abs(this.lastL) < 1e-5) this.lastL=0;
-        if (Math.abs(this.lastR) < 1e-5) this.lastR=0;
+        this.concealedSamples = 0;
+        this.lastL *= 0.985;
+        this.lastR *= 0.985;
         outL[i] = this.lastL;
         if (outR !== outL) outR[i] = this.lastR;
         continue;
@@ -192,6 +254,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
         type: 'stats',
         bufferedMs: Math.round((this.available / 48_000) * 1000),
         targetMs: Math.round((this.targetFill / 48_000) * 1000),
+        jitterMs: Math.round(this.jitterSeconds * 1000),
         underruns: this.underruns,
         playing: this.playing,
       });
