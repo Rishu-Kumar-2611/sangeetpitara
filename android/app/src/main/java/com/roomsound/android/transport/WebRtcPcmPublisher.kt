@@ -429,7 +429,7 @@ public class WebRtcPcmPublisher(
             createdAdm = JavaAudioDeviceModule.builder(applicationContext)
                 .setSampleRate(CAPTURE_SAMPLE_RATE)
                 .setUseStereoInput(false)
-                .setUseStereoOutput(false)
+                .setUseStereoOutput(true)
                 .setUseHardwareAcousticEchoCanceler(false)
                 .setUseHardwareNoiseSuppressor(false)
                 // Prefer Android's low-latency AudioTrack path for the receive
@@ -811,8 +811,49 @@ public class WebRtcPcmPublisher(
         override fun onSetFailure(error: String) = Unit
     }
 
+    private fun enhanceOpusSdpForMusic(sdp: String): String {
+        val lines = sdp.split("\r\n")
+        var opusPt: String? = null
+        val rtpmapRegex = Regex("^a=rtpmap:(\\d+)\\s+opus/48000", RegexOption.IGNORE_CASE)
+        for (line in lines) {
+            val m = rtpmapRegex.find(line)
+            if (m != null) {
+                opusPt = m.groupValues[1]
+                break
+            }
+        }
+        if (opusPt == null) return sdp
+        val fmtpPrefix = "a=fmtp:$opusPt "
+        val desiredParams = mapOf(
+            "stereo" to "1",
+            "sprop-stereo" to "1",
+            "maxaveragebitrate" to "128000",
+            "cbr" to "1",
+            "useinbandfec" to "1",
+            "usedtx" to "0",
+        )
+        var fmtpUpdated = false
+        val updated = lines.map { line ->
+            if (line.startsWith(fmtpPrefix)) {
+                fmtpUpdated = true
+                val rawParams = line.substring(fmtpPrefix.length).split(";").map { it.trim() }.filter { it.isNotEmpty() }
+                val map = LinkedHashMap<String, String>()
+                for (pair in rawParams) {
+                    val idx = pair.indexOf("=")
+                    if (idx > 0) map[pair.substring(0, idx).trim()] = pair.substring(idx + 1).trim()
+                }
+                for ((k, v) in desiredParams) map[k] = v
+                fmtpPrefix + map.entries.joinToString(";") { "${it.key}=${it.value}" }
+            } else {
+                line
+            }
+        }
+        return if (fmtpUpdated) updated.joinToString("\r\n") else sdp
+    }
+
     private fun setLocalDescriptionAndSend(session: PeerSession, description: SessionDescription) {
         val connection = session.peerConnection ?: return
+        val tunedDescription = SessionDescription(description.type, enhanceOpusSdpForMusic(description.description))
         connection.setLocalDescription(object : SdpObserver {
             override fun onCreateSuccess(description: SessionDescription) = Unit
 
@@ -820,7 +861,7 @@ public class WebRtcPcmPublisher(
                 postToSignaling {
                     if (!isCurrentSession(session)) return@postToSignaling
                     session.localDescriptionSet = true
-                    sendSignal(session, descriptionSignal(description))
+                    sendSignal(session, descriptionSignal(tunedDescription))
                     flushLocalCandidates(session)
                 }
             }
@@ -835,7 +876,7 @@ public class WebRtcPcmPublisher(
                     }
                 }
             }
-        }, description)
+        }, tunedDescription)
     }
 
     private fun setRemoteDescriptionAndMaybeAnswer(

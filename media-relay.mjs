@@ -10,6 +10,7 @@ export const MEDIA_RELAY_VERSION = 1;
 export const MEDIA_RELAY_HEADER_BYTES = 20;
 export const MEDIA_RELAY_SAMPLE_RATE = 48_000;
 export const MEDIA_RELAY_CHANNELS = 1;
+export const MEDIA_RELAY_MAX_CHANNELS = 2;
 export const MEDIA_RELAY_MAX_PAYLOAD_BYTES = 64 * 1024;
 export const MEDIA_RELAY_MAX_FRAME_BYTES = MEDIA_RELAY_HEADER_BYTES + MEDIA_RELAY_MAX_PAYLOAD_BYTES;
 
@@ -39,17 +40,20 @@ function assertUint32(value, name) {
  * written through DataView so the wire representation is little-endian even
  * on a hypothetical big-endian JavaScript runtime.
  */
-export function encodePcm16Frame({ sourceEpoch, sequence, samples }) {
+export function encodePcm16Frame({ sourceEpoch, sequence, samples, channels = MEDIA_RELAY_CHANNELS }) {
   assertUint32(sourceEpoch, 'sourceEpoch');
   assertUint32(sequence, 'sequence');
   if (!(samples instanceof Int16Array)) {
     throw invalidFrame('PCM16 samples must be an Int16Array.', 'INVALID_SAMPLES');
   }
-  const sampleCount = samples.length;
-  if (sampleCount <= 0 || sampleCount > 0xFFFF) {
+  if (channels !== MEDIA_RELAY_CHANNELS && channels !== MEDIA_RELAY_MAX_CHANNELS) {
+    throw invalidFrame('Media relay frame must contain onechannel or two channels.', 'MEDIA_FRAME_BAD_CHANNELS');
+  }
+  const sampleCount = Math.floor(samples.length / channels);
+  if (sampleCount <= 0 || sampleCount > 0xFFFF || sampleCount * channels !== samples.length) {
     throw invalidFrame('PCM16 sampleCount must be between 1 and 65535.', 'INVALID_SAMPLE_COUNT');
   }
-  const payloadBytes = sampleCount * 2;
+  const payloadBytes = samples.length * 2;
   if (payloadBytes > MEDIA_RELAY_MAX_PAYLOAD_BYTES) {
     throw invalidFrame('PCM16 payload is too large.', 'MEDIA_FRAME_TOO_LARGE');
   }
@@ -57,23 +61,24 @@ export function encodePcm16Frame({ sourceEpoch, sequence, samples }) {
   const frame = new Uint8Array(MEDIA_RELAY_HEADER_BYTES + payloadBytes);
   frame.set(MEDIA_RELAY_MAGIC_BYTES, 0);
   frame[4] = MEDIA_RELAY_VERSION;
-  frame[5] = MEDIA_RELAY_CHANNELS;
+  frame[5] = channels;
   const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
   view.setUint32(6, MEDIA_RELAY_SAMPLE_RATE, true);
   view.setUint32(10, sourceEpoch, true);
   view.setUint32(14, sequence, true);
   view.setUint16(18, sampleCount, true);
-  for (let index = 0; index < sampleCount; index += 1) {
+  for (let index = 0; index < samples.length; index += 1) {
     view.setInt16(MEDIA_RELAY_HEADER_BYTES + index * 2, samples[index], true);
   }
   return frame;
 }
 
 /**
- * Validate and decode one frame. The returned `bytes` is a copy suitable for
- * forwarding or retaining after the caller's WebSocket buffer is released.
+ * Fast, zero-copy header validation for the Node.js relay server.
+ * Validates the 20-byte RSR1 header and payload byte length in O(1) time
+ * without allocating an Int16Array or looping over individual audio samples.
  */
-export function decodePcm16Frame(input, { maxPayloadBytes = MEDIA_RELAY_MAX_PAYLOAD_BYTES } = {}) {
+export function validatePcm16FrameHeader(input, { maxPayloadBytes = MEDIA_RELAY_MAX_PAYLOAD_BYTES } = {}) {
   const bytes = asBytes(input);
   if (bytes.byteLength < MEDIA_RELAY_HEADER_BYTES) {
     throw invalidFrame('Media relay frame is shorter than its header.', 'MEDIA_FRAME_TOO_SHORT');
@@ -90,7 +95,8 @@ export function decodePcm16Frame(input, { maxPayloadBytes = MEDIA_RELAY_MAX_PAYL
   if (bytes[4] !== MEDIA_RELAY_VERSION) {
     throw invalidFrame('Media relay frame has an unsupported version.', 'MEDIA_FRAME_BAD_VERSION');
   }
-  if (bytes[5] !== MEDIA_RELAY_CHANNELS) {
+  const channels = bytes[5];
+  if (channels !== MEDIA_RELAY_CHANNELS && channels !== MEDIA_RELAY_MAX_CHANNELS) {
     throw invalidFrame('Media relay frame must contain one channel.', 'MEDIA_FRAME_BAD_CHANNELS');
   }
 
@@ -107,24 +113,44 @@ export function decodePcm16Frame(input, { maxPayloadBytes = MEDIA_RELAY_MAX_PAYL
   }
 
   const payloadBytes = bytes.byteLength - MEDIA_RELAY_HEADER_BYTES;
-  if (payloadBytes !== sampleCount * 2) {
+  const expectedPayloadBytes = channels === 1 ? sampleCount * 2 : sampleCount * channels * 2;
+  if (payloadBytes !== sampleCount * 2 && payloadBytes !== expectedPayloadBytes) {
     throw invalidFrame('Media relay PCM16 payload length does not match sampleCount.', 'MEDIA_FRAME_BAD_LENGTH');
   }
   if (payloadBytes > maxPayloadBytes) {
     throw invalidFrame('Media relay PCM16 payload is too large.', 'MEDIA_FRAME_TOO_LARGE');
   }
 
-  const samples = new Int16Array(sampleCount);
-  for (let index = 0; index < sampleCount; index += 1) {
+  return {
+    sampleRate,
+    channels,
+    sourceEpoch,
+    sequence,
+    sampleCount,
+    payloadBytes,
+  };
+}
+
+/**
+ * Validate and decode one frame. The returned `bytes` is a copy suitable for
+ * forwarding or retaining after the caller's WebSocket buffer is released.
+ */
+export function decodePcm16Frame(input, { maxPayloadBytes = MEDIA_RELAY_MAX_PAYLOAD_BYTES } = {}) {
+  const bytes = asBytes(input);
+  const header = validatePcm16FrameHeader(bytes, { maxPayloadBytes });
+  const totalSamples = header.sampleCount * header.channels;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const samples = new Int16Array(totalSamples);
+  for (let index = 0; index < totalSamples; index += 1) {
     samples[index] = view.getInt16(MEDIA_RELAY_HEADER_BYTES + index * 2, true);
   }
   return {
     bytes: bytes.slice(),
-    sampleRate,
-    channels: MEDIA_RELAY_CHANNELS,
-    sourceEpoch,
-    sequence,
-    sampleCount,
+    sampleRate: header.sampleRate,
+    channels: header.channels,
+    sourceEpoch: header.sourceEpoch,
+    sequence: header.sequence,
+    sampleCount: header.sampleCount,
     payload: bytes.slice(MEDIA_RELAY_HEADER_BYTES),
     samples,
   };

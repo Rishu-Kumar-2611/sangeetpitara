@@ -16,6 +16,7 @@ const files = [
   'app.js',
   'relay-pcm.js',
   'relay-capture-worklet.js',
+  'relay-playout-worklet.js',
   'notifications-sw.js',
   'checks/release.mjs',
   'checks/release-local.mjs',

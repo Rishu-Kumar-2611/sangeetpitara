@@ -30,17 +30,20 @@ class Pcm16RelayPlayer internal constructor(
     private val outputFactory: (Pcm16AudioFormat) -> Pcm16RelayAudioOutput,
     private val audioThreadPriority: () -> Unit,
     private val maxQueuedFrames: Int = DEFAULT_MAX_QUEUED_FRAMES,
+    private val maxQueuedBytes: Int = MAX_QUEUED_BYTES,
     private val onStatus: (String) -> Unit = {},
     private val startupTimeoutNanos: Long = TimeUnit.MILLISECONDS.toNanos(120),
     private val nanoTime: () -> Long = System::nanoTime,
 ) : Pcm16RelayPlayerSink {
     constructor(
         maxQueuedFrames: Int = DEFAULT_MAX_QUEUED_FRAMES,
+        maxQueuedBytes: Int = MAX_QUEUED_BYTES,
         onStatus: (String) -> Unit = {},
     ) : this(
         outputFactory = ::AndroidPcm16RelayAudioOutput,
         audioThreadPriority = { AndroidPcm16RelayAudioOutput.setAudioThreadPriority() },
         maxQueuedFrames = maxQueuedFrames,
+        maxQueuedBytes = maxQueuedBytes,
         onStatus = onStatus,
     )
 
@@ -93,6 +96,7 @@ class Pcm16RelayPlayer internal constructor(
 
     init {
         require(maxQueuedFrames > 0) { "maxQueuedFrames must be positive." }
+        require(maxQueuedBytes > 0) { "maxQueuedBytes must be positive." }
         require(startupTimeoutNanos > 0) { "startupTimeoutNanos must be positive." }
     }
 
@@ -160,9 +164,9 @@ class Pcm16RelayPlayer internal constructor(
         session.lastSequence = packet.sequence
         if (session.firstPacketAt == null) session.firstPacketAt = nanoTime()
         // Bound duration as well as packet count: 10 ms and 20 ms publishers
-        // receive the same 120 ms maximum software backlog.
+        // receive the same configured maximum software backlog.
         while (session.queue.size >= maxQueuedFrames ||
-            session.queuedBytes + packet.payload.size > MAX_QUEUED_BYTES
+            session.queuedBytes + packet.payload.size > maxQueuedBytes
         ) {
             session.queuedBytes -= session.queue.removeFirst().size
             dropped++
@@ -327,6 +331,8 @@ class Pcm16RelayPlayer internal constructor(
 
     companion object {
         const val DEFAULT_MAX_QUEUED_FRAMES = 12
+        const val PRODUCTION_MAX_QUEUED_FRAMES = 36
+        const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 350 / 1_000
         val FORMAT = Pcm16AudioFormat(48_000, 1)
         private const val UINT32_MAX = Pcm16RelayPacketCodec.UINT32_MAX
         private const val MAX_QUEUED_BYTES = 48_000 * 2 * 120 / 1_000

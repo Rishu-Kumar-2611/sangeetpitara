@@ -156,6 +156,8 @@ class RoomSessionCoordinator(
                         "${fetchedConfig.mediaRelay.sampleRate} Hz/${fetchedConfig.mediaRelay.channels} ch."
                 }
                 nextRelayPlayer = Pcm16RelayPlayer(
+                    maxQueuedFrames = Pcm16RelayPlayer.PRODUCTION_MAX_QUEUED_FRAMES,
+                    maxQueuedBytes = Pcm16RelayPlayer.PRODUCTION_MAX_QUEUED_BYTES,
                     onStatus = { message ->
                         main.post { if (!closed && client === nextClient) status(message) }
                     },

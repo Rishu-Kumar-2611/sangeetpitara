@@ -1,0 +1,18 @@
+{
+  "name": "SangeetPitara — Listen Together",
+  "short_name": "SangeetPitara",
+  "description": "SangeetPitara — private live audio rooms for listening together.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#2b1a11",
+  "theme_color": "#2b1a11",
+  "icons": [
+    {
+      "src": "/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261023-clarity-1",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

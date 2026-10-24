@@ -9,7 +9,7 @@ const root = new URL('./', import.meta.url);
 const fixtureFiles = [
   'browser-surface.test.mjs', 'index.html', 'Dockerfile.runtime', '.dockerignore',
   '.gitignore', 'checks/syntax.mjs', 'capture-tracks.js', 'media-relay.mjs',
-  'relay-pcm.js', 'relay-capture-worklet.js',
+  'relay-pcm.js', 'relay-capture-worklet.js', 'relay-playout-worklet.js', 'manifest.webmanifest',
 ];
 
 async function runReleaseGuard(t, omitGitignore) {

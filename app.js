@@ -32,6 +32,10 @@ const guestStorageKey = 'roomsound-guest-id';
 const guestId = localStorage.getItem(guestStorageKey) || createGuestId();
 localStorage.setItem(guestStorageKey, guestId);
 
+const reconnectSecretStorageKey = 'roomsound-reconnect-secret';
+const reconnectSecret = localStorage.getItem(reconnectSecretStorageKey) || createGuestId();
+localStorage.setItem(reconnectSecretStorageKey, reconnectSecret);
+
 const notificationServiceWorkerUrl = '/notifications-sw.js?v=20261018-1';
 const notificationActionMessageType = 'roomsound-notification-action';
 const notificationReadyMessageType = 'roomsound-notification-ready';
@@ -42,13 +46,32 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
   channels: MEDIA_RELAY_CHANNELS,
 };
 const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
-const RELAY_MAX_BUFFERED_BYTES = 12 * 1024; // Keep browser WebSocket backlog near 125 ms.
-const RELAY_MAX_PLAYAHEAD_SECONDS = 0.12; // Prefer a gap over playing stale audio.
+const RELAY_MAX_BUFFERED_BYTES = 64 * 1024; // Allow 64 KiB (~680 ms) of WebSocket backlog to absorb TCP jitter bursts.
+const RELAY_MAX_PLAYAHEAD_SECONDS = 0.65; // Elastic 650 ms fallback window prevents premature queue flushes.
 
 function clampVolume(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return 0.9;
   return Math.min(1, Math.max(0, n));
+}
+
+function clampSyncOffsetMs(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 120;
+  return Math.min(400, Math.max(40, Math.round(n / 10) * 10));
+}
+
+function enhanceOpusSdpForMusic(sdp) {
+  if (typeof sdp !== 'string') return sdp;
+  return sdp.replace(/a=fmtp:(\d+) (.*)/g, (match, pt, params) => {
+    if (!sdp.includes(`a=rtpmap:${pt} opus/48000`)) return match;
+    const cleaned = params
+      .split(';')
+      .filter((part) => !/^(stereo|sprop-stereo|maxaveragebitrate|cbr|useinbandfec|usedtx)=/i.test(part.trim()))
+      .join(';');
+    const musicParams = 'stereo=1;sprop-stereo=1;maxaveragebitrate=128000;cbr=1;useinbandfec=1;usedtx=0';
+    return `a=fmtp:${pt} ${cleaned ? `${cleaned};${musicParams}` : musicParams}`;
+  });
 }
 
 const state = {
@@ -62,6 +85,8 @@ const state = {
   captureStream: null,
   captureType: null,
   captureLabel: null,
+  fileAudioElement: null,
+  fileAudioObjectUrl: null,
   audioContext: null,
   audioElement: null,
   audioNeedsGesture: false,
@@ -75,8 +100,17 @@ const state = {
   relayPublisherGeneration: 0,
   relayPublisherStarting: null,
   relaySequence: 0,
+  relaySentFrames: 0,
+  relayReceivedFrames: 0,
+  relayDroppedSequenceFrames: 0,
+  relayWorkletBufferedMs: 0,
+  relayWorkletUnderruns: 0,
   relayPlaybackContext: null,
   relayPlaybackGain: null,
+  relayPlaybackAnalyser: null,
+  relayPlaybackWorklet: null,
+  relayPlaybackWorkletReady: false,
+  relayPlaybackWorkletLoading: null,
   relayPlaybackAudio: null,
   relayPlaybackDestination: null,
   relayPlaybackEpoch: null,
@@ -84,8 +118,11 @@ const state = {
   relayPlaybackSources: new Set(),
   relayLastSequence: null,
   relayUnavailableNotified: false,
+  visualizerRaf: null,
+  liveAudioLevel: 0,
   muted: false,
   volume: clampVolume(localStorage.getItem('roomsound-volume') ?? 0.9),
+  syncOffsetMs: clampSyncOffsetMs(localStorage.getItem('roomsound-sync-offset-ms') ?? 120),
   peers: new Map(),
   pendingIntent: null,
   lastSourceId: null,
@@ -183,6 +220,7 @@ async function loadClientConfig() {
 loadClientConfig();
 
 function rewardedAccessActive() {
+  if (state.rewardedAccessConfig?.enabled === false) return true;
   state.rewardedAccessExpiry = readRewardedAccessExpiry();
   return hasRewardedAccess({ now: Date.now() });
 }
@@ -198,25 +236,28 @@ function renderRewardedAccess() {
   const joinButton = $('#join-room');
   if (!gate || !status || !button || !createButton || !joinButton) return;
 
-  const active = rewardedAccessActive();
   const config = state.rewardedAccessConfig;
+  const active = rewardedAccessActive();
   const duration = config.rewardDurationSeconds;
   if (state.rewardedAccessTimer) {
     clearTimeout(state.rewardedAccessTimer);
     state.rewardedAccessTimer = null;
   }
-  if (active && state.rewardedAccessExpiry > Date.now()) {
+  if (config.enabled !== false && active && state.rewardedAccessExpiry > Date.now()) {
     state.rewardedAccessTimer = setTimeout(() => {
       state.rewardedAccessTimer = null;
       expireRewardedAccess();
     }, Math.max(0, state.rewardedAccessExpiry - Date.now()) + 50);
   }
+  gate.hidden = config.enabled === false;
   gate.classList.toggle('access-active', active);
-  status.textContent = active
-    ? `Access active · ${formatRewardedAccessRemaining(state.rewardedAccessExpiry)}`
-    : state.rewardedBusy
-      ? 'Demo reward in progress…'
-      : 'Access required';
+  status.textContent = config.enabled === false
+    ? 'Instant room access active'
+    : active
+      ? `Access active · ${formatRewardedAccessRemaining(state.rewardedAccessExpiry)}`
+      : state.rewardedBusy
+        ? 'Demo reward in progress…'
+        : 'Access required';
   if (copy) copy.textContent = active
     ? 'Your local access pass is active. You can enter rooms anonymously.'
     : `Complete the ${duration}-second demo/local rewarded preview to unlock ${config.accessDurationHours} hours of room access.`;
@@ -241,6 +282,7 @@ function renderRewardedAccess() {
 }
 
 function expireRewardedAccess() {
+  if (state.rewardedAccessConfig?.enabled === false) return;
   const hadRoom = Boolean(state.room || state.ws);
   const expiryMessage = 'Your six-hour room access expired. Watch another rewarded ad to continue.';
   clearRewardedAccess();
@@ -569,6 +611,35 @@ function applyOutputVolume() {
   if (state.relayPlaybackGain) state.relayPlaybackGain.gain.value = state.muted ? 0 : state.volume;
 }
 
+function updateSourceOrbVisualizer() {
+  const orb = $('#source-orb');
+  if (!orb) return;
+  const analyser = state.relayPlaybackAnalyser;
+  if (!analyser || !state.room?.activeSourceId || state.room?.sourceStatus !== 'LIVE') {
+    orb.style.transform = '';
+    state.liveAudioLevel = 0;
+    state.visualizerRaf = null;
+    return;
+  }
+  const bins = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteTimeDomainData(bins);
+  let sumSquares = 0;
+  for (let i = 0; i < bins.length; i += 1) {
+    const centered = (bins[i] - 128) / 128;
+    sumSquares += centered * centered;
+  }
+  const rms = Math.sqrt(sumSquares / bins.length);
+  state.liveAudioLevel = Math.min(1, rms * 2.4);
+  const scale = 1 + state.liveAudioLevel * 0.16;
+  orb.style.transform = `scale(${scale.toFixed(3)})`;
+  state.visualizerRaf = requestAnimationFrame(updateSourceOrbVisualizer);
+}
+
+function ensureVisualizerLoop() {
+  if (state.visualizerRaf || typeof requestAnimationFrame !== 'function') return;
+  state.visualizerRaf = requestAnimationFrame(updateSourceOrbVisualizer);
+}
+
 function sendRelayPcmFrame(samples, sourceEpoch, capturedSequence = null) {
   if (!isMediaRelayEnabled() || !isSelfSource() || state.room?.sourceEpoch !== sourceEpoch || state.room?.sourceStatus !== 'LIVE') return;
   if (state.ws?.readyState !== WebSocket.OPEN) return;
@@ -583,6 +654,7 @@ function sendRelayPcmFrame(samples, sourceEpoch, capturedSequence = null) {
       samples,
     });
     state.ws.send(frame);
+    state.relaySentFrames += 1;
   } catch (error) {
     console.warn('[SangeetPitara] PCM16 relay frame was not sent', error);
   }
@@ -650,15 +722,16 @@ async function ensureRelayPublisher() {
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
-          channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers',
+          channelCount: 2, channelCountMode: 'max', channelInterpretation: 'speakers',
         });
+        processor.port.postMessage({ type: 'config', maxInFlight: 32 });
         const node = processor;
         node.port.onmessage = ({ data }) => {
           if (!current() || state.relayProcessor !== node) return;
           node.port.postMessage({ type: 'ack' });
           if (!(data?.samples instanceof Int16Array)) return;
-          // Messages delayed by a long UI stall must not replay seconds-old audio.
-          if (context.currentTime - data.capturedAt > 0.24) return;
+          // Allow up to 640 ms for background-tab message delivery before dropping.
+          if (context.currentTime - data.capturedAt > 0.64) return;
           sendRelayPcmFrame(data.samples, data.sourceEpoch, data.sequence);
         };
       } catch (error) {
@@ -710,23 +783,58 @@ async function ensureRelayPublisher() {
   }
 }
 
+function setupRelayPlaybackWorklet(context, gain) {
+  if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261023-clarity-1')
+    .then(() => {
+      if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
+      const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+      });
+      worklet.port.postMessage({ type: 'config', targetDelayMs: state.syncOffsetMs });
+      worklet.port.onmessage = ({ data }) => {
+        if (data?.type === 'stats') {
+          state.relayWorkletBufferedMs = data.bufferedMs ?? 0;
+          state.relayWorkletUnderruns = data.underruns ?? 0;
+          renderTelemetry();
+        }
+      };
+      worklet.connect(gain);
+      state.relayPlaybackWorklet = worklet;
+      state.relayPlaybackWorkletReady = true;
+    })
+    .catch((error) => {
+      console.warn('[SangeetPitara] RelayPlayoutProcessor unavailable; using buffered fallback scheduler.', error);
+    });
+}
+
 function ensureRelayPlaybackContext() {
   if (state.relayPlaybackContext && state.relayPlaybackContext.state !== 'closed') return state.relayPlaybackContext;
   try {
     const context = createRoomAudioContext();
     const gain = context.createGain();
-    // Route PCM through a real media element. On Android, Web Audio alone does
-    // not reliably participate in the browser's media session/audio-focus path
-    // while Chrome is backgrounded; an audible <audio> stream is the web API's
-    // compatible background-playback boundary. PCM scheduling remains exactly
-    // the same and still terminates at this destination node.
+    const analyser = context.createAnalyser ? context.createAnalyser() : null;
+    if (analyser) {
+      analyser.fftSize = 64;
+      gain.connect(analyser);
+    }
+    // Route PCM through a real media element for Android background media-session
+    // persistence, while also connecting directly to context.destination on desktop
+    // browsers so desktop audio avoids extra MediaStream loopback buffering.
     const destination = context.createMediaStreamDestination();
     gain.connect(destination);
+    const isAndroidBrowser = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+    if (!isAndroidBrowser) {
+      gain.connect(context.destination);
+    }
     const audio = document.createElement('audio');
     audio.autoplay = true;
     audio.playsInline = true;
     audio.controls = false;
     audio.volume = 1;
+    audio.muted = !isAndroidBrowser;
     audio.srcObject = destination.stream;
     audio.setAttribute('aria-label', 'Room audio — use Your listening controls to adjust volume');
     audio.style.position = 'fixed';
@@ -737,18 +845,24 @@ function ensureRelayPlaybackContext() {
     document.body.append(audio);
     state.relayPlaybackContext = context;
     state.relayPlaybackGain = gain;
+    state.relayPlaybackAnalyser = analyser;
     state.relayPlaybackDestination = destination;
     state.relayPlaybackAudio = audio;
     applyOutputVolume();
+    setupRelayPlaybackWorklet(context, gain);
+    ensureVisualizerLoop();
     if (typeof navigator !== 'undefined' && navigator.mediaSession && typeof MediaMetadata !== 'undefined') {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: 'Room audio',
         artist: state.room?.name || 'SangeetPitara',
       });
     }
-    void audio.play().catch(() => {
-      state.audioNeedsGesture = true;
-      renderControls();
+    const relayAudio = audio;
+    void relayAudio.play().catch(() => {
+      if (isAndroidBrowser) {
+        state.audioNeedsGesture = true;
+        renderControls();
+      }
     });
     return context;
   } catch (error) {
@@ -761,6 +875,9 @@ function ensureRelayPlaybackContext() {
 }
 
 function resetRelayPlaybackQueue(nextEpoch = null) {
+  if (state.relayPlaybackWorklet?.port) {
+    try { state.relayPlaybackWorklet.port.postMessage({ type: 'reset' }); } catch {}
+  }
   for (const source of state.relayPlaybackSources) {
     try { source.stop(); } catch {}
     try { source.disconnect(); } catch {}
@@ -773,6 +890,11 @@ function resetRelayPlaybackQueue(nextEpoch = null) {
 
 function closeRelayPlayback() {
   resetRelayPlaybackQueue();
+  if (state.visualizerRaf && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(state.visualizerRaf);
+    state.visualizerRaf = null;
+  }
+  try { state.relayPlaybackWorklet?.disconnect(); } catch {}
   const audio = state.relayPlaybackAudio;
   if (audio) {
     try { audio.pause(); } catch {}
@@ -781,6 +903,10 @@ function closeRelayPlayback() {
   }
   try { state.relayPlaybackGain?.disconnect(); } catch {}
   const context = state.relayPlaybackContext;
+  state.relayPlaybackWorklet = null;
+  state.relayPlaybackWorkletReady = false;
+  state.relayPlaybackWorkletLoading = null;
+  state.relayPlaybackAnalyser = null;
   state.relayPlaybackGain = null;
   state.relayPlaybackDestination = null;
   state.relayPlaybackAudio = null;
@@ -803,16 +929,51 @@ function handleRelayFrame(data) {
   if (state.relayLastSequence !== null) {
     const distance = (frame.sequence - state.relayLastSequence) >>> 0;
     if (distance === 0 || distance > 0x80000000) return;
+    if (distance > 1) state.relayDroppedSequenceFrames += (distance - 1);
   }
+  state.relayReceivedFrames += 1;
 
   const context = ensureRelayPlaybackContext();
   if (!context || !state.relayPlaybackGain) return;
+  ensureVisualizerLoop();
+
+  // Primary Studio-Grade Playout Path: AudioWorklet ring buffer with PI clock-drift control
+  if (state.relayPlaybackWorkletReady && state.relayPlaybackWorklet?.port) {
+    state.relayPlaybackWorklet.port.postMessage({
+      type: 'pcm',
+      samples: frame.samples,
+      channels: frame.channels || 1,
+    });
+    state.relayLastSequence = frame.sequence;
+    if (context.state !== 'running') {
+      state.audioNeedsGesture = true;
+      renderControls();
+    } else if (state.audioNeedsGesture) {
+      state.audioNeedsGesture = false;
+      renderControls();
+    }
+    return;
+  }
+
+  // Compatibility Fallback Path (with initial prefill cushion & expanded 650 ms window)
   const now = context.currentTime;
   if (state.relayPlaybackNextTime > now + RELAY_MAX_PLAYAHEAD_SECONDS) resetRelayPlaybackQueue(frame.sourceEpoch);
-  const startAt = Math.max(now + 0.01, state.relayPlaybackNextTime || 0);
-  const buffer = context.createBuffer(1, frame.sampleCount, frame.sampleRate);
-  const channel = buffer.getChannelData(0);
-  for (let index = 0; index < frame.samples.length; index += 1) channel[index] = frame.samples[index] / 0x8000;
+  const initialCushion = Math.max(0.04, state.syncOffsetMs / 1000);
+  const targetNext = state.relayPlaybackNextTime || (now + initialCushion);
+  const startAt = Math.max(Math.max(now + 0.01, state.relayPlaybackNextTime || 0), targetNext);
+  const channels = frame.channels === 2 ? 2 : 1;
+  const buffer = context.createBuffer(channels, frame.sampleCount, frame.sampleRate);
+  if (channels === 2) {
+    const left = buffer.getChannelData(0);
+    const right = buffer.getChannelData(1);
+    for (let index = 0; index < frame.sampleCount; index += 1) {
+      left[index] = frame.samples[index * 2] / 0x8000;
+      right[index] = frame.samples[index * 2 + 1] / 0x8000;
+    }
+  } else {
+    const channel = buffer.getChannelData(0);
+    for (let index = 0; index < frame.samples.length; index += 1) channel[index] = frame.samples[index] / 0x8000;
+  }
   const source = context.createBufferSource();
   source.buffer = buffer;
   source.connect(state.relayPlaybackGain);
@@ -856,8 +1017,8 @@ function openMobileAudioGuide() {
     ? `<a class="primary-button mobile-audio-download" href="${escapeHtml(guidance.downloadHref)}" download>${escapeHtml(guidance.downloadLabel)}</a>`
     : '';
   const steps = guidance.downloadHref
-    ? '<ol class="mobile-audio-steps"><li>Open or install the SangeetPitara Android app.</li><li>Join this same room with the displayed code.</li><li>Request device audio, approve it on the laptop, then tap <strong>Share device audio</strong> in the app.</li></ol>'
-    : '<p class="mobile-audio-followup">Return to a supported desktop browser for browser audio sharing.</p>';
+    ? '<ol class="mobile-audio-steps"><li>Open or install the SangeetPitara Android app (or tap <strong>Share audio file</strong> in the room to stream a local MP3/WAV file directly from this browser).</li><li>Join this same room with the displayed code.</li><li>Request device audio, approve it on the laptop, then tap <strong>Share device audio</strong> in the app.</li></ol>'
+    : '<p class="mobile-audio-followup">Tip: You can tap <strong>Share audio file</strong> right here in your browser to stream any local audio file, or return to a desktop browser for tab audio sharing.</p>';
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
   modal.innerHTML = `<div class="mobile-audio-modal" role="dialog" aria-modal="true" aria-labelledby="mobile-audio-guide-title"><div class="modal-eyebrow">PHONE AUDIO SHARING</div><h2 id="mobile-audio-guide-title">${escapeHtml(guidance.title)}</h2><p>${escapeHtml(guidance.message)}${roomCode}</p>${steps}<div class="mobile-audio-actions">${download}<button class="modal-close" type="button">Close</button></div></div>`;
@@ -932,7 +1093,6 @@ function resetToLanding(reason = '') {
   closePeerConnections();
   stopLocalCapture(false);
   closeRelayPlayback();
-  // Preserve ws close handling: caller may have already closed
   if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.close();
   state.ws = null;
   state.room = null;
@@ -1015,9 +1175,9 @@ function connectAnd(action, isReconnect = false) {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
     };
     if (intent.type === 'create') {
-      sendOnSocket({ type: 'create-room', name: intent.roomName, displayName: intent.displayName, guestId });
+      sendOnSocket({ type: 'create-room', name: intent.roomName, displayName: intent.displayName, guestId, reconnectSecret });
     } else {
-      sendOnSocket({ type: 'join-room', code: intent.code, displayName: intent.displayName, guestId });
+      sendOnSocket({ type: 'join-room', code: intent.code, displayName: intent.displayName, guestId, reconnectSecret });
     }
   });
   socket.addEventListener('close', (event) => {
@@ -1029,7 +1189,6 @@ function connectAnd(action, isReconnect = false) {
       toast('The host ended the room.', 'bad');
       return;
     }
-    // Explicit leaves / removals should NOT reconnect
     if (code === 4003) {
       state.lastRoomCode = null;
       state.explicitLeave = true;
@@ -1060,7 +1219,6 @@ function connectAnd(action, isReconnect = false) {
       scheduleReconnect();
       toast('Connection lost. Reconnecting…', 'bad');
     } else {
-      // Not yet in a room; allow reconnect to re-attempt join
       if (state.lastRoomCode && !state.explicitLeave) scheduleReconnect();
     }
   });
@@ -1097,7 +1255,6 @@ function handleServerMessage(message) {
     state.pendingRoomEnd = false;
     toast(message.message, 'error');
     if (!state.room) showLanding(message.message);
-    // Don't auto-reconnect on explicit room errors like "full" — clear lastRoomCode so scheduleReconnect bails
     if (message.message.includes('full') || message.message.includes('unavailable') || message.message.includes('ended')) {
       if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
     }
@@ -1115,7 +1272,6 @@ function handleServerMessage(message) {
   }
   if (message.type === 'state') {
     applyRoomState(message.state);
-    // Keep lastRoomCode fresh even on state broadcasts
     if (message.state?.room?.code) state.lastRoomCode = message.state.room.code;
     return;
   }
@@ -1207,20 +1363,12 @@ function applyRoomState(next) {
     resetRelayPlaybackQueue(state.room?.sourceEpoch ?? null);
   }
   syncRelayCaptureLease();
-  // Keep the host's capture alive while a participant temporarily broadcasts so
-  // the server can return control without asking the host to grant capture again.
-  // A participant/co-host source is released when control moves away from it.
   const wasHostSource = wasSelfSource && state.self?.role === 'HOST';
   if (wasSelfSource && state.room.activeSourceId !== state.self?.id && !wasHostSource) stopLocalCapture(false);
   if (state.captureRecoveryPending && wasHostSource && state.captureStream && !state.room.activeSourceId && state.room.sourceStatus === 'NONE') {
-    // A temporary background/network disconnect makes the server release the
-    // host lease. Keep the already-approved capture stream alive and reacquire
-    // the host source slot after the room reconnects instead of forcing a new
-    // browser picker gesture.
     send({ type: 'start-source', sourceType: state.captureType || 'DEVICE_AUDIO', sourceLabel: state.captureLabel || 'Browser device audio' });
     state.captureRecoveryPending = false;
   }
-  // Peer cleanup: if a listener just went offline, drop its peer to free RTC resources
   {
     const onlineNow = new Set(state.members.filter((m) => m.online).map((m) => m.id));
     for (const pm of prevMembers) {
@@ -1229,7 +1377,6 @@ function applyRoomState(next) {
         removePeerConnection(pm.id, entry);
       }
     }
-    // If active source went offline, drop it too
     if (previousSource && !onlineNow.has(previousSource) && state.peers.has(previousSource)) {
       const entry = state.peers.get(previousSource);
       removePeerConnection(previousSource, entry);
@@ -1289,6 +1436,7 @@ function renderControls() {
 
   if (moderator) {
     $('#share-audio').classList.toggle('hidden', isSelfSource());
+    $('#share-file-audio')?.classList.toggle('hidden', isSelfSource());
     if (mobileAudio) $('#share-audio').textContent = 'Use Android app';
     else $('#share-audio').innerHTML = '<span class="button-icon">◉</span> Share audio';
     $('#stop-audio').classList.toggle('hidden', !isSelfSource());
@@ -1300,6 +1448,7 @@ function renderControls() {
     const requestTitle = $('#request-controls-title');
     const requestStatus = $('#request-control-status');
     $('#request-audio').classList.toggle('hidden', Boolean(myRequest || selfIsSource));
+    $('#share-file-audio-participant')?.classList.toggle('hidden', !selfIsSource || Boolean(state.captureStream));
     $('#cancel-request').classList.toggle('hidden', !myRequest);
     $('#cancel-request').dataset.requestId = myRequest?.id || '';
     $('#ask-takeover').classList.toggle('hidden', !sourceIsParticipant);
@@ -1364,10 +1513,13 @@ function renderRequests() {
 }
 
 function renderChat() {
+  const feed = $('#chat-feed');
+  if (!feed) return;
+  const wasNearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 48;
   const chat = state.messages.filter((message) => message.kind === 'chat');
   $('#chat-count').textContent = chat.length;
-  $('#chat-feed').innerHTML = chat.length ? chat.map((message) => `<div class="chat-message"><div class="avatar">${escapeHtml(initials(message.senderName))}</div><div class="chat-body"><div class="chat-meta"><span class="chat-name">${escapeHtml(message.senderName)}</span><span class="chat-time">${timeLabel(message.createdAt)}</span></div><div class="chat-text">${escapeHtml(message.text)}</div></div></div>`).join('') : '<div class="request-empty">Start the conversation with the room.</div>';
-  $('#chat-feed').scrollTop = $('#chat-feed').scrollHeight;
+  feed.innerHTML = chat.length ? chat.map((message) => `<div class="chat-message"><div class="avatar">${escapeHtml(initials(message.senderName))}</div><div class="chat-body"><div class="chat-meta"><span class="chat-name">${escapeHtml(message.senderName)}</span><span class="chat-time">${timeLabel(message.createdAt)}</span></div><div class="chat-text">${escapeHtml(message.text)}</div></div></div>`).join('') : '<div class="request-empty">Start the conversation with the room.</div>';
+  if (wasNearBottom) feed.scrollTop = feed.scrollHeight;
 }
 
 function renderActivity() {
@@ -1524,7 +1676,6 @@ function removePeerTelemetry(peerId, entry) {
 
 function renderTelemetry() {
   const panel = $('#telemetry-panel');
-  // Telemetry is an optional diagnostics surface; RTC behavior must not depend on it.
   if (!panel) return;
   if (!state.room) {
     panel.classList.add('hidden');
@@ -1556,10 +1707,29 @@ function renderTelemetry() {
   }
 
   if (isMediaRelayEnabled()) {
-    summary.textContent = `${sourceName} · epoch ${epoch} · PCM16 WebSocket relay`;
+    summary.textContent = `${sourceName} · epoch ${epoch} · PCM16 WebSocket relay (48 kHz)`;
     status.textContent = 'Relay';
     status.className = 'telemetry-state good';
-    list.innerHTML = '<div class="telemetry-empty">Audio is transported through the SangeetPitara server relay. Relay bandwidth grows with the number of listeners.</div>';
+    const isSender = isSelfSource();
+    const frameCount = isSender ? state.relaySentFrames : state.relayReceivedFrames;
+    const bufferLabel = isSender
+      ? `${Math.round((Number(state.ws?.bufferedAmount) || 0) / 1024)} KB socket`
+      : state.relayPlaybackWorkletReady
+        ? `${state.relayWorkletBufferedMs} ms (${state.syncOffsetMs} ms target)`
+        : `${state.syncOffsetMs} ms cushion`;
+    const engineLabel = state.relayPlaybackWorkletReady ? 'AudioWorklet PI ring' : 'Web Audio scheduler';
+    list.innerHTML = `<article class="telemetry-peer">
+      <div class="telemetry-peer-heading">
+        <div><span class="telemetry-direction">${isSender ? 'PUBLISHING RELAY' : 'LISTENING RELAY'}</span><strong>${escapeHtml(sourceName)}</strong></div>
+        <span class="telemetry-connection good"><i></i>48 kHz Hi-Fi</span>
+      </div>
+      <div class="telemetry-peer-states"><span>Engine <strong>${escapeHtml(engineLabel)}</strong></span><span>Epoch <strong>${escapeHtml(epoch)}</strong></span></div>
+      <div class="telemetry-stats">
+        <span><small>Frames</small><strong>${formatTelemetryCount(frameCount)}</strong><em>20 ms packets</em></span>
+        <span><small>Buffer</small><strong>${escapeHtml(bufferLabel)}</strong><em>${state.relayWorkletUnderruns} underruns</em></span>
+        <span><small>Level</small><strong>${formatAudioLevel(state.liveAudioLevel)}</strong><em>live RMS</em></span>
+      </div>
+    </article>`;
     return;
   }
 
@@ -1644,6 +1814,60 @@ function pollPeerTelemetry() {
   return task;
 }
 
+async function startLocalFileCapture(file) {
+  if (!file) return;
+  stopLocalCapture(false);
+  const nonce = ++state.captureNonce;
+  try {
+    const context = createRoomAudioContext();
+    state.audioContext = context;
+    if (context.state !== 'running') await context.resume().catch(() => {});
+    const objectUrl = URL.createObjectURL(file);
+    const player = document.createElement('audio');
+    player.src = objectUrl;
+    player.loop = false;
+    player.preload = 'auto';
+    player.crossOrigin = 'anonymous';
+    const elementSource = context.createMediaElementSource(player);
+    const streamDest = context.createMediaStreamDestination();
+    // Connect to both local speakers and the capture MediaStream so the host
+    // hears the music track while streaming bit-perfect PCM to the room.
+    elementSource.connect(context.destination);
+    elementSource.connect(streamDest);
+    await player.play();
+    if (nonce !== state.captureNonce) {
+      player.pause();
+      URL.revokeObjectURL(objectUrl);
+      return;
+    }
+    state.fileAudioElement = player;
+    state.fileAudioObjectUrl = objectUrl;
+    state.captureStream = streamDest.stream;
+    state.captureType = 'DEVICE_AUDIO';
+    state.captureLabel = file.name ? `file: ${file.name.slice(0, 48)}` : 'local audio file';
+    player.addEventListener('ended', () => {
+      if (state.fileAudioElement === player) {
+        stopLocalCapture(true);
+        toast('Audio file playback finished.', 'success');
+      }
+    }, { once: true });
+    if (isMediaRelayEnabled() && !(await ensureRelayPublisher())) {
+      if (nonce !== state.captureNonce) return;
+      throw new Error('Audio file relay could not initialize.');
+    }
+    if (!isSelfSource() && isModerator()) {
+      send({ type: 'takeover', sourceType: 'DEVICE_AUDIO' });
+    }
+    send({ type: 'start-source', sourceType: 'DEVICE_AUDIO', sourceLabel: state.captureLabel });
+    toast(`Sharing ${state.captureLabel}.`, 'success');
+    addActivity(`You started sharing ${state.captureLabel}.`, true);
+  } catch (error) {
+    if (nonce !== state.captureNonce) return;
+    stopLocalCapture(false);
+    toast(error?.message || 'Could not play the selected audio file.', 'error');
+  }
+}
+
 async function startLocalCapture(sourceType, intent = 'host') {
   stopLocalCapture(false);
   const nonce = ++state.captureNonce;
@@ -1651,9 +1875,6 @@ async function startLocalCapture(sourceType, intent = 'host') {
   try {
     let stream;
     let label;
-    // getDisplayMedia requires a secure context. http://localhost is secure,
-    // but http://10.x LAN IPs are NOT secure, so browser device-audio capture
-    // on an http LAN page will always throw.
     if (!window.isSecureContext) {
       const expected = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
         ? ' Use the native Android app for device-audio, or serve this site over https so getDisplayMedia is allowed on LAN IPs.'
@@ -1672,8 +1893,6 @@ async function startLocalCapture(sourceType, intent = 'host') {
         throw e;
       }
       try { prepareDisplayAudioStream(stream); } catch (e) {
-        // Ticking "Share audio" can yield a stream with zero live audio tracks.
-        // Never crash: stop the display stream, wrap the technical message in guidance.
         try { stream.getTracks().forEach((t) => t.stop()); } catch {}
         const hint = e?.message ? ` ${e.message}` : ' The source did not provide audio.';
         throw new Error(`System audio was not captured.${hint} ${displayAudioCaptureGuidance(navigator.userAgent)}`);
@@ -1718,6 +1937,14 @@ function stopLocalCapture(stopServer = true) {
   state.captureRecoveryPending = false;
   if (state.peers.size) closePeerConnections();
   stopRelayCapture();
+  if (state.fileAudioElement) {
+    try { state.fileAudioElement.pause(); state.fileAudioElement.src = ''; } catch {}
+    state.fileAudioElement = null;
+  }
+  if (state.fileAudioObjectUrl) {
+    try { URL.revokeObjectURL(state.fileAudioObjectUrl); } catch {}
+    state.fileAudioObjectUrl = null;
+  }
   if (state.captureStream) state.captureStream.getTracks().forEach((track) => track.stop());
   state.captureStream = null;
   state.captureType = null;
@@ -1765,8 +1992,6 @@ function ensureAudioElement() {
   applyOutputVolume();
   audio.setAttribute('aria-label', 'Room audio — use Your listening controls to adjust volume');
   audio.setAttribute('aria-live', 'off');
-  // Visually hidden but still accessible to screen readers via aria-label above;
-  // we keep controls off but expose via the visible Mute/Volume panel.
   audio.style.position = 'fixed';
   audio.style.width = '1px';
   audio.style.height = '1px';
@@ -1796,9 +2021,6 @@ async function createPublisherPeer(targetId) {
   const pc = new RTCPeerConnection(rtcConfig);
   const entry = { pc, role: 'publisher', sourceEpoch, captureStream, pendingCandidates: [], remoteDescSet: false };
   state.peers.set(targetId, entry);
-  // Display capture uses a live video track to keep Chrome's audio session
-  // alive, but the room protocol is audio-only. Never send an ended/disabled
-  // display video track to native listeners.
   audioTracks.forEach((track) => pc.addTrack(track, captureStream));
   pc.onicecandidate = (event) => {
     if (event.candidate && isCurrentPeerEntry(targetId, entry)) send({ type: 'rtc', to: targetId, signal: { type: 'candidate', candidate: event.candidate }, sourceEpoch: entry.sourceEpoch });
@@ -1849,6 +2071,7 @@ async function createPublisherPeer(targetId) {
   registerPeerTelemetry(targetId, entry);
   try {
     const offer = await pc.createOffer();
+    if (offer?.sdp) offer.sdp = enhanceOpusSdpForMusic(offer.sdp);
     if (!isCurrentPeerEntry(targetId, entry)) {
       removePeerConnection(targetId, entry);
       return;
@@ -1950,7 +2173,10 @@ async function handleRtcSignal(message) {
     };
     registerPeerTelemetry(from, entry);
     try {
-      await pc.setRemoteDescription(signal.description);
+      const remoteOffer = signal.description?.sdp
+        ? { type: signal.description.type, sdp: enhanceOpusSdpForMusic(signal.description.sdp) }
+        : signal.description;
+      await pc.setRemoteDescription(remoteOffer);
       if (!isCurrentPeerEntry(from, entry)) {
         removePeerConnection(from, entry);
         return;
@@ -1964,6 +2190,7 @@ async function handleRtcSignal(message) {
     }
     try {
       const answer = await pc.createAnswer();
+      if (answer?.sdp) answer.sdp = enhanceOpusSdpForMusic(answer.sdp);
       if (!isCurrentPeerEntry(from, entry)) {
         removePeerConnection(from, entry);
         return;
@@ -1980,7 +2207,6 @@ async function handleRtcSignal(message) {
       if (state.peers.get(from) === entry) removePeerConnection(from, entry);
       console.error("[SangeetPitara] createAnswer failed", e);
     }
-    // flush early trickled candidates that arrived before offer was processed
     const pkEarly = "__pending_"+from;
     if (state.peers.has(pkEarly) && isCurrentPeerEntry(from, entry)) {
       const pend = state.peers.get(pkEarly);
@@ -2005,7 +2231,10 @@ async function handleRtcSignal(message) {
   if (!isCurrentPeerEntry(from, peer)) return;
   if (signal.type === 'answer') {
     try {
-      await peer.pc.setRemoteDescription(signal.description);
+      const remoteAnswer = signal.description?.sdp
+        ? { type: signal.description.type, sdp: enhanceOpusSdpForMusic(signal.description.sdp) }
+        : signal.description;
+      await peer.pc.setRemoteDescription(remoteAnswer);
       if (!isCurrentPeerEntry(from, peer)) {
         removePeerConnection(from, peer);
         return;
@@ -2045,7 +2274,8 @@ function enableRoomAudio() {
     tasks.push(audio.play());
   }
   if (relayAudio) {
-    relayAudio.muted = false;
+    const isAndroidBrowser = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+    relayAudio.muted = !isAndroidBrowser;
     applyOutputVolume();
     tasks.push(relayAudio.play());
   }
@@ -2192,6 +2422,13 @@ function wireEvents() {
   });
   $('#room-code').addEventListener('input', (event) => { event.target.value = normalizeRoomCodeInput(event.target.value); });
   $('#share-audio').addEventListener('click', () => { void startLocalCapture('DEVICE_AUDIO', 'host'); });
+  $('#share-file-audio')?.addEventListener('click', () => { $('#audio-file-input')?.click(); });
+  $('#share-file-audio-participant')?.addEventListener('click', () => { $('#audio-file-input')?.click(); });
+  $('#audio-file-input')?.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) void startLocalFileCapture(file);
+  });
   $('#takeover-audio').addEventListener('click', () => {
     if (state.captureStream) {
       send({ type: 'takeover', sourceType: state.captureType || 'DEVICE_AUDIO' });
@@ -2222,6 +2459,17 @@ function wireEvents() {
     event.target.value = String(state.volume);
     applyOutputVolume();
   });
+  if ($('#sync-offset')) {
+    $('#sync-offset').value = String(state.syncOffsetMs);
+    if ($('#sync-offset-label')) $('#sync-offset-label').textContent = `${state.syncOffsetMs}ms`;
+    $('#sync-offset').addEventListener('input', (event) => {
+      state.syncOffsetMs = clampSyncOffsetMs(event.target.value);
+      localStorage.setItem('roomsound-sync-offset-ms', String(state.syncOffsetMs));
+      if ($('#sync-offset-label')) $('#sync-offset-label').textContent = `${state.syncOffsetMs}ms`;
+      state.relayPlaybackWorklet?.port?.postMessage({ type: 'config', targetDelayMs: state.syncOffsetMs });
+      renderTelemetry();
+    });
+  }
   $('#share-room').addEventListener('click', openShare);
   $('#settings-button').addEventListener('click', toggleRoomMenu);
   $('#room-settings').addEventListener('click', openRoomSettings);
@@ -2234,9 +2482,6 @@ function wireEvents() {
     if (event.key === 'Escape') closeRoomMenu();
   });
   document.addEventListener('visibilitychange', () => {
-    // Do not stop capture or playback when the tab is hidden. Mobile browsers
-    // can suspend an AudioContext while backgrounded; retry only when the page
-    // is visible again and keep the existing user gesture state intact.
     if (!document.hidden) void resumeRoomMediaAfterVisibility();
   });
   document.addEventListener('resume', () => { void resumeRoomMediaAfterVisibility(); });
@@ -2284,8 +2529,6 @@ const initialNotificationAction = normalizeNotificationAction({
   roomCode: locationParams.get('room'),
 });
 if (initialNotificationAction) {
-  // Keep the action in the URL until the room joins. That gives a reload a
-  // durable retry path if the worker or WebSocket is interrupted mid-join.
   queueNotificationAction(initialNotificationAction);
 } else {
   const queryRoom = locationParams.get('room');

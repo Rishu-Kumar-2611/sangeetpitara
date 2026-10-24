@@ -11,9 +11,10 @@
     <meta name="roomsound-ad-enabled" content="false" />
     <meta name="roomsound-ad-consent" content="false" />
     <meta name="roomsound-media-relay" content="server-configured-pcm16" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob: data:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'" />
     <title>SangeetPitara — listen together</title>
     <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261023-clarity-1" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="stylesheet" href="/styles.css?v=20261023-clarity-1" />
   </head>
   <body>
@@ -128,8 +129,11 @@
               <div class="source-status" id="source-status"><span class="status-pulse"></span><span id="source-status-label">Waiting</span></div>
             </div>
 
+            <input id="audio-file-input" type="file" accept="audio/*" hidden />
+
             <div class="control-row host-control-row" id="host-controls" aria-label="Host audio controls">
               <button id="share-audio" class="primary-button" type="button"><span class="button-icon">◉</span> Share audio</button>
+              <button id="share-file-audio" class="secondary-button" type="button" title="Stream a local MP3, WAV, FLAC, or M4A file from any browser"><span>♫</span> Share audio file</button>
               <button id="takeover-audio" class="secondary-button hidden" type="button">Take control back</button>
               <button id="stop-audio" class="secondary-button hidden" type="button">Stop sharing</button>
               <button id="enable-audio" class="secondary-button hidden" type="button">Enable room audio</button>
@@ -142,6 +146,7 @@
               </div>
               <div class="request-control-actions">
                 <button id="request-audio" class="primary-button" type="button"><span>↗</span> Request to play</button>
+                <button id="share-file-audio-participant" class="secondary-button hidden" type="button" title="Stream a local audio file from this device"><span>♫</span> Share audio file</button>
                 <button id="cancel-request" class="secondary-button hidden" type="button">Cancel request</button>
                 <button id="ask-takeover" class="secondary-button hidden" type="button">Ask host to take control</button>
                 <button id="enable-audio-participant" class="secondary-button hidden" type="button">Enable room audio</button>
@@ -153,6 +158,11 @@
               <button id="local-mute" class="mute-button" type="button"><span id="mute-icon">◒</span><span id="mute-label">Mute</span></button>
               <input id="local-volume" class="volume-slider" type="range" min="0" max="1" step="0.01" value="0.9" aria-label="Your room volume" />
               <span id="volume-label" class="volume-label">90%</span>
+              <label class="sync-offset-control" for="sync-offset" title="Adjust buffer cushion for Bluetooth earbuds or wireless speakers">
+                <span class="sync-prefix">Sync</span>
+                <input id="sync-offset" class="sync-slider" type="range" min="40" max="400" step="10" value="120" aria-label="Bluetooth sync buffer cushion in milliseconds" />
+                <span id="sync-offset-label" class="sync-label">120ms</span>
+              </label>
             </div>
 
             <div class="lower-grid">
@@ -182,6 +192,15 @@
               <div id="request-list" class="request-list"></div>
             </section>
 
+            <section class="panel telemetry-panel" id="telemetry-panel">
+              <div class="panel-heading">
+                <div><span class="section-label">STREAM HEALTH</span><h3>Audio diagnostics</h3></div>
+                <span class="telemetry-state pending" id="telemetry-state">Waiting</span>
+              </div>
+              <p class="telemetry-summary" id="telemetry-summary">No active source · diagnostics will appear when audio starts.</p>
+              <div id="telemetry-list" class="telemetry-list"><div class="telemetry-empty">Start playback sharing to inspect the current source and listeners.</div></div>
+            </section>
+
             <div id="room-ad-slot" class="ad-slot" data-ad-slot="" data-ad-placement="room-sidebar" hidden aria-hidden="true"></div>
 
           </aside>
@@ -189,7 +208,7 @@
       </section>
     </main>
 
-    <footer class="site-footer"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="mailto:abuse@example.com">Report abuse</a></footer>
+    <footer class="site-footer"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/privacy.html">Support &amp; Safety</a></footer>
     <div id="toast-stack" class="toast-stack"></div>
     <div id="modal-root"></div>
     <script type="module" src="/app.js?v=20261023-clarity-1"></script>

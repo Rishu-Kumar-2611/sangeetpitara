@@ -573,7 +573,7 @@ class RoomSoundWebSocketClient(
     /**
      * Validate and send atomically against the latest accepted source lease.
      * OkHttp's general queue limit is far too large for live PCM; drop new
-     * frames above a 250 ms wire window instead of accumulating old audio.
+     * frames above a ~500 ms wire window instead of accumulating old audio.
      */
     fun sendPcm16Frame(frame: ByteString): Boolean {
         val packet = runCatching { Pcm16RelayPacketCodec.decode(frame) }.getOrNull() ?: return false
@@ -666,10 +666,10 @@ class RoomSoundWebSocketClient(
         private const val NORMAL_CLOSE = 1000
         private const val INITIAL_RECONNECT_DELAY_MS = 1_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
-        private const val CONFIG_TIMEOUT_SECONDS = 5L
-        // Keep sender backlog near 125 ms of PCM16 instead of playing stale
-        // audio after a temporary Wi-Fi or listener stall.
-        private const val MAX_RELAY_QUEUED_BYTES = 12_000L
+        private const val CONFIG_TIMEOUT_SECONDS = 20L
+        // Keep sender backlog near 500 ms of PCM16 so Wi-Fi bursts do not drop
+        // frames prematurely while avoiding multi-second stale queues.
+        private const val MAX_RELAY_QUEUED_BYTES = 48_000L
 
         private fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
             .pingInterval(20, TimeUnit.SECONDS)

@@ -24,7 +24,7 @@ services:
       - key: MEDIA_RELAY_ENABLED
         value: "1"
       - key: REWARDED_ACCESS_ENABLED
-        value: "1"
+        value: "0"
       - key: REWARDED_AD_PROVIDER
         value: demo-local
       - key: REWARDED_AD_MODE
@@ -33,6 +33,8 @@ services:
         value: "30"
       - key: REWARDED_ACCESS_DURATION_HOURS
         value: "6"
+      - key: DATABASE_URL
+        sync: false
       - key: ALLOWED_ORIGINS
         sync: false
       - key: ADSENSE_ENABLED
@@ -42,4 +44,6 @@ services:
       - key: ADSENSE_LANDING_SLOT
         sync: false
       - key: ADSENSE_ROOM_SLOT
+        sync: false
+      - key: METRICS_BEARER_TOKEN
         sync: false

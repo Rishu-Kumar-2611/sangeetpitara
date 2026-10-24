@@ -1087,3 +1087,54 @@ input:focus-visible {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Bluetooth sync offset & Stream Health telemetry panel */
+.sync-offset-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(111, 73, 39, 0.22);
+  color: #694a2f;
+  font-size: 10px;
+  font-weight: 800;
+}
+.sync-prefix { text-transform: uppercase; letter-spacing: 0.06em; color: #7d5836; }
+.sync-slider { width: 82px; accent-color: var(--brass-dark); }
+.sync-label { min-width: 38px; color: #755839; font-size: 10px; text-align: right; font-variant-numeric: tabular-nums; }
+
+.telemetry-panel { min-height: 0; }
+.telemetry-summary { margin: 0; padding: 10px 15px 6px; color: #694a2f; font-size: 10.5px; font-weight: 700; line-height: 1.4; }
+.telemetry-list { padding: 4px 15px 14px; display: grid; gap: 8px; }
+.telemetry-empty { color: #765c41; font-size: 10.5px; line-height: 1.45; }
+.telemetry-state {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 99px;
+  font-size: 9.5px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(174, 126, 59, 0.2);
+  color: #70491f;
+}
+.telemetry-state.good { background: rgba(82, 139, 83, 0.2); color: #2e6234; }
+.telemetry-state.bad { background: rgba(183, 80, 70, 0.2); color: #8d342f; }
+.telemetry-peer {
+  padding: 9px 10px;
+  border: 1px solid rgba(184, 133, 60, 0.34);
+  border-radius: 9px;
+  background: rgba(255, 248, 228, 0.55);
+  font-size: 10px;
+  color: #5b4029;
+}
+.telemetry-peer-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 5px; }
+.telemetry-direction { display: block; font-size: 8.5px; font-weight: 900; color: #8c673e; letter-spacing: 0.08em; }
+.telemetry-peer-states { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; color: #7a5c3d; font-size: 9.5px; }
+.telemetry-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.telemetry-stats span { display: grid; padding: 5px 6px; border-radius: 6px; background: rgba(255, 252, 242, 0.65); }
+.telemetry-stats small { font-size: 8.5px; color: #8b6b47; text-transform: uppercase; }
+.telemetry-stats strong { font-size: 10.5px; color: #432b1b; }
+.telemetry-stats em { font-style: normal; font-size: 8.5px; color: #7d5f3f; }
+.source-orb { transition: transform 0.08s ease-out, box-shadow 0.08s ease-out; }

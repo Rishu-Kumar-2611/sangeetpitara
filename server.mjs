@@ -1,7 +1,8 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import os from 'node:os';
-import { readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -16,22 +17,25 @@ import {
   serializeSessionCookie,
 } from './auth.mjs';
 import { createAuditRecorder } from './audit.mjs';
-import { createBillingService } from './billing.mjs';
-import { entitlementAllows, normalizeEntitlement } from './billing.mjs';
+import { createBillingService, entitlementAllows, normalizeEntitlement } from './billing.mjs';
 import {
   createBan,
   createBlock,
   createReport,
   isBanActive,
   isBlockActive,
-  transitionReport,
 } from './moderation.mjs';
 import { createStructuredLogger, createHealthState, createMetricsRegistry } from './observability.mjs';
 import { createRepositoryFromEnv } from './persistence.mjs';
-import { readJsonBody as readSecureJsonBody, readRawBody, RequestBodyError as SecureRequestBodyError } from './security.mjs';
+import {
+  constantTimeEqual,
+  readJsonBody as readSecureJsonBody,
+  readRawBody,
+  RequestBodyError as SecureRequestBodyError,
+} from './security.mjs';
 import { DEFAULT_REWARDED_ACCESS_CONFIG, normalizeRewardedAccessConfig } from './ads.mjs';
 import {
-  decodePcm16Frame,
+  validatePcm16FrameHeader,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_FRAME_BYTES,
   MEDIA_RELAY_MAX_PAYLOAD_BYTES,
@@ -61,14 +65,16 @@ const MAX_MESSAGE_KEEP = 100;
 const MAX_PAYLOAD_BYTES = 64 * 1024;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
+const STATIC_RATE_LIMIT_MAX = 600;
 const BINARY_FRAME_WINDOW_MS = 5_000;
 // Android playback capture emits 10 ms PCM frames (100 frames/sec). Keep a
 // little headroom above that cadence while still bounding a client's relay
 // work; browser packetizers use 20 ms frames and remain well below this cap.
 const BINARY_FRAME_RATE_MAX = 600;
-// A slow listener must lose old audio rather than turning the WebSocket into a
-// stale-audio queue. At PCM16/48 kHz mono this is roughly 160 ms of payload.
-const MAX_RELAY_BUFFERED_BYTES = 16 * 1024;
+// Allow up to 64 KiB (~680 ms at 48 kHz mono PCM16) per listener socket so
+// normal mobile/Wi-Fi TCP retransmission bursts do not drop audio frames.
+const MAX_RELAY_BUFFERED_BYTES = 64 * 1024;
+const STREAMING_STATIC_THRESHOLD_BYTES = 256 * 1024;
 const turnEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.TURN_ENABLED || '').trim().toLowerCase());
 const TURN_URLS = turnEnabled && process.env.TURN_URLS
   ? process.env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean)
@@ -107,10 +113,6 @@ const auth = createAuthService({
   sessionTtlMs: process.env.SESSION_TTL_MS,
 });
 const secureSessionCookie = sessionCookieSecure(process.env);
-// Browser room access is intentionally anonymous. Keep the old environment
-// variables accepted by deployments, but never let them turn room create/join
-// into an account-gated flow. HTTP account, moderation, billing, and admin
-// routes below continue to authenticate independently.
 const roomAuthRequired = false;
 const billing = createBillingService({ env: process.env });
 const logger = createStructuredLogger({
@@ -141,6 +143,7 @@ const mimeTypes = {
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -167,20 +170,24 @@ const securityHeaders = {
 };
 
 const rateLimit = new Map();
+const staticRateLimit = new Map();
 setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of rateLimit) if (now > entry.resetAt) rateLimit.delete(ip);
+  for (const [ip, entry] of staticRateLimit) if (now > entry.resetAt) staticRateLimit.delete(ip);
 }, 60_000).unref();
 
-function checkRateLimit(ip) {
+function checkRateLimit(ip, { isStaticAsset = false } = {}) {
   const now = Date.now();
-  let entry = rateLimit.get(ip);
+  const bucket = isStaticAsset ? staticRateLimit : rateLimit;
+  const max = isStaticAsset ? STATIC_RATE_LIMIT_MAX : RATE_LIMIT_MAX;
+  let entry = bucket.get(ip);
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
-    rateLimit.set(ip, entry);
+    bucket.set(ip, entry);
   }
   entry.count += 1;
-  return entry.count <= RATE_LIMIT_MAX;
+  return entry.count <= max;
 }
 
 function isAllowedOrigin(origin, allowedList) {
@@ -301,8 +308,9 @@ function clientState(room, viewer) {
   };
 }
 
-function broadcastState(room) {
+function broadcastState(room, excludeMemberId = null) {
   for (const member of room.members.values()) {
+    if (excludeMemberId && member.id === excludeMemberId) continue;
     if (member.ws) send(member.ws, { type: 'state', state: clientState(room, member) });
   }
 }
@@ -568,7 +576,7 @@ async function handleAuthRequest(req, res, requestPath) {
     const credentials = await readJsonBody(req);
     const result = isRegister ? await auth.register(credentials) : await auth.login(credentials);
     audit.record({
-      type: isRegister ? 'auth.login.succeeded' : 'auth.login.succeeded',
+      type: 'auth.login.succeeded',
       severity: 'info',
       actorId: result.user.id,
       metadata: { operation: isRegister ? 'register' : 'login' },
@@ -674,10 +682,11 @@ async function restorePersistedRooms() {
   if (records.length) logger.info('Restored durable room directory', { rooms: records.length });
 }
 
-function makeMember({ guestId, name, ws, role = 'PARTICIPANT' }) {
+function makeMember({ guestId, reconnectSecret = null, name, ws, role = 'PARTICIPANT' }) {
   return {
     id: randomId(),
     guestId: safeText(guestId, 80) || randomId(),
+    reconnectSecret: safeText(reconnectSecret, 80) || null,
     accountId: ws?.authenticatedUser?.id || null,
     name: safeText(name, 40) || 'Guest',
     role,
@@ -720,7 +729,8 @@ function attachRoom(ws, room, member) {
   ws.memberId = member.id;
   room.members.set(member.id, member);
   send(ws, { type: 'joined', state: clientState(room, member) });
-  broadcastState(room);
+  // Avoid sending a duplicate full state payload to the member who just received 'joined'.
+  broadcastState(room, member.id);
 }
 
 async function createRoom(ws, message) {
@@ -757,7 +767,13 @@ async function createRoom(ws, message) {
     hostFailoverTimer: null,
   };
 
-  const member = makeMember({ guestId: message.guestId, name: displayName, ws, role: 'HOST' });
+  const member = makeMember({
+    guestId: message.guestId,
+    reconnectSecret: message.reconnectSecret,
+    name: displayName,
+    ws,
+    role: 'HOST',
+  });
   room.hostId = member.id;
   try {
     await createPersistedRoom(room);
@@ -777,12 +793,18 @@ async function joinRoom(ws, message) {
   if (await moderationBlocksEntry(ws, room)) return;
 
   const guestIdClean = safeText(message.guestId, 80);
+  const reconnectSecretClean = safeText(message.reconnectSecret, 80) || null;
   const existing = [...room.members.values()].find((member) => (
     (ws.authenticatedUser && member.accountId === ws.authenticatedUser.id)
       || (!ws.authenticatedUser && member.guestId === guestIdClean)
   ));
   if (existing?.ws) return sendError(ws, 'This account is already connected to the room.');
   if (existing && !existing.ws) {
+    // Prevent another room participant from spoofing a disconnected member's guestId
+    // when a client-side reconnectSecret was bound to the member slot.
+    if (existing.reconnectSecret && reconnectSecretClean !== existing.reconnectSecret) {
+      return sendError(ws, 'This account is already connected to the room.');
+    }
     existing.ws = ws;
     existing.name = displayName;
     attachRoom(ws, room, existing);
@@ -801,7 +823,13 @@ async function joinRoom(ws, message) {
     : accountId && room.cohostUserId === accountId
       ? 'CO_HOST'
       : 'PARTICIPANT';
-  const member = makeMember({ guestId: message.guestId, name: displayName, ws, role });
+  const member = makeMember({
+    guestId: message.guestId,
+    reconnectSecret: message.reconnectSecret,
+    name: displayName,
+    ws,
+    role,
+  });
   if (role === 'HOST') room.hostId = member.id;
   if (role === 'CO_HOST') room.cohostId = member.id;
   attachRoom(ws, room, member);
@@ -837,8 +865,6 @@ function stopSource(room, reason, resume = true, notify = true) {
     const resumeMember = findMember(room, room.resumeSourceId);
     room.activeSourceId = resumeMember?.ws ? room.resumeSourceId : null;
     room.activeSourceType = room.activeSourceId ? room.resumeSourceType : null;
-    // The host keeps its local capture alive while a participant temporarily
-    // owns the room, so a return-to-host transition is immediately live.
     room.sourceStatus = room.activeSourceId ? 'LIVE' : 'NONE';
     room.sourceEpoch += 1;
     room.resumeSourceId = null;
@@ -940,22 +966,19 @@ function handleBinaryFrame(ws, raw) {
   if (!room || !member || member.ws !== ws) return sendError(ws, 'Join or create a room first.');
   if (room.activeSourceId !== member.id) return sendError(ws, 'You are not authorized to publish audio right now.');
 
-  let frame;
+  let header;
   try {
-    frame = decodePcm16Frame(raw, { maxPayloadBytes: MEDIA_RELAY_MAX_PAYLOAD_BYTES });
+    // Zero-copy O(1) header check: avoids allocating Int16Array(960) and looping
+    // over 48,000 samples/sec on the Node.js event loop.
+    header = validatePcm16FrameHeader(raw, { maxPayloadBytes: MEDIA_RELAY_MAX_PAYLOAD_BYTES });
   } catch (error) {
     return sendError(ws, `Invalid media relay frame: ${error.message}`);
   }
-  if (frame.sourceEpoch !== room.sourceEpoch) return sendError(ws, 'Stale source epoch.');
+  if (header.sourceEpoch !== room.sourceEpoch) return sendError(ws, 'Stale source epoch.');
 
-  // Forward the original bytes, not a re-encoded frame. This preserves the
-  // protocol boundary and keeps the relay's CPU work limited to validation.
-  const bytes = Buffer.from(raw);
+  const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
   for (const target of room.members.values()) {
     if (target.id === member.id || !target.ws || target.ws.readyState !== WebSocket.OPEN) continue;
-    // Drop this frame for a slow listener instead of allowing ws to queue
-    // seconds of old PCM. The next frame will be accepted once the listener
-    // catches up, keeping perceived latency bounded at the cost of a gap.
     if (Number(target.ws.bufferedAmount) > MAX_RELAY_BUFFERED_BYTES) continue;
     target.ws.send(bytes);
   }
@@ -1005,7 +1028,6 @@ async function handleMessage(ws, message) {
     } else if (isCandidate) {
       if (fromIsSource === toIsSource) return sendError(ws, 'Candidates must be between source and listener.');
     } else {
-      // Unknown signal types must still be between source and listener
       if (fromIsSource === toIsSource) return sendError(ws, 'RTC must be between source and listener.');
     }
     const forwarded = { type: 'rtc', from: member.id, signal: message.signal, sourceEpoch: room.sourceEpoch };
@@ -1190,9 +1212,6 @@ async function handleMessage(ws, message) {
         broadcastState(room);
       }
     }
-    // Process the departure before starting the close handshake. A reconnect
-    // can otherwise race the asynchronous close event and see this member as
-    // still online, leaving the client unable to rejoin or end its room.
     handleDisconnect(ws);
     ws.close(1000, 'Left room');
   }
@@ -1216,6 +1235,35 @@ function canonicalPublicRedirect(req, url) {
   return target.href;
 }
 
+function streamStaticFile(req, res, filePath, size, headers) {
+  const rangeHeader = req.headers.range;
+  headers['Accept-Ranges'] = 'bytes';
+  if (typeof rangeHeader === 'string' && rangeHeader.startsWith('bytes=')) {
+    const match = rangeHeader.replace(/bytes=/, '').split('-');
+    const start = parseInt(match[0], 10);
+    const end = match[1] ? parseInt(match[1], 10) : size - 1;
+    if (Number.isInteger(start) && Number.isInteger(end) && start >= 0 && end < size && start <= end) {
+      headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+      headers['Content-Length'] = String(end - start + 1);
+      res.writeHead(206, headers);
+      if (req.method === 'HEAD') { res.end(); return; }
+      const stream = createReadStream(filePath, { start, end });
+      stream.on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); });
+      stream.pipe(res);
+      return;
+    }
+    res.writeHead(416, { 'Content-Range': `bytes */${size}` });
+    res.end();
+    return;
+  }
+  headers['Content-Length'] = String(size);
+  res.writeHead(200, headers);
+  if (req.method === 'HEAD') { res.end(); return; }
+  const stream = createReadStream(filePath);
+  stream.on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); });
+  stream.pipe(res);
+}
+
 const server = http.createServer(async (req, res) => {
   for (const [k, v] of Object.entries(securityHeaders)) res.setHeader(k, v);
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -1232,16 +1280,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const ip = getClientIp(req);
-  if (!checkRateLimit(ip)) {
-    res.writeHead(429, { 'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': '60' });
-    res.end('Too Many Requests');
-    return;
-  }
-
-  if (await handleAuthRequest(req, res, requestPath)) return;
-  if (await handleProductApiRequest(req, res, requestPath)) return;
-
+  // Liveness and readiness probes run before IP rate limiting so orchestrators
+  // and load balancers behind shared proxy IPs are never throttled.
   if (requestPath === '/health') {
     activeRooms.set(rooms.size);
     httpRequests.inc(1, { route: 'health', status: 200 });
@@ -1256,7 +1296,30 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ ok: response.statusCode === 200, ...response.body }));
     return;
   }
+
+  const reqExt = extname(requestPath);
+  const isStaticAssetRequest = (req.method === 'GET' || req.method === 'HEAD')
+    && ['.css', '.js', '.mjs', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.ico', '.webmanifest'].includes(reqExt);
+  const ip = getClientIp(req);
+  if (!checkRateLimit(ip, { isStaticAsset: isStaticAssetRequest })) {
+    res.writeHead(429, { 'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': '60' });
+    res.end('Too Many Requests');
+    return;
+  }
+
+  if (await handleAuthRequest(req, res, requestPath)) return;
+  if (await handleProductApiRequest(req, res, requestPath)) return;
+
   if (requestPath === '/metrics') {
+    const metricsToken = String(process.env.METRICS_BEARER_TOKEN || '').trim();
+    if (metricsToken) {
+      const authHeader = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      if (!constantTimeEqual(authHeader, metricsToken)) {
+        httpRequests.inc(1, { route: 'metrics', status: 401 });
+        sendJson(res, 401, { error: 'Unauthorized metrics request.' });
+        return;
+      }
+    }
     httpRequests.inc(1, { route: 'metrics', status: 200 });
     res.writeHead(200, { 'Content-Type': metrics.contentType, 'Cache-Control': 'no-store' });
     res.end(metrics.renderPrometheus());
@@ -1327,27 +1390,40 @@ const server = http.createServer(async (req, res) => {
     res.end('Forbidden');
     return;
   }
-  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.apk']);
+  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.apk']);
   if (!allowedExts.has(extname(filePath))) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not found');
     return;
   }
   try {
-    const content = await readFile(filePath);
     const ext = extname(filePath);
     const mime = mimeTypes[ext] || 'application/octet-stream';
     const headers = { 'Content-Type': mime };
     if (ext === '.html') {
-      headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'";
+      headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob: data:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'";
       headers['Cache-Control'] = 'no-cache';
     } else if (fileName === 'downloads/SangeetPitara-debug.apk') {
-      // The stable filename changes between releases; revalidate it rather
-      // than letting a browser keep serving a superseded Android download.
       headers['Cache-Control'] = 'no-cache';
     } else {
       headers['Cache-Control'] = 'public, max-age=3600';
     }
+
+    const fileStats = await stat(filePath);
+    if (!fileStats.isFile()) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Not found');
+      return;
+    }
+    // Stream large binaries (such as the 29 MB Android APK) instead of buffering
+    // the entire file in RAM with readFile(), preventing container OOM crashes.
+    if (ext === '.apk' || fileStats.size >= STREAMING_STATIC_THRESHOLD_BYTES) {
+      streamStaticFile(req, res, filePath, fileStats.size, headers);
+      return;
+    }
+
+    const content = await readFile(filePath);
+    headers['Content-Length'] = String(content.byteLength);
     res.writeHead(200, headers);
     res.end(content);
   } catch {
@@ -1359,9 +1435,6 @@ const server = http.createServer(async (req, res) => {
 const wss = new WebSocketServer({
   server,
   perMessageDeflate: false,
-  // Transport limit is intentionally larger than the 64 KiB application limit
-  // so the handler can send `Message too large` and keep the socket alive
-  // instead of ws closing with 1009 before the handler runs.
   maxPayload: 512 * 1024,
   verifyClient: (info, cb) => {
     const allowed = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean) : null;
@@ -1380,6 +1453,7 @@ const wss = new WebSocketServer({
     cb(true);
   },
 });
+
 function dispatchMessage(ws, data) {
   void handleMessage(ws, data).catch((error) => {
     logger.error('WebSocket message handling failed', { error });
