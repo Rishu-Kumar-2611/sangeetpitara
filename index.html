@@ -134,6 +134,7 @@
                 <div class="source-kicker" id="source-kicker">NO ACTIVE SOURCE</div>
                 <h2 id="source-title">The room is quiet</h2>
                 <p id="source-detail">Choose an audio source to start sharing with the room.</p>
+                <canvas id="source-waveform" class="source-waveform" aria-hidden="true"></canvas>
               </div>
               <div class="source-status" id="source-status"><span class="status-pulse"></span><span id="source-status-label">Waiting</span></div>
             </div>
@@ -182,7 +183,9 @@
               <section class="panel chat-panel">
                 <div class="panel-heading"><div><span class="section-label">ROOM CHAT</span><h3>Say something</h3></div><span class="chat-count" id="chat-count">0</span></div>
                 <div id="chat-feed" class="chat-feed"></div>
+                <div id="emoji-bar" class="emoji-bar" role="group" aria-label="Insert emoji"></div>
                 <form id="chat-form" class="chat-form">
+                  <button id="emoji-toggle" class="emoji-toggle" type="button" aria-controls="emoji-bar" aria-expanded="false" aria-label="Emoji">😊</button>
                   <input id="chat-input" class="chat-input" maxlength="280" placeholder="Message the room…" autocomplete="off" />
                   <button class="send-button" type="submit" aria-label="Send message">↑</button>
                 </form>

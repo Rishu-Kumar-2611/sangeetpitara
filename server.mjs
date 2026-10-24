@@ -250,8 +250,16 @@ function clearSocketRoom(ws) {
 }
 
 function safeText(value, max = 240) {
-  return String(value ?? '').trim().slice(0, max);
+  const text = String(value ?? '').trim();
+  if (text.length <= max) return text;
+  // Cut on code points, not UTF-16 units, so an emoji at the limit is dropped
+  // whole instead of leaving a lone surrogate.
+  return Array.from(text.slice(0, max + 1)).reduce((kept, char) => (kept.length + char.length <= max ? kept + char : kept), '');
 }
+
+// Fixed reaction set: a closed list keeps reactions small, renderable on every
+// client, and impossible to use as a second free-text channel.
+const CHAT_REACTIONS = ['❤️', '🔥', '😂', '👏', '🙏', '🎵'];
 
 const SUPPORTED_SOURCE_TYPES = new Set([
   'DEVICE_AUDIO',
@@ -1012,6 +1020,22 @@ async function handleMessage(ws, message) {
     return;
   }
 
+  if (type === 'react') {
+    const emoji = CHAT_REACTIONS.includes(message.emoji) ? message.emoji : null;
+    const target = room.messages.find((item) => item.kind === 'chat' && item.id === message.messageId);
+    if (!emoji || !target) return sendError(ws, 'That reaction is not available.');
+    // Toggle: reacting again with the same emoji removes it.
+    const reactions = { ...(target.reactions || {}) };
+    const members = new Set(reactions[emoji] || []);
+    if (members.has(member.id)) members.delete(member.id);
+    else members.add(member.id);
+    if (members.size) reactions[emoji] = [...members];
+    else delete reactions[emoji];
+    target.reactions = reactions;
+    broadcast(room, { type: 'reaction', messageId: target.id, reactions });
+    return;
+  }
+
   if (type === 'rtc') {
     if (!message.to || typeof message.to !== 'string') return sendError(ws, 'Invalid RTC target.');
     if (!message.signal || typeof message.signal !== 'object') return sendError(ws, 'Invalid RTC signal.');
@@ -1399,6 +1423,7 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...(turn ? [turn] : [])],
       mediaRelay,
+      chatReactions: CHAT_REACTIONS,
       maxMembers: 10,
       requestTtlMs,
       authRequired: roomAuthRequired,
