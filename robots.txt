@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Sitemap: https://sangeet-pitaraa.onrender.com/sitemap.xml

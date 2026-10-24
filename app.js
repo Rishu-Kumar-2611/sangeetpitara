@@ -20,6 +20,7 @@ import {
   grantRewardedAccess,
   hasRewardedAccess,
   initializeAdSlots,
+  setAdConsent,
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
@@ -191,6 +192,7 @@ function applyAdSenseConfig(config) {
   if (landingSlot) landingSlot.dataset.adSlot = enabled ? String(config.landingSlot || '') : '';
   if (roomSlot) roomSlot.dataset.adSlot = enabled ? String(config.roomSlot || '') : '';
   initializeAdSlots();
+  wireGlobalCookieBanner();
 }
 
 async function loadClientConfig() {
@@ -2566,3 +2568,39 @@ if (initialNotificationAction) {
     $('#room-code').value = normalizeRoomCodeInput(queryRoom);
   }
 }
+
+/* Global cookie banner wiring — complements the provider-neutral ad-consent flow.
+   Shows the bottom banner once until a choice is persisted as roomsound-ad-consent.
+   Allow delegates to ads.mjs setAdConsent(true) which then enables AdSense if configured. */
+function wireGlobalCookieBanner(){
+  try {
+    const banner = document.getElementById('cookie-banner');
+    const allow = document.getElementById('cookie-allow');
+    const deny  = document.getElementById('cookie-deny');
+    const footerPrefs = document.getElementById('footer-cookie-prefs');
+    if (!banner || banner.dataset.wired) return;
+    banner.dataset.wired = 'true';
+    const KEY = 'roomsound-ad-consent';
+    const hasChoice = (()=>{ try{ const v=localStorage.getItem(KEY); return v==='granted'||v==='denied'; }catch{ return false; }})();
+    // Show once if no choice yet (even before AdSense is enabled — teaches consent UX for reviewer)
+    if (!hasChoice) banner.hidden = false;
+    // Also respect the provider-gated ad-consent-banner visibility managed by ads.mjs/initializeAdSlots
+    const persist = (granted)=>{
+      try{ localStorage.setItem(KEY, granted?'granted':'denied'); }catch(e){}
+      const meta = document.querySelector('meta[name="roomsound-ad-consent"]');
+      if (meta) meta.content = granted?'granted':'denied';
+      banner.hidden = true;
+      try{ if (typeof setAdConsent === 'function') setAdConsent(granted); }catch(e){}
+      // Re-run slot init so placeholders/ad script toggle promptly
+      try{ if (typeof initializeAdSlots === 'function') initializeAdSlots(); }catch(e){}
+    };
+    allow?.addEventListener('click', ()=> persist(true));
+    deny?.addEventListener('click',  ()=> persist(false));
+    footerPrefs?.addEventListener('click', (e)=>{
+      e.preventDefault();
+      banner.hidden = false;
+      banner.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
+  } catch {}
+}
+try{ wireGlobalCookieBanner(); }catch(e){}

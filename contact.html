@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="SangeetPitara — Contact SangeetPitara — support, abuse, privacy and copyright enquiries." />
+    <title>SangeetPitara — Contact</title>
+    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod" />
+    <link rel="stylesheet" href="/styles.css?v=20261024-prod" />
+  </head>
+  <body>
+    <main class="legal-page">
+      <a class="brand-mark" href="/"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></a>
+      <h1>Contact</h1>
+      <p class="legal-lead">We read every message. For fastest response use email. If you are reporting abuse or a copyright concern, include links/room code and a description.</p>
+
+      <div class="contact-card">
+        <!-- Replace this placeholder address with your real support inbox before submitting to AdSense. -->
+        <p><strong>Email:</strong> <a id="contact-email" href="mailto:support@sangeet-pitaraa.onrender.com">support@sangeet-pitaraa.onrender.com</a></p>
+        <p><strong>Alternative:</strong> Open an issue on the project repository issue tracker (linked from the app footer after you publish the repo publicly).</p>
+        <p><strong>Response time:</strong> typically within 48 hours.</p>
+      </div>
+
+      <h2>What to include</h2>
+      <ul>
+        <li>Your device/browser + room code (if the issue is room-specific)</li>
+        <li>Screenshot or console excerpt for bugs</li>
+        <li>For copyright/abuse: URL or room code + what content is alleged to infringe</li>
+        <li>For privacy requests: email used (if any) + what you want exported/deleted</li>
+      </ul>
+
+      <h2>Postal / business address (optional but helps AdSense trust)</h2>
+      <p>If you have a registered business address, add it here after replacing the line below. A plain email is sufficient for AdSense, but a full postal contact improves approval odds:</p>
+      <p class="legal-muted">SangeetPitara · Operated by DG · India — email is the primary channel. <em>(Replace this line with your registered address when available.)</em></p>
+
+      <script>
+        // Optional: override the shown address via ?email=you@example.com or localStorage without editing HTML.
+        try {
+          var q = new URLSearchParams(location.search).get('email');
+          var s = q || localStorage.getItem('roomsound-contact-email') || '';
+          if (s && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)) {
+            var a = document.getElementById('contact-email');
+            a.textContent = s; a.href = 'mailto:' + s;
+            if (q) localStorage.setItem('roomsound-contact-email', s);
+          }
+        } catch {}
+      </script>
+
+      <p class="legal-back"><a href="/">← Back to SangeetPitara</a> · <a href="/about.html">About</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></p>
+    </main>
+  </body>
+</html>

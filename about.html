@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="SangeetPitara — About SangeetPitara — private live audio rooms to listen together from phone to laptop. Built in India for friends, families and music lovers." />
+    <title>SangeetPitara — About</title>
+    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod" />
+    <link rel="stylesheet" href="/styles.css?v=20261024-prod" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"SangeetPitara","url":"https://sangeet-pitaraa.onrender.com/","description":"Private live audio rooms — share playback from phone to laptop and listen together.","applicationCategory":"MultimediaApplication","operatingSystem":"Web, Android","offers":{"@type":"Offer","price":"0","priceCurrency":"INR"}}</script>
+  </head>
+  <body>
+    <main class="legal-page">
+      <a class="brand-mark" href="/"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></a>
+      <h1>About SangeetPitara</h1>
+      <p class="legal-lead">SangeetPitara (“the treasure chest of music”) lets you listen together — even when you are not in the same room. One phone plays, everyone listens in sync on phone or laptop.</p>
+
+      <h2>What it does</h2>
+      <ul>
+        <li><strong>Create or join in one click</strong> — no account needed. Create a room, share a 6-character code or invite link.</li>
+        <li><strong>Live, not recorded</strong> — audio is relayed live and never stored on disk.</li>
+        <li><strong>Phone → Laptop</strong> — Android app captures device playback via MediaProjection/AudioPlaybackCapture; desktop Chrome/Edge can share tab/system audio via getDisplayMedia. Phone browsers can listen, chat, and request to play.</li>
+        <li><strong>Host controls</strong> — approve/reject who plays, remove members, mute locally, chat and see who is listening.</li>
+        <li><strong>Up to 10 listeners per room</strong> — perfect for family, friends, hostels, and small communities.</li>
+        <li><strong>Bonus</strong> — Android APK available at <a href="/downloads/SangeetPitara-1.0.1-debug.apk">/downloads/SangeetPitara-1.0.1-debug.apk</a></li>
+      </ul>
+
+      <h2>Why the Diya + Eighth Note?</h2>
+      <p>The logo fuses a diya (light, warmth, togetherness) with an eighth note — music that lights up the room. That is the whole idea: your music, your people, one synced room.</p>
+
+      <h2>Technology</h2>
+      <p>Browser relay uses binary PCM16 over WebSocket (48 kHz mono) with a soft limiter, jitter-aware playout (AudioWorklet), and optional WebRTC/Direct path. Android uses MediaProjection foreground service + native WebRTC. No audio is written to storage. Health, metrics, and audit logs keep the service reliable. See <a href="https://github.com">GitHub repository</a> for source if you self-host.</p>
+
+      <h2>Who is behind it</h2>
+      <p>SangeetPitara is built and operated as an independent product by DG (India). For support, copyright, or business enquiries contact us via the <a href="/contact.html">Contact page</a>.</p>
+
+      <h2>Roadmap</h2>
+      <p>Free during the habit-building phase (ad-supported). Premium subscriptions (longer sessions, larger rooms, cloud history) will launch after the community grows — early users will keep generous free limits.</p>
+
+      <p class="legal-back"><a href="/">← Back to SangeetPitara</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/contact.html">Contact</a></p>
+    </main>
+  </body>
+</html>
