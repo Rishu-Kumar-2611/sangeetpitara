@@ -47,8 +47,9 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
   channels: MEDIA_RELAY_CHANNELS,
 };
 const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
-const RELAY_MAX_BUFFERED_BYTES = 192 * 1024; // Allow 192 KiB (~2.0 s) of WebSocket backlog so long-distance WAN TCP bursts never drop frames.
-const RELAY_MAX_PLAYAHEAD_SECONDS = 2.5; // Allow up to 2.5 s fallback playahead for long-distance WAN links without resetting the queue.
+const RELAY_MAX_BUFFERED_BYTES = 96 * 1024; // Allow 96 KiB (~1.0 s) of WebSocket backlog; listeners skip anything later than that anyway.
+const RELAY_MAX_PLAYAHEAD_SECONDS = 1.0; // Cap fallback playahead at 1 s, matching the worklet's automatic target ceiling.
+const RELAY_CAPTURE_MAX_AGE_SECONDS = 1.0; // Drop captured frames older than this instead of sending stale audio.
 
 function clampVolume(v) {
   const n = Number(v);
@@ -58,7 +59,7 @@ function clampVolume(v) {
 
 function clampSyncOffsetMs(v) {
   const n = Number(v);
-  if (!Number.isFinite(n)) return 280;
+  if (!Number.isFinite(n)) return 150;
   return Math.min(1000, Math.max(60, Math.round(n / 20) * 20));
 }
 
@@ -124,7 +125,7 @@ const state = {
   liveAudioLevel: 0,
   muted: false,
   volume: clampVolume(localStorage.getItem('roomsound-volume') ?? 0.9),
-  syncOffsetMs: clampSyncOffsetMs(localStorage.getItem('roomsound-sync-offset-ms') ?? 280),
+  syncOffsetMs: clampSyncOffsetMs(localStorage.getItem('roomsound-sync-offset-ms') ?? 150),
   peers: new Map(),
   pendingIntent: null,
   lastSourceId: null,
@@ -709,8 +710,8 @@ async function ensureRelayPublisher() {
           if (!current() || state.relayProcessor !== node) return;
           node.port.postMessage({ type: 'ack' });
           if (!(data?.samples instanceof Int16Array)) return;
-          // Allow up to 640 ms for background-tab message delivery before dropping.
-          if (context.currentTime - data.capturedAt > 1.8) return;
+          // Allow up to 1 s for background-tab message delivery before dropping.
+          if (context.currentTime - data.capturedAt > RELAY_CAPTURE_MAX_AGE_SECONDS) return;
           sendRelayPcmFrame(data.samples, data.sourceEpoch, data.sequence);
         };
       } catch (error) {

@@ -67,13 +67,18 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
 const STATIC_RATE_LIMIT_MAX = 600;
 const BINARY_FRAME_WINDOW_MS = 5_000;
-// Android playback capture emits 10 ms PCM frames (100 frames/sec). Keep a
-// little headroom above that cadence while still bounding a client's relay
-// work; browser packetizers use 20 ms frames and remain well below this cap.
+// Android playback capture emits 10 ms PCM frames (100 frames/sec, 500 per
+// window). The cap leaves 2x headroom so a sender can flush a post-stall
+// backlog; browser packetizers use 20 ms frames and remain well below it.
 const BINARY_FRAME_RATE_MAX = 1200;
-// Allow up to 64 KiB (~680 ms at 48 kHz mono PCM16) per listener socket so
-// normal mobile/Wi-Fi TCP retransmission bursts do not drop audio frames.
-const MAX_RELAY_BUFFERED_BYTES = 192 * 1024;
+// Bound bytes as well as frames: a frame may carry up to 64 KiB, so the frame
+// cap alone would admit ~15 MB/s before fan-out. Real-time 48 kHz mono PCM16
+// is 96,000 B/s; allow 2x real time plus per-frame headers.
+const BINARY_BYTES_PER_WINDOW_MAX = 2 * 96_000 * (BINARY_FRAME_WINDOW_MS / 1_000) + BINARY_FRAME_RATE_MAX * 20;
+// Allow up to 96 KiB (~1 s at 48 kHz mono PCM16) per listener socket so
+// mobile/Wi-Fi TCP retransmission bursts do not drop audio frames. Audio later
+// than that is skipped by the listener's playout buffer anyway.
+const MAX_RELAY_BUFFERED_BYTES = 96 * 1024;
 const STREAMING_STATIC_THRESHOLD_BYTES = 256 * 1024;
 const turnEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.TURN_ENABLED || '').trim().toLowerCase());
 const TURN_URLS = turnEnabled && process.env.TURN_URLS
@@ -1528,14 +1533,16 @@ function checkJsonMessageRate(ws) {
   return ws._msgCount <= 30;
 }
 
-function checkBinaryFrameRate(ws) {
+function checkBinaryFrameRate(ws, byteLength) {
   const now = Date.now();
   if (!ws._binaryFrameReset || now > ws._binaryFrameReset) {
     ws._binaryFrameReset = now + BINARY_FRAME_WINDOW_MS;
     ws._binaryFrameCount = 0;
+    ws._binaryFrameBytes = 0;
   }
   ws._binaryFrameCount = (ws._binaryFrameCount || 0) + 1;
-  return ws._binaryFrameCount <= BINARY_FRAME_RATE_MAX;
+  ws._binaryFrameBytes = (ws._binaryFrameBytes || 0) + byteLength;
+  return ws._binaryFrameCount <= BINARY_FRAME_RATE_MAX && ws._binaryFrameBytes <= BINARY_BYTES_PER_WINDOW_MAX;
 }
 
 wss.on('connection', (ws, req) => {
@@ -1561,7 +1568,7 @@ wss.on('connection', (ws, req) => {
     const maxBytes = isBinary ? MEDIA_RELAY_MAX_FRAME_BYTES : MAX_PAYLOAD_BYTES;
     if (byteLength > maxBytes) return sendError(ws, isBinary ? 'Media relay frame too large.' : 'Message too large.');
     if (isBinary) {
-      if (!checkBinaryFrameRate(ws)) return sendError(ws, 'You are sending binary audio frames too quickly.');
+      if (!checkBinaryFrameRate(ws, byteLength)) return sendError(ws, 'You are sending binary audio frames too quickly.');
       const data = Buffer.from(raw);
       if (!ws.authReady) {
         if (ws.pendingMessages.length >= 8) return sendError(ws, 'Authentication is still loading; try again.');

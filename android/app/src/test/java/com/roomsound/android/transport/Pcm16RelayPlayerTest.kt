@@ -390,6 +390,48 @@ class Pcm16RelayPlayerTest {
     }
 
     @Test
+    fun backlogLeftByAStallIsSkippedOncePlaybackHasStarted() {
+        val output = Output(capacity = 960, manualConsumption = true)
+        player(output, maxFrames = 100, catchUpBytes = 3_840, catchUpLandingBytes = 960).use { player ->
+            player.start(Pcm16RelayPlayer.FORMAT, EPOCH)
+            val packets = (0L..9L).map { packet(it) }
+            assertTrue(player.play(packets[0]))
+            output.await { playCount == 1 }
+            // The hardware FIFO is full, so the writer blocks holding packet 1
+            // while the stall's backlog arrives behind it.
+            assertTrue(player.play(packets[1]))
+            output.await { waitingWrites > 0 }
+            packets.drop(2).forEach { assertTrue(player.play(it)) }
+            // Packet 6 pushed the queue past 3,840 bytes; 2..5 were skipped.
+            assertEquals(4L, player.droppedFrames())
+            repeat(5) {
+                output.consume(960)
+                output.await { byteCount >= (it + 2) * 960 }
+            }
+            assertArrayEquals(concat(packets.take(2) + packets.drop(6)), output.bytes())
+        }
+    }
+
+    @Test
+    fun catchUpNeverTrimsTheStartupPrefill() {
+        val resume = CountDownLatch(1)
+        val output = Output(capacity = 9_600)
+        player(output, priority = { await(resume) }, maxFrames = 100, catchUpBytes = 1_920, catchUpLandingBytes = 960).use { player ->
+            try {
+                player.start(Pcm16RelayPlayer.FORMAT, EPOCH)
+                val packets = (0L..9L).map { packet(it) }
+                packets.forEach { assertTrue(player.play(it)) }
+                assertEquals(0L, player.droppedFrames())
+                resume.countDown()
+                output.await { playCount == 1 }
+                assertArrayEquals(concat(packets), output.bytes())
+            } finally {
+                resume.countDown()
+            }
+        }
+    }
+
+    @Test
     fun configuredPacketLimitStillAppliesAndQueuedPayloadIsAnOwnedCopy() {
         val resume = CountDownLatch(1)
         val output = Output(capacity = 1_920)
@@ -481,12 +523,16 @@ class Pcm16RelayPlayerTest {
         priority: () -> Unit = {},
         maxFrames: Int = Pcm16RelayPlayer.DEFAULT_MAX_QUEUED_FRAMES,
         status: (String) -> Unit = {},
+        catchUpBytes: Int = Int.MAX_VALUE,
+        catchUpLandingBytes: Int = 0,
     ) = Pcm16RelayPlayer(
         outputFactory = { output },
         audioThreadPriority = priority,
         maxQueuedFrames = maxFrames,
         onStatus = status,
         startupTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis),
+        catchUpQueuedBytes = catchUpBytes,
+        catchUpLandingBytes = catchUpLandingBytes,
     )
 
     private fun packet(sequence: Long, samples: Int = 480, epoch: Long = EPOCH, seed: Int = sequence.toInt()): Pcm16RelayPacket {

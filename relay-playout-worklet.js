@@ -1,13 +1,16 @@
 // Dedicated AudioWorklet playout ring buffer with Adaptive WAN Jitter Cushion,
 // Proportional-Integral (PI) hardware clock-drift compensation, 4-point Hermite
-// cubic interpolation, raised-cosine crossfading, and pitch-cycle Packet Loss
-// Concealment (PLC) for glitch-free long-distance (500–10,000+ km) streaming.
+// cubic interpolation, raised-cosine crossfading, and short loop-based Packet
+// Loss Concealment (PLC) for long-distance (500–10,000+ km) streaming.
 const CAPACITY_SAMPLES = 240_000; // 5,000 ms (5.0 s) ring buffer capacity at 48 kHz
-const DEFAULT_TARGET_FILL = 13_440; // 280 ms default WAN jitter cushion
+const DEFAULT_TARGET_FILL = 7_200; // 150 ms base cushion; the jitter estimate and underrun cushion add to it
+const MAX_TARGET_FILL = 48_000; // 1,000 ms ceiling on the automatic target
 const MIN_PREFILL_SAMPLES = 9_600; // 200 ms initial prefill before starting playout
+const EXCESS_HEADROOM_SAMPLES = 19_200; // Skip ahead once a backlog sits 400 ms above target...
+const CATCH_UP_LANDING_SAMPLES = 2_400; // ...landing 50 ms above target, so a stall never leaves lasting delay
 const FADE_SAMPLES = 960; // 20 ms cosine fade-in / crossfade for inaudible transitions
-const PLC_HOLD_SAMPLES = 4_800; // Up to 100 ms of pitch-synchronous waveform continuation before silence decay
-const PLC_PERIOD_SAMPLES = 480; // 10 ms history window for seamless concealment
+const PLC_HOLD_SAMPLES = 4_800; // Up to 100 ms of looped waveform continuation before silence decay
+const PLC_PERIOD_SAMPLES = 480; // Fixed 10 ms loop of the most recent audio
 
 class RelayPlayoutProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -57,7 +60,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     // Combine user slider base delay + RFC 3550 jitter margin (3.5x jitter) + underrun auto-cushion
     const jitterSamples = Math.round(Math.min(0.60, this.jitterSeconds * 3.5) * 48_000);
     const desired = this.baseTargetFill + jitterSamples + this.adaptiveExtraFill;
-    this.targetFill = Math.max(2_880, Math.min(96_000, desired)); // Clamp between 60 ms and 2,000 ms
+    this.targetFill = Math.max(2_880, Math.min(MAX_TARGET_FILL, desired)); // Clamp between 60 ms and 1,000 ms
   }
 
   resetBuffer() {
@@ -93,12 +96,13 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.lastEnqueueTime = now;
     this.updateTargetFill();
 
-    // Long-distance WAN burst ceiling: allow up to targetFill + 2,500 ms (120,000 samples)
-    // before ever fast-forwarding, so 500–5,000 km TCP retransmission bursts are absorbed
-    // without dropping a single sample.
-    const maxAllowedSamples = Math.min(CAPACITY_SAMPLES - 16, this.targetFill + 120_000);
+    // Excess-latency ceiling. Normal jitter stays inside targetFill, so a backlog
+    // more than 400 ms above it is audio that a stall already made late. The PI
+    // controller below can only remove ~5 ms/s, so skip it with a crossfade instead
+    // of playing seconds-old audio for minutes.
+    const maxAllowedSamples = Math.min(CAPACITY_SAMPLES - 16, this.targetFill + EXCESS_HEADROOM_SAMPLES);
     if (this.available + frameCount > maxAllowedSamples) {
-      const dropSamples = (this.available + frameCount) - (this.targetFill + 24_000);
+      const dropSamples = (this.available + frameCount) - (this.targetFill + CATCH_UP_LANDING_SAMPLES);
       if (dropSamples > 0) {
         this.readPos = (this.readPos + dropSamples) % CAPACITY_SAMPLES;
         this.available = Math.max(0, this.available - dropSamples);
@@ -173,8 +177,17 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
 
     for (let i = 0; i < blockLength; i += 1) {
       if (this.available < 4) {
+        if (!this.playing) {
+          // Rebuffering began earlier in this block: decay the tail without
+          // re-entering PLC, which would bump the cushion a second time.
+          this.lastL *= 0.985;
+          this.lastR *= 0.985;
+          outL[i] = this.lastL;
+          if (outR !== outL) outR[i] = this.lastR;
+          continue;
+        }
         // Packet Loss Concealment (PLC): instead of immediately dropping out during a
-        // brief WAN stall, smoothly replay the last 10 ms waveform cycle with a gentle
+        // brief WAN stall, smoothly replay the last 10 ms of audio with a gentle
         // cosine attenuation envelope for up to 100 ms before entering rebuffering.
         if (this.concealedSamples === 0) {
           // Step up adaptive cushion by +80 ms (3,840 samples) so the next cycle won't underrun

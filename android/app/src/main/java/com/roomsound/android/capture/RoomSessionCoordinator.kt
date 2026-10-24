@@ -158,6 +158,8 @@ class RoomSessionCoordinator(
                 nextRelayPlayer = Pcm16RelayPlayer(
                     maxQueuedFrames = Pcm16RelayPlayer.PRODUCTION_MAX_QUEUED_FRAMES,
                     maxQueuedBytes = Pcm16RelayPlayer.PRODUCTION_MAX_QUEUED_BYTES,
+                    catchUpQueuedBytes = Pcm16RelayPlayer.PRODUCTION_CATCH_UP_QUEUED_BYTES,
+                    catchUpLandingBytes = Pcm16RelayPlayer.PRODUCTION_CATCH_UP_LANDING_BYTES,
                     onStatus = { message ->
                         main.post { if (!closed && client === nextClient) status(message) }
                     },
