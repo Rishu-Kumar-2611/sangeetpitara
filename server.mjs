@@ -77,6 +77,12 @@ const BINARY_FRAME_RATE_MAX = 1200;
 // is 96,000 B/s; allow 2x real time plus per-frame headers.
 const BINARY_BYTES_PER_WINDOW_MAX = 2 * 96_000 * (BINARY_FRAME_WINDOW_MS / 1_000) + BINARY_FRAME_RATE_MAX * 20;
 const STREAMING_STATIC_THRESHOLD_BYTES = 256 * 1024;
+// The Android app ships through GitHub Releases (.github/workflows/release.yml).
+// Every /downloads/*.apk link, including ones already shared and the 1.0.1
+// in-app guidance, redirects to the newest published APK.
+const ANDROID_APK_URL = /^https:\/\//.test(process.env.ANDROID_APK_URL || '')
+  ? process.env.ANDROID_APK_URL
+  : 'https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/latest/download/SangeetPitara.apk';
 const turnEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.TURN_ENABLED || '').trim().toLowerCase());
 const TURN_URLS = turnEnabled && process.env.TURN_URLS
   ? process.env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean)
@@ -1401,6 +1407,11 @@ const server = http.createServer(async (req, res) => {
     }));
     return;
   }
+  if (/^\/downloads\/[^/]+\.apk$/.test(requestPath)) {
+    res.writeHead(302, { Location: ANDROID_APK_URL, 'Cache-Control': 'no-cache' });
+    res.end();
+    return;
+  }
   if (requestPath === '/ads.txt') {
     const publisher = adsenseClient.replace(/^ca-/, '');
     if (!/^pub-\d+$/.test(publisher)) {
@@ -1435,7 +1446,7 @@ const server = http.createServer(async (req, res) => {
     res.end('Forbidden');
     return;
   }
-  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.xml', '.apk']);
+  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.xml']);
   if (!allowedExts.has(extname(filePath))) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not found');
@@ -1448,8 +1459,6 @@ const server = http.createServer(async (req, res) => {
     if (ext === '.html') {
       headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob: data:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'";
       headers['Cache-Control'] = 'no-cache';
-    } else if (fileName === 'downloads/SangeetPitara-debug.apk') {
-      headers['Cache-Control'] = 'no-cache';
     } else {
       headers['Cache-Control'] = 'public, max-age=3600';
     }
@@ -1460,9 +1469,9 @@ const server = http.createServer(async (req, res) => {
       res.end('Not found');
       return;
     }
-    // Stream large binaries (such as the 29 MB Android APK) instead of buffering
-    // the entire file in RAM with readFile(), preventing container OOM crashes.
-    if (ext === '.apk' || fileStats.size >= STREAMING_STATIC_THRESHOLD_BYTES) {
+    // Stream large files instead of buffering them in RAM with readFile(),
+    // preventing container OOM crashes.
+    if (fileStats.size >= STREAMING_STATIC_THRESHOLD_BYTES) {
       streamStaticFile(req, res, filePath, fileStats.size, headers);
       return;
     }

@@ -25,4 +25,7 @@
     <string name="close_prompt">Close</string>
     <string name="approve_control_request">Approve</string>
     <string name="reject_control_request">Disapprove</string>
+    <string name="update_available">SangeetPitara %1$s is available. Download it and install over this version.</string>
+    <string name="update_download">Download update</string>
+    <string name="update_later">Later</string>
 </resources>

@@ -38,7 +38,7 @@ export function mobileAudioCaptureGuidance(userAgent = '') {
     return {
       title: 'Use the Android app to share phone audio',
       message: 'Android browsers cannot capture playback from another phone app. Join this room in the SangeetPitara Android app, then request and share device audio there.',
-      downloadHref: '/downloads/SangeetPitara-debug.apk',
+      downloadHref: '/downloads/SangeetPitara.apk',
       downloadLabel: 'Download Android app',
     };
   }

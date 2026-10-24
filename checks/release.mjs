@@ -61,18 +61,16 @@ try {
     console.log(`PASS ${file}`);
   }
 
-  const expectedApk = await readFile(new URL('downloads/SangeetPitara-1.0.1-debug.apk', root));
-  const expectedHash = sha256(expectedApk);
-  for (const file of ['SangeetPitara-1.0.1-debug.apk', 'SangeetPitara-debug.apk']) {
-    const response = await get(`/downloads/${file}`);
-    assert.match(response.headers.get('content-type') || '', /application\/vnd\.android\.package-archive/);
-    if (file === 'SangeetPitara-debug.apk') assert.equal(response.headers.get('cache-control'), 'no-cache');
-    const actual = new Uint8Array(await response.arrayBuffer());
-    assert.equal(actual.byteLength, expectedApk.byteLength, `${file} size mismatch`);
-    assert.equal(sha256(actual), expectedHash, `${file} SHA-256 mismatch`);
-    console.log(`PASS ${file}: ${actual.byteLength} bytes, SHA-256 ${expectedHash}`);
+  // APKs are published to GitHub Releases; the site only redirects to them.
+  for (const file of ['SangeetPitara.apk', 'SangeetPitara-1.0.1-debug.apk', 'SangeetPitara-debug.apk']) {
+    const url = new URL(`/downloads/${file}`, origin);
+    const response = await fetch(url, { signal: controller.signal, cache: 'no-store', redirect: 'manual' });
+    assert.equal(response.status, 302, `/downloads/${file}: expected a redirect, got ${response.status}`);
+    const location = response.headers.get('location') || '';
+    assert.match(location, /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/latest\/download\/SangeetPitara\.apk$/);
+    console.log(`PASS /downloads/${file} -> ${location}`);
   }
-  console.log('RELEASE PASS: website assets and both APK downloads match the local release.');
+  console.log('RELEASE PASS: website assets match the local release and APK links redirect to GitHub Releases.');
 } finally {
   clearTimeout(budget);
 }

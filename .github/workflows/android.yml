@@ -32,8 +32,29 @@ jobs:
           java-version: '17'
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-      - name: Run JVM unit tests
-        run: ./gradlew :app:testDebugUnitTest --no-daemon --console=plain
+      - name: Run JVM unit tests and build a test APK
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
+      # Debug-signed build for trying a pull request on a phone before merge.
+      # Published releases come only from release.yml.
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SangeetPitara-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+      # Prove the release build (signing config, lint-vital, dependency locks)
+      # works before anyone pushes a tag. The throwaway key never leaves the job.
+      - name: Build release APK with a throwaway key
+        run: |
+          keystore="$RUNNER_TEMP/throwaway.keystore"
+          keytool -genkeypair -noprompt -keystore "$keystore" -storepass throwaway \
+            -keypass throwaway -alias throwaway -keyalg RSA -keysize 2048 -validity 1 \
+            -dname "CN=SangeetPitara CI"
+          ROOMSOUND_KEYSTORE="$keystore" ROOMSOUND_KEYSTORE_PASSWORD=throwaway \
+            ROOMSOUND_KEY_ALIAS=throwaway ROOMSOUND_KEY_PASSWORD=throwaway \
+            ROOMSOUND_VERSION_NAME=0.0.0 ROOMSOUND_VERSION_CODE=1 \
+            ./gradlew :app:assembleRelease --no-daemon --console=plain
+          rm -f "$keystore"
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4
