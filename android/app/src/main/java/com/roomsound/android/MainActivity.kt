@@ -43,6 +43,7 @@ import com.roomsound.android.room.RoomConnectionState
 import com.roomsound.android.room.RoomEndpointBootstrap
 import com.roomsound.android.room.RoomEndpointValidator
 import com.roomsound.android.room.RoomSoundEvent
+import com.roomsound.android.room.RoomChatMessage
 import com.roomsound.android.room.RoomState
 import com.roomsound.android.update.ReleaseUpdateChecker
 import java.io.PrintWriter
@@ -72,6 +73,11 @@ class MainActivity : Activity() {
         private var crashHandlerInstalled = false
     }
 
+    // Same type as the website: Poppins headings, Mukta body (res/font, SIL OFL).
+    private val headingTypeface by lazy { resources.getFont(R.font.poppins_semibold) }
+    private val labelTypeface by lazy { resources.getFont(R.font.mukta_medium) }
+    private val strongTypeface by lazy { resources.getFont(R.font.mukta_semibold) }
+
     private lateinit var statusText: TextView
     private lateinit var handoffControlText: TextView
     private lateinit var handoffControlButton: Button
@@ -92,6 +98,11 @@ class MainActivity : Activity() {
     private lateinit var approvalContainer: LinearLayout
     private lateinit var moderationContainer: LinearLayout
     private lateinit var chatText: TextView
+    private lateinit var reactionRow: LinearLayout
+    // Chat events arrive between state snapshots; keep them (and reaction
+    // updates) until the next snapshot carries them.
+    private val liveChatMessages = linkedMapOf<String, RoomChatMessage>()
+    private val reactionOverrides = mutableMapOf<String, Map<String, List<String>>>()
     private lateinit var chatInput: EditText
     private lateinit var volumeSeekBar: SeekBar
     private lateinit var muteButton: Button
@@ -381,13 +392,13 @@ class MainActivity : Activity() {
             textSize = 11f
             letterSpacing = 0.16f
             setTextColor(getColor(R.color.roomsound_brass_bright))
-            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL))
+            setTypeface(labelTypeface)
         }, matchWrap())
         brandCopy.addView(TextView(this).apply {
             text = getString(R.string.header_title)
             textSize = 25f
             setTextColor(getColor(R.color.roomsound_cream))
-            setTypeface(android.graphics.Typeface.create("serif", android.graphics.Typeface.BOLD))
+            setTypeface(headingTypeface)
             setPadding(0, dp(7), 0, dp(5))
         }, matchWrap())
         brandRow.addView(brandCopy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -439,7 +450,7 @@ class MainActivity : Activity() {
         roomConnectionText = labelText().apply {
             text = "Connection: not connected"
             setTextColor(getColor(R.color.roomsound_brass_bright))
-            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            setTypeface(strongTypeface)
             setPadding(0, 0, 0, dp(4))
         }
         roomStatusPanel.addView(roomConnectionText, matchWrap())
@@ -464,7 +475,7 @@ class MainActivity : Activity() {
         roomCodeText = TextView(this).apply {
             textSize = 30f
             setTextColor(getColor(R.color.roomsound_cream))
-            setTypeface(android.graphics.Typeface.create("monospace", android.graphics.Typeface.BOLD))
+            setTypeface(headingTypeface)
             letterSpacing = 0.12f
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(7), dp(8), dp(7))
@@ -504,6 +515,12 @@ class MainActivity : Activity() {
         chatText.minHeight = dp(70)
         chatText.setLineSpacing(0f, 1.12f)
         chatPanel.addView(chatText, matchWrap())
+        reactionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+        }
+        chatPanel.addView(reactionRow, marginLayout())
         val chatRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         chatInput = inputText("Message", null)
         chatRow.addView(chatInput, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -767,6 +784,10 @@ class MainActivity : Activity() {
                     if (notificationPermissionRequestedRoomId != event.state.room.id) {
                         notificationPermissionRequestedRoomId = null
                     }
+                    if (latestRoomState?.room?.id != event.state.room.id) {
+                        liveChatMessages.clear()
+                        reactionOverrides.clear()
+                    }
                     latestRoomState = event.state
                     appendRoomEvent("Joined room ${event.state.room.code}.")
                     renderRoomState(event.state)
@@ -779,7 +800,15 @@ class MainActivity : Activity() {
                 }
                 is RoomSoundEvent.Error -> appendRoomEvent("Server error: ${event.message}")
                 is RoomSoundEvent.LocalError -> appendRoomEvent("Not sent: ${event.message}")
-                is RoomSoundEvent.Chat -> appendRoomEvent("${event.message.senderName ?: "Room"}: ${event.message.text}")
+                is RoomSoundEvent.Chat -> {
+                    appendRoomEvent("${event.message.senderName ?: "Room"}: ${event.message.text}")
+                    liveChatMessages[event.message.id] = event.message
+                    latestRoomState?.let(::renderChat)
+                }
+                is RoomSoundEvent.Reaction -> {
+                    reactionOverrides[event.messageId] = event.reactions
+                    latestRoomState?.let(::renderChat)
+                }
                 is RoomSoundEvent.ControlRequested -> appendRoomEvent(
                     "${event.request.requesterName} requested ${event.request.sourceType.lowercase(Locale.US)}. Review the approval controls below.",
                 )
@@ -879,10 +908,47 @@ class MainActivity : Activity() {
         endRoomButton.isEnabled = isHost
         runCatching { renderApprovalControls(state, isModerator) }
         runCatching { renderModerationControls(state, isHost, isModerator) }
-        chatText.text = state.messages.takeLast(12).joinToString("\n") { message ->
-            "${message.senderName ?: "Room"}: ${message.text}"
-        }.ifEmpty { "No messages yet." }
+        renderChat(state)
         } catch (t: Throwable) { android.util.Log.e("RoomSound", "renderRoomState failed", t); appendRoomEvent("Room UI hit an internal error: ${t.message}") }
+    }
+
+    private fun renderChat(state: RoomState) {
+        val messages = (state.messages + liveChatMessages.values)
+            .filter { it.kind == "chat" }
+            .distinctBy { it.id }
+            .sortedBy { it.createdAt }
+            .takeLast(12)
+        chatText.text = messages.joinToString("\n") { message ->
+            val reactions = (reactionOverrides[message.id] ?: message.reactions)
+                .filterValues { it.isNotEmpty() }
+                .entries.joinToString(" ") { (emoji, members) -> "$emoji${members.size}" }
+            "${message.senderName ?: "Room"}: ${message.text}" + if (reactions.isEmpty()) "" else "   $reactions"
+        }.ifEmpty { "No messages yet." }
+
+        // Quick reactions apply to the newest message; servers without
+        // reactions publish no set, so the row stays hidden there.
+        val emojis = roomSession?.currentChatReactions().orEmpty()
+        val target = messages.lastOrNull()
+        reactionRow.removeAllViews()
+        reactionRow.visibility = if (emojis.isEmpty() || target == null) View.GONE else View.VISIBLE
+        if (target == null) return
+        val selfId = state.self?.id
+        val current = reactionOverrides[target.id] ?: target.reactions
+        for (emoji in emojis) {
+            val mine = selfId != null && current[emoji].orEmpty().contains(selfId)
+            reactionRow.addView(
+                button(emoji, if (mine) ButtonTone.PRIMARY else ButtonTone.SECONDARY) {
+                    roomSession?.sendReaction(target.id, emoji)
+                }.apply {
+                    textSize = 18f
+                    minWidth = dp(44)
+                    minimumWidth = dp(44)
+                    setPadding(0, 0, 0, 0)
+                    contentDescription = "${if (mine) "Remove" else "React with"} $emoji on the latest message"
+                },
+                LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(6) },
+            )
+        }
     }
 
     private fun renderApprovalControls(state: RoomState, isModerator: Boolean) {
@@ -1454,17 +1520,18 @@ class MainActivity : Activity() {
         this.text = text
         setOnClickListener { action() }
         setAllCaps(false)
-        textSize = 14f
-        letterSpacing = 0.015f
-        minHeight = dp(46)
-        minimumHeight = dp(46)
+        textSize = 15f
+        setTypeface(strongTypeface)
+        minHeight = dp(48)
+        minimumHeight = dp(48)
+        stateListAnimator = null
         setPadding(dp(12), 0, dp(12), 0)
         gravity = Gravity.CENTER
         setTextColor(
             when (tone) {
-                ButtonTone.PRIMARY -> getColor(R.color.roomsound_inset)
+                ButtonTone.PRIMARY -> getColor(R.color.roomsound_on_accent)
                 ButtonTone.SECONDARY -> getColor(R.color.roomsound_cream)
-                ButtonTone.DANGER -> getColor(R.color.roomsound_cream)
+                ButtonTone.DANGER -> getColor(R.color.roomsound_danger)
             },
         )
         setBackgroundResource(
@@ -1474,14 +1541,14 @@ class MainActivity : Activity() {
                 ButtonTone.DANGER -> R.drawable.bg_roomsound_button_danger
             },
         )
-        elevation = dp(2).toFloat()
+        elevation = 0f
     }
 
     private fun sectionTitle(text: String): TextView = TextView(this).apply {
         this.text = text
         textSize = 18f
         setTextColor(getColor(R.color.roomsound_cream))
-        setTypeface(android.graphics.Typeface.create("serif", android.graphics.Typeface.BOLD))
+        setTypeface(headingTypeface)
         letterSpacing = 0.025f
         setPadding(0, 0, 0, dp(8))
     }
@@ -1490,7 +1557,7 @@ class MainActivity : Activity() {
         this.text = text
         textSize = 15f
         setTextColor(getColor(R.color.roomsound_brass_bright))
-        setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL))
+        setTypeface(labelTypeface)
         setPadding(0, dp(3), 0, dp(6))
     }
 
@@ -1498,7 +1565,7 @@ class MainActivity : Activity() {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(15), dp(14), dp(15), dp(16))
         setBackgroundResource(background)
-        elevation = dp(2).toFloat()
+        elevation = 0f
         clipToPadding = true
     }
 

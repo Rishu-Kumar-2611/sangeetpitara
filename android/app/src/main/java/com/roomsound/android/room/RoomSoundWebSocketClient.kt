@@ -187,6 +187,10 @@ class RoomSoundWebSocketClient(
         return sendRoomCommand(JSONObject().put("type", "chat").put("text", cleanText))
     }
 
+    /** Toggles this member's [emoji] reaction on a chat message. */
+    fun sendReaction(messageId: String, emoji: String): Boolean =
+        sendRoomCommand(JSONObject().put("type", "react").put("messageId", messageId).put("emoji", emoji))
+
     fun requestControl(sourceType: String = "DEVICE_AUDIO", note: String = ""): Boolean =
         sendRoomCommand(
             JSONObject()
@@ -468,6 +472,9 @@ class RoomSoundWebSocketClient(
                     emit(RoomSoundEvent.Error(serverMessage))
                 }
                 "chat" -> emit(RoomSoundEvent.Chat(parseChatMessage(message.objectOrEmpty("message"))))
+                "reaction" -> message.stringOrNull("messageId")?.let { id ->
+                    emit(RoomSoundEvent.Reaction(id, parseReactions(message.optJSONObject("reactions"))))
+                }
                 "control-requested" -> emit(
                     RoomSoundEvent.ControlRequested(parseRoomRequest(message.objectOrEmpty("request"))),
                 )

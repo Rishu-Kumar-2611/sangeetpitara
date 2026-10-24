@@ -66,6 +66,7 @@ class RoomSessionCoordinator(
     private var relayPlayer: Pcm16RelayPlayer? = null
     private var transport: RoomAudioTransport? = null
     private var mediaRelayConfig = RoomMediaRelayConfig.DEFAULT
+    private var chatReactions: List<String> = emptyList()
     private var mediaConfigured = false
     private var pendingRoomAction: ((RoomSoundWebSocketClient) -> Unit)? = null
     private var connectPending = false
@@ -92,6 +93,9 @@ class RoomSessionCoordinator(
     fun currentRoomState(): RoomState? = joinedState()
     fun currentEndpoint(): String? = endpoint
     fun currentMediaRelayConfig(): RoomMediaRelayConfig = mediaRelayConfig
+
+    /** Empty until /config arrives, and on servers that do not support reactions. */
+    fun currentChatReactions(): List<String> = chatReactions
     fun pendingCapture(): PendingCapture? = attempt?.let { PendingCapture(it.id, it.phase) }
     fun isTakeoverPending(): Boolean = takeover != null
     fun isRoomSelectionPending(): Boolean = roomSelectionPending
@@ -149,6 +153,7 @@ class RoomSessionCoordinator(
             // an explicit enabled=false config selects direct WebRTC; an
             // unknown enabled relay shape must not silently re-enable TURN.
             mediaRelayConfig = fetchedConfig.mediaRelay
+            chatReactions = fetchedConfig.chatReactions
             val relayEnabled = fetchedConfig.mediaRelay.enabled
             if (relayEnabled) {
                 require(fetchedConfig.mediaRelay.isPcm16Enabled) {
@@ -247,6 +252,11 @@ class RoomSessionCoordinator(
     fun sendChat(text: String): Boolean {
         if (joinedState() == null || text.isBlank()) return false
         return client?.sendChat(text.trim().take(280)) == true
+    }
+
+    fun sendReaction(messageId: String, emoji: String): Boolean {
+        if (joinedState() == null || emoji !in chatReactions) return false
+        return client?.sendReaction(messageId, emoji) == true
     }
 
     fun requestControl(sourceType: String, note: String): Boolean {
@@ -651,6 +661,7 @@ class RoomSessionCoordinator(
         client = null
         endpoint = null
         mediaRelayConfig = RoomMediaRelayConfig.DEFAULT
+        chatReactions = emptyList()
         mediaConfigured = false
         pendingRoomAction = null
         connectPending = false

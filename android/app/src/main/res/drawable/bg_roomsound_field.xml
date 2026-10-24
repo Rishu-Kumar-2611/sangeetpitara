@@ -2,7 +2,7 @@
     <item android:state_enabled="false">
         <shape>
             <solid android:color="@color/roomsound_inset" />
-            <corners android:radius="10dp" />
+            <corners android:radius="12dp" />
             <stroke
                 android:width="1dp"
                 android:color="@color/roomsound_button_disabled_stroke" />
@@ -11,7 +11,7 @@
     <item android:state_focused="true">
         <shape>
             <solid android:color="@color/roomsound_field_focused" />
-            <corners android:radius="10dp" />
+            <corners android:radius="12dp" />
             <stroke
                 android:width="2dp"
                 android:color="@color/roomsound_field_focus_stroke" />
@@ -20,7 +20,7 @@
     <item>
         <shape>
             <solid android:color="@color/roomsound_field" />
-            <corners android:radius="10dp" />
+            <corners android:radius="12dp" />
             <stroke
                 android:width="1dp"
                 android:color="@color/roomsound_field_stroke" />
