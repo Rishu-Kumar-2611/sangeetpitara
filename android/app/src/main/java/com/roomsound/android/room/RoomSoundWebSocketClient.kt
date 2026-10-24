@@ -258,6 +258,13 @@ class RoomSoundWebSocketClient(
         )
     }
 
+    fun grantSource(memberId: String, sourceType: String = "DEVICE_AUDIO"): Boolean = sendRoomCommand(
+        JSONObject()
+            .put("type", "grant-source")
+            .put("memberId", memberId.trim())
+            .put("sourceType", sourceType.trim().ifEmpty { "DEVICE_AUDIO" }),
+    )
+
     fun assignCohost(memberId: String?): Boolean = sendRoomCommand(
         JSONObject().put("type", "assign-cohost").putNullable("memberId", memberId?.trim()?.ifEmpty { null }),
     )
@@ -669,7 +676,7 @@ class RoomSoundWebSocketClient(
         private const val CONFIG_TIMEOUT_SECONDS = 20L
         // Keep sender backlog near 500 ms of PCM16 so Wi-Fi bursts do not drop
         // frames prematurely while avoiding multi-second stale queues.
-        private const val MAX_RELAY_QUEUED_BYTES = 48_000L
+        private const val MAX_RELAY_QUEUED_BYTES = 16_000L
 
         private fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
             .pingInterval(20, TimeUnit.SECONDS)

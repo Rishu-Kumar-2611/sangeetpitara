@@ -18,6 +18,7 @@ test('48 kHz capture preserves PCM samples exactly across render quantum and pac
   const input = Float32Array.from({ length: 48_000 }, (_, i) => 0.8 * Math.sin(2 * Math.PI * 997 * i / 48_000));
   const captured = packetize(input, 48_000, 128);
   // PCM16 has no signed zero; quantize the reference into the wire sample type.
+  // Soft limiter passes 0.8 amplitude unchanged (below 0.89 threshold)
   const expected = [...Int16Array.from(input, (x) => x < 0 ? Math.round(x * 32768) : Math.round(x * 32767))];
   assert.equal(captured.frames.length, 50);
   assert.deepEqual(captured.samples, expected);
@@ -47,7 +48,8 @@ test('44.1 kHz resampling has no callback boundary jumps or cumulative sample lo
 test('capture quantization clips finite audio and replaces invalid samples without wrapping', () => {
   const input = new Float32Array(960);
   input.set([-2, -1, -0.5, 0, 0.5, 1, 2, NaN, Infinity, -0, -1e-8, 1e-8]);
-  assert.deepEqual(packetize(input, 48_000, 128).samples.slice(0, 12), [-32768, -32768, -16384, 0, 16384, 32767, 32767, 0, 0, 0, 0, 0]);
+  // Soft limiter at -1dBFS maps ±1.0 to ±0.973 (31908/31909); raw ±2 is clamped to ±1 before limiting
+  assert.deepEqual(packetize(input, 48_000, 128).samples.slice(0, 12), [-31909, -31909, -16384, 0, 16384, 31908, 31908, 0, 0, 0, 0, 0]);
 });
 
 test('clarity filter leaves ordinary program audio untouched and removes sustained bias', () => {
@@ -69,7 +71,7 @@ test('reset and sample-rate changes discard only partial old capture, never mix 
   packetizer.push(new Float32Array(512).fill(1), 48_000, emit);
   packetizer.reset();
   packetizer.push(new Float32Array(960).fill(-1), 48_000, emit);
-  assert.deepEqual([...frames[0]], Array(960).fill(-32768));
+  assert.deepEqual([...frames[0]], Array(960).fill(-31909));
   packetizer.push(new Float32Array(100).fill(1), 48_000, emit);
   packetizer.push(new Float32Array(883), 44_100, emit);
   assert.deepEqual([...frames[1]], Array(960).fill(0));
@@ -133,7 +135,7 @@ test('worklet revocation, epoch handoff and stop do not leak prior source sample
   w.process(new Float32Array(960).fill(-1));
   assert.equal(w.sent[0].sequence, 0);
   assert.equal(w.sent[0].sourceEpoch, 2);
-  assert.ok(w.sent[0].samples.every((sample) => sample === -32768));
+  assert.ok(w.sent[0].samples.every((sample) => sample === -31909));
   w.message({ type: 'stop' });
   assert.equal(w.process(new Float32Array(960)), false);
   assert.equal(w.sent.length, 1);

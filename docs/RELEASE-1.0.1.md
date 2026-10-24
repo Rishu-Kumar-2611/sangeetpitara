@@ -6,7 +6,7 @@
 - Android version: `1.0.1`, version code `3`.
 - Distribution: debug-signed sideload APK, not a Google Play release.
 - Public server: `https://sangeet-pitaraa.onrender.com`.
-- Browser asset version: `20261023-clarity-1`.
+- Browser asset version: `20261024-prod`.
 - APK: `downloads/SangeetPitara-1.0.1-debug.apk`.
 - Compatible stable alias: `downloads/SangeetPitara-debug.apk`.
 - Both APK files: 28,974,182 bytes.

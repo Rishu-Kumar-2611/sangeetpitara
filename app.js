@@ -1,18 +1,18 @@
-import { createGuestId } from './guest-id.js?v=20261023-clarity-1';
-import { RelayPcmPacketizer } from './relay-pcm.js?v=20261023-clarity-1';
+import { createGuestId } from './guest-id.js?v=20261024-prod';
+import { RelayPcmPacketizer } from './relay-pcm.js?v=20261024-prod';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261023-clarity-1';
+} from './capture-tracks.js?v=20261024-prod';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261023-clarity-1';
+} from './media-relay.mjs?v=20261024-prod';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -23,7 +23,7 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261023-clarity-1';
+} from './ads.mjs?v=20261024-prod';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -46,8 +46,8 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
   channels: MEDIA_RELAY_CHANNELS,
 };
 const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
-const RELAY_MAX_BUFFERED_BYTES = 64 * 1024; // Allow 64 KiB (~680 ms) of WebSocket backlog to absorb TCP jitter bursts.
-const RELAY_MAX_PLAYAHEAD_SECONDS = 0.65; // Elastic 650 ms fallback window prevents premature queue flushes.
+const RELAY_MAX_BUFFERED_BYTES = 64 * 1024; // Cap sender socket backlog at 64 KiB (~660 ms mono) so mobile/Wi-Fi bursts do not drop frames.
+const RELAY_MAX_PLAYAHEAD_SECONDS = 0.22; // Cap fallback playahead at 220 ms so delay never accumulates.
 
 function clampVolume(v) {
   const n = Number(v);
@@ -97,6 +97,7 @@ const state = {
   relaySink: null,
   relayPacketizer: null,
   relayCaptureEpoch: null,
+  relayPublisherAnalyser: null,
   relayPublisherGeneration: 0,
   relayPublisherStarting: null,
   relaySequence: 0,
@@ -614,7 +615,7 @@ function applyOutputVolume() {
 function updateSourceOrbVisualizer() {
   const orb = $('#source-orb');
   if (!orb) return;
-  const analyser = state.relayPlaybackAnalyser;
+  const analyser = state.relayPlaybackAnalyser || state.relayPublisherAnalyser;
   if (!analyser || !state.room?.activeSourceId || state.room?.sourceStatus !== 'LIVE') {
     orb.style.transform = '';
     state.liveAudioLevel = 0;
@@ -718,20 +719,20 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261023-clarity-1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261024-prod');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
           channelCount: 2, channelCountMode: 'max', channelInterpretation: 'speakers',
         });
-        processor.port.postMessage({ type: 'config', maxInFlight: 32 });
+        processor.port.postMessage({ type: 'config', maxInFlight: 8 });
         const node = processor;
         node.port.onmessage = ({ data }) => {
           if (!current() || state.relayProcessor !== node) return;
           node.port.postMessage({ type: 'ack' });
           if (!(data?.samples instanceof Int16Array)) return;
           // Allow up to 640 ms for background-tab message delivery before dropping.
-          if (context.currentTime - data.capturedAt > 0.64) return;
+          if (context.currentTime - data.capturedAt > 0.18) return;
           sendRelayPcmFrame(data.samples, data.sourceEpoch, data.sequence);
         };
       } catch (error) {
@@ -754,6 +755,12 @@ async function ensureRelayPublisher() {
       state.relayPacketizer = packetizer;
     }
     source = context.createMediaStreamSource(stream);
+    if (context.createAnalyser) {
+      const pubAnalyser = context.createAnalyser();
+      pubAnalyser.fftSize = 64;
+      source.connect(pubAnalyser);
+      state.relayPublisherAnalyser = pubAnalyser;
+    }
     sink = context.createGain();
     sink.gain.value = 0;
     source.connect(processor);
@@ -785,7 +792,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261023-clarity-1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261024-prod')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1401,7 +1408,7 @@ function renderAll() {
   $('#top-room-code').textContent = room.code;
   $('#room-title').textContent = room.name;
   $('#room-code-display').textContent = room.code;
-  $('#member-count').textContent = state.members.length;
+  $('#member-count').textContent = state.members.filter((m) => m.online).length;
   $('#end-room')?.classList.toggle('hidden', state.self?.role !== 'HOST');
   renderSource();
   renderControls();
@@ -1487,16 +1494,29 @@ function renderControls() {
 function renderMembers() {
   const host = state.room.hostId;
   const cohost = state.room.cohostId;
-  $('#member-list').innerHTML = state.members.map((member) => {
+  const sortedMembers = [...state.members].sort((a, b) => Number(Boolean(b.online)) - Number(Boolean(a.online)));
+  $('#member-list').innerHTML = sortedMembers.map((member) => {
     const isHost = member.id === host;
     const isCohost = member.id === cohost;
-    const isSource = member.id === state.room.activeSourceId;
-    const role = isHost ? 'Host' : isCohost ? 'Co-host' : isSource ? 'Sharing now' : 'Listener';
-    const roleClass = isHost || isSource ? 'green-role' : isCohost ? 'orange-role' : '';
-    const actions = isModerator() && member.id !== state.self?.id && !isHost
-      ? `<div class="member-actions">${state.self?.role === 'HOST' ? `<button class="tiny-button" data-action="cohost" data-member-id="${member.id}">${isCohost ? 'Remove co-host' : 'Make co-host'}</button>` : ''}<button class="tiny-button" data-action="remove" data-member-id="${member.id}">Remove</button></div>`
-      : '';
-    return `<div class="member-item"><div class="member-avatar">${escapeHtml(initials(member.name))}</div><div class="member-info"><div class="member-name-row"><span class="member-name">${escapeHtml(member.name)}</span>${member.id === state.self?.id ? '<span class="member-you">YOU</span>' : ''}</div><div class="member-role"><span class="role-badge ${roleClass}">${role}</span></div></div><span class="member-state ${member.online ? 'online' : ''} ${isSource ? 'source' : ''}"></span>${actions}</div>`;
+    const isSource = member.id === state.room.activeSourceId && state.room.sourceStatus !== 'NONE';
+    const baseRole = isHost ? 'Host' : isCohost ? 'Co-host' : isSource ? 'Sharing now' : 'Listener';
+    const role = member.online ? baseRole : `${baseRole} · Offline`;
+    const roleClass = !member.online ? '' : (isHost || isSource ? 'green-role' : isCohost ? 'orange-role' : '');
+    const canManage = isModerator() && member.id !== state.self?.id && !isHost;
+    let actions = '';
+    if (canManage) {
+      const grantBtn = member.online && !isSource
+        ? `<button class="tiny-button primary-tiny" data-action="grant-source" data-member-id="${member.id}">Allow to play</button>`
+        : isSource
+          ? `<button class="tiny-button" data-action="stop-member-source" data-member-id="${member.id}">Stop audio</button>`
+          : '';
+      const cohostBtn = state.self?.role === 'HOST' && member.online
+        ? `<button class="tiny-button" data-action="cohost" data-member-id="${member.id}">${isCohost ? 'Remove co-host' : 'Make co-host'}</button>`
+        : '';
+      const removeBtn = `<button class="tiny-button danger-tiny" data-action="remove" data-member-id="${member.id}">${member.online ? 'Remove' : 'Clear'}</button>`;
+      actions = `<div class="member-actions">${grantBtn}${cohostBtn}${removeBtn}</div>`;
+    }
+    return `<div class="member-item ${member.online ? '' : 'member-offline'}"><div class="member-avatar">${escapeHtml(initials(member.name))}</div><div class="member-info"><div class="member-name-row"><span class="member-name">${escapeHtml(member.name)}</span>${member.id === state.self?.id ? '<span class="member-you">YOU</span>' : ''}</div><div class="member-role"><span class="role-badge ${roleClass}">${role}</span></div>${actions}</div><span class="member-state ${member.online ? 'online' : ''} ${isSource ? 'source' : ''}" title="${member.online ? 'Online' : 'Offline'}"></span></div>`;
   }).join('') || '<div class="request-empty">No one is here yet.</div>';
 }
 
@@ -1717,7 +1737,9 @@ function renderTelemetry() {
       : state.relayPlaybackWorkletReady
         ? `${state.relayWorkletBufferedMs} ms (${state.syncOffsetMs} ms target)`
         : `${state.syncOffsetMs} ms cushion`;
-    const engineLabel = state.relayPlaybackWorkletReady ? 'AudioWorklet PI ring' : 'Web Audio scheduler';
+    const engineLabel = isSender
+      ? (state.relayProcessor && typeof AudioWorkletNode !== 'undefined' && state.relayProcessor instanceof AudioWorkletNode ? 'AudioWorklet capture' : 'Web Audio capture')
+      : (state.relayPlaybackWorkletReady ? 'AudioWorklet PI ring' : 'Web Audio scheduler');
     list.innerHTML = `<article class="telemetry-peer">
       <div class="telemetry-peer-heading">
         <div><span class="telemetry-direction">${isSender ? 'PUBLISHING RELAY' : 'LISTENING RELAY'}</span><strong>${escapeHtml(sourceName)}</strong></div>
@@ -2497,12 +2519,19 @@ function wireEvents() {
     const button = event.target.closest('[data-action]');
     if (!button) return;
     const memberId = button.dataset.memberId;
-    if (button.dataset.action === 'cohost') {
-      const target = state.members.find((member) => member.id === memberId);
+    const target = state.members.find((member) => member.id === memberId);
+    if (button.dataset.action === 'grant-source') {
+      send({ type: 'grant-source', memberId, sourceType: 'DEVICE_AUDIO' });
+      if (target) toast(`Granted audio control to ${target.name}.`, 'success');
+    } else if (button.dataset.action === 'stop-member-source') {
+      send({ type: 'stop-source' });
+      if (target) toast(`Stopped ${target.name}'s audio.`, 'success');
+    } else if (button.dataset.action === 'cohost') {
       send({ type: 'assign-cohost', memberId: target?.role === 'CO_HOST' ? null : memberId });
       if (target?.role === 'CO_HOST') toast('Co-host role removed.');
     } else if (button.dataset.action === 'remove') {
       send({ type: 'remove-member', memberId });
+      if (target) toast(`Removed ${target.name} from the room.`);
     }
   });
   $('#request-list').addEventListener('click', (event) => {

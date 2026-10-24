@@ -946,6 +946,11 @@ class MainActivity : Activity() {
             }
         }
         state.members.filter { member -> member.id != state.self?.id && member.id != state.room.hostId }.forEach { member ->
+            if (member.online && member.id != state.room.activeSourceId) {
+                moderationContainer.addView(button("Allow ${member.name} to play audio") {
+                    roomSession?.grantSource(member.id)
+                }, matchWrap())
+            }
             moderationContainer.addView(button("Remove ${member.name}") { removeMember(member.id) }, matchWrap())
         }
     }

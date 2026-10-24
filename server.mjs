@@ -1106,6 +1106,38 @@ async function handleMessage(ws, message) {
     return;
   }
 
+  if (type === 'grant-source') {
+    if (!isModerator(room, member)) return sendError(ws, 'Only the host or co-host can grant audio control.');
+    const target = findMember(room, message.memberId);
+    if (!target || !target.ws) return sendError(ws, 'That participant is no longer connected.');
+    const sourceType = requestedSourceType(message.sourceType);
+    for (const [id, req] of room.requests) {
+      if (req.requesterId === target.id && req.status === 'PENDING') {
+        req.status = 'APPROVED';
+        setTimeout(() => room.requests.delete(id), 10_000);
+      }
+    }
+    room.resumeSourceId = room.activeSourceId;
+    room.resumeSourceType = room.activeSourceType;
+    setSource(room, target, sourceType, 'STARTING');
+    send(target.ws, {
+      type: 'request-result',
+      status: 'APPROVED',
+      request: {
+        id: randomId(),
+        requesterId: target.id,
+        requesterName: target.name,
+        sourceType,
+        note: 'Granted by host',
+        status: 'APPROVED',
+        createdAt: Date.now(),
+      },
+    });
+    addSystemMessage(room, `${member.name} gave audio control to ${target.name}.`);
+    broadcastState(room);
+    return;
+  }
+
   if (type === 'start-source') {
     const authorized = member.id === room.activeSourceId || (isModerator(room, member) && (!room.activeSourceId || room.activeSourceId === member.id));
     if (!authorized) return sendError(ws, 'You are not authorized to publish audio right now.');
@@ -1205,7 +1237,8 @@ async function handleMessage(ws, message) {
   }
 
   if (type === 'leave-room') {
-    if (member.id === room.hostId) {
+    const leavingHost = member.id === room.hostId;
+    if (leavingHost) {
       if (room.activeSourceId === member.id) stopSource(room, 'The host stopped sharing audio.', false);
       if (!promoteCohost(room)) {
         addSystemMessage(room, 'The host left the room. A co-host was not available to take over.');
@@ -1213,6 +1246,15 @@ async function handleMessage(ws, message) {
       }
     }
     handleDisconnect(ws);
+    if (!leavingHost) {
+      room.members.delete(member.id);
+      if (room.cohostId === member.id) {
+        room.cohostId = null;
+        room.cohostUserId = null;
+      }
+      for (const [id, req] of room.requests) if (req.requesterId === member.id) room.requests.delete(id);
+      broadcastState(room);
+    }
     ws.close(1000, 'Left room');
   }
 }
@@ -1496,6 +1538,7 @@ function checkBinaryFrameRate(ws) {
 }
 
 wss.on('connection', (ws, req) => {
+  try { req.socket?.setNoDelay?.(true); } catch {}
   ws._ip = getClientIp(req);
   ws.authenticatedUser = null;
   ws.authReady = false;

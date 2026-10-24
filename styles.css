@@ -1138,3 +1138,10 @@ input:focus-visible {
 .telemetry-stats strong { font-size: 10.5px; color: #432b1b; }
 .telemetry-stats em { font-style: normal; font-size: 8.5px; color: #7d5f3f; }
 .source-orb { transition: transform 0.08s ease-out, box-shadow 0.08s ease-out; }
+
+.member-item.member-offline { opacity: 0.62; }
+.member-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tiny-button.primary-tiny { background: rgba(74, 154, 108, 0.24); border-color: rgba(114, 211, 152, 0.45); color: #d9f7e4; }
+.tiny-button.primary-tiny:hover { background: rgba(74, 154, 108, 0.38); }
+.tiny-button.danger-tiny { background: rgba(180, 68, 68, 0.2); border-color: rgba(232, 110, 110, 0.4); color: #ffd4d4; }
+.tiny-button.danger-tiny:hover { background: rgba(180, 68, 68, 0.34); }

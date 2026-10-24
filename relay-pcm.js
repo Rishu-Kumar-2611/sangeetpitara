@@ -67,6 +67,19 @@ export function mixStereoToMonoPhaseSafe(left, right) {
   return Math.max(-1, Math.min(1, mid + 0.25 * side));
 }
 
+// Studio-grade soft limiter at -1 dBFS (threshold 0.89). Prevents hard digital
+// clipping (harsh 0dBFS distortion on loud masters) with a tanh knee.
+export function softLimitSample(value) {
+  const x = Number.isFinite(value) ? value : 0;
+  const ax = Math.abs(x);
+  if (ax <= 0.89) return x;
+  const sign = x < 0 ? -1 : 1;
+  // 0.89 + 0.11 * tanh((|x|-0.89)/0.11) — smooth knee to 1.0, no hard clip.
+  const over = (ax - 0.89) / 0.11;
+  const shaped = 0.89 + 0.11 * Math.tanh(over);
+  return sign * Math.min(1, shaped);
+}
+
 export class RelayPcmPacketizer {
   constructor() { this.reset(); }
 
@@ -77,6 +90,9 @@ export class RelayPcmPacketizer {
     this.inputIndex = 0;
     this.nextOutputNumerator = 0;
     this.previous = 0;
+    // Cubic history for high-quality resampling (44.1 kHz -> 48 kHz)
+    this.h0 = 0; this.h1 = 0; this.h2 = 0; this.h3 = 0;
+    this.historyReady = 0;
     this.clarity = new RelayPcmClarityFilter();
   }
 
@@ -86,14 +102,44 @@ export class RelayPcmPacketizer {
     }
     if (this.inputRate !== null && this.inputRate !== inputRate) this.reset();
     this.inputRate = inputRate;
+    // Fast path: native 48 kHz — no resampling needed, just clarity + soft-limit + packetize
+    if (inputRate === RELAY_SAMPLE_RATE) {
+      for (const raw of input) {
+        const limited = softLimitSample(this.clarity.process(raw));
+        this.frame[this.used++] = limited < 0 ? Math.round(limited * 0x8000) : Math.round(limited * 0x7FFF);
+        if (this.used === RELAY_FRAME_SAMPLES) {
+          const completed = this.frame;
+          this.frame = new Int16Array(RELAY_FRAME_SAMPLES);
+          this.used = 0;
+          onFrame(completed);
+        }
+      }
+      return;
+    }
     for (const raw of input) {
       const sample = this.clarity.process(raw);
+      // Shift cubic history: h0<-h1<-h2<-h3<-sample
+      this.h0 = this.h1; this.h1 = this.h2; this.h2 = this.h3; this.h3 = sample;
+      if (this.historyReady < 4) this.historyReady += 1;
       const index = this.inputIndex++;
-      // Integer phase arithmetic prevents per-callback rounding loss at 44.1 kHz.
       while (this.nextOutputNumerator <= index * RELAY_SAMPLE_RATE) {
         const fraction = index === 0 ? 1
           : (this.nextOutputNumerator - (index - 1) * RELAY_SAMPLE_RATE) / RELAY_SAMPLE_RATE;
-        const value = Math.max(-1, Math.min(1, this.previous + (sample - this.previous) * fraction));
+        const f = Math.max(0, Math.min(1, fraction));
+        let value;
+        if (this.historyReady < 4) {
+          // Startup: linear fallback until history fills
+          value = this.previous + (sample - this.previous) * f;
+        } else {
+          // 4-point Hermite cubic between h2 (prev) and h3 (cur) using h1,h2,h3,h3
+          // p0=h1, p1=h2, p2=h3, p3=h3+0.5*(h3-h2) extrapolated for smoother treble
+          const p0 = this.h1, p1 = this.h2, p2 = this.h3, p3 = this.h3 + 0.5 * (this.h3 - this.h2);
+          const c1 = 0.5 * (p2 - p0);
+          const c2 = p0 - 2.5 * p1 + 2.0 * p2 - 0.5 * p3;
+          const c3 = 0.5 * (p3 - p0) + 1.5 * (p1 - p2);
+          value = ((c3 * f + c2) * f + c1) * f + p1;
+        }
+        value = softLimitSample(Math.max(-1, Math.min(1, value)));
         this.frame[this.used++] = value < 0 ? Math.round(value * 0x8000) : Math.round(value * 0x7FFF);
         this.nextOutputNumerator += inputRate;
         if (this.used === RELAY_FRAME_SAMPLES) {

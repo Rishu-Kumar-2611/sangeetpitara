@@ -280,6 +280,12 @@ class RoomSessionCoordinator(
         return if (approve) client?.approveRequest(requestId) == true else client?.rejectRequest(requestId) == true
     }
 
+    fun grantSource(memberId: String): Boolean {
+        val state = joinedState() ?: return false
+        if (!isModerator(state) || state.members.none { it.id == memberId && it.online && it.id != state.self?.id }) return false
+        return client?.grantSource(memberId, DEVICE_AUDIO) == true
+    }
+
     fun assignCohost(memberId: String?): Boolean {
         val state = joinedState() ?: return false
         if (state.self?.id != state.room.hostId) return false

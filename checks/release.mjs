@@ -14,7 +14,7 @@ const controller = new AbortController();
 const budget = setTimeout(() => controller.abort(), 260_000);
 const normalize = (text) => text.replace(/\r\n/g, '\n');
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const assetVersion = '20261023-clarity-1';
+const assetVersion = '20261024-prod';
 
 async function get(path) {
   const url = new URL(path, origin);

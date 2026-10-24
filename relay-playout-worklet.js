@@ -1,10 +1,11 @@
 // Dedicated AudioWorklet playout ring buffer with Proportional-Integral (PI)
 // hardware clock-drift compensation, 4-point Hermite cubic interpolation,
-// raised-cosine startup fade-in, and smooth underrun concealment.
+// raised-cosine startup fade-in, smooth underrun concealment, and automatic
+// latency catch-up so playout never drifts into multi-second delay.
 const CAPACITY_SAMPLES = 48_000; // 1000 ms ring buffer capacity at 48 kHz
-const DEFAULT_TARGET_FILL = 5_760; // 120 ms target jitter cushion
-const MIN_PREFILL_SAMPLES = 3_840; // 80 ms initial prefill before starting playout
-const FADE_SAMPLES = 240; // 5 ms cosine fade-in / fade-out
+const DEFAULT_TARGET_FILL = 5_760; // 120 ms default target - cuts underruns on phone Wi-Fi / Render
+const MIN_PREFILL_SAMPLES = 2_880; // 60 ms initial prefill before starting playout
+const FADE_SAMPLES = 960; // 20 ms cosine fade-in / PLC crossfade for inaudible catch-up
 
 class RelayPlayoutProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -32,7 +33,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       }
       if (data.type === 'config') {
         if (Number.isFinite(data.targetDelayMs)) {
-          const clampedMs = Math.max(40, Math.min(600, Number(data.targetDelayMs)));
+          const clampedMs = Math.max(40, Math.min(400, Number(data.targetDelayMs)));
           this.targetFill = Math.round((clampedMs / 1000) * 48_000);
         }
         return;
@@ -57,11 +58,15 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     const frameCount = Math.floor(int16Samples.length / ch);
     if (frameCount <= 0) return;
 
-    if (this.available + frameCount > CAPACITY_SAMPLES - 8) {
-      // Smoothly advance read pointer to keep newest audio if buffer ever overflows.
-      const overflow = (this.available + frameCount) - (CAPACITY_SAMPLES - 8);
-      this.readPos = (this.readPos + overflow) % CAPACITY_SAMPLES;
-      this.available = Math.max(0, this.available - overflow);
+    // Hard latency ceiling: never let the ring buffer exceed targetFill + 140 ms (6,720 samples).
+    // If a network burst delivers a sudden batch of old frames, fast-forward to targetFill
+    // with a smooth 5 ms cosine crossfade so latency stays locked under ~200 ms.
+    const maxAllowedSamples = Math.min(CAPACITY_SAMPLES - 8, this.targetFill + 6_720);
+    if (this.available + frameCount > maxAllowedSamples) {
+      const dropSamples = (this.available + frameCount) - this.targetFill;
+      this.readPos = (this.readPos + dropSamples) % CAPACITY_SAMPLES;
+      this.available = Math.max(0, this.available - dropSamples);
+      this.fadeProgress = 0;
     }
 
     for (let i = 0; i < frameCount; i += 1) {
@@ -78,7 +83,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.writePos = (this.writePos + frameCount) % CAPACITY_SAMPLES;
     this.available += frameCount;
 
-    const requiredPrefill = Math.max(MIN_PREFILL_SAMPLES, Math.min(this.targetFill, 9_600));
+    const requiredPrefill = Math.max(MIN_PREFILL_SAMPLES, Math.min(this.targetFill, 4_800));
     if (!this.playing && this.available >= requiredPrefill) {
       this.playing = true;
       this.fadeProgress = 0;
@@ -111,19 +116,25 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Continuous PI-style clock-drift and jitter-cushion controller.
-    // Adjusts playback rate within [0.997, 1.003] (+/- 0.3%, imperceptible in pitch)
-    // so hardware clock drift and TCP bursts never require flushing the queue.
-    this.avgFill = 0.992 * this.avgFill + 0.008 * this.available;
-    const fillErrorSeconds = (this.avgFill - this.targetFill) / 48_000;
-    const rate = Math.max(0.997, Math.min(1.003, 1.0 + fillErrorSeconds * 0.012));
+    // Two-stage PI clock-drift: coarse when error>40ms, fine otherwise; LPF on avgFill.
+    this.avgFill = 0.985 * this.avgFill + 0.015 * this.available;
+    const fillErrorMs = (this.avgFill - this.targetFill) / 48;
+    const gain = Math.abs(fillErrorMs) > 40 ? 0.005 : 0.010;
+    const fillErrorSeconds = fillErrorMs / 1000;
+    const rateRaw = 1.0 + fillErrorSeconds * gain;
+    const rateClamped = Math.max(0.997, Math.min(1.006, rateRaw));
+    // One-pole LPF on rate to avoid wobble
+    this._smoothedRate = this._smoothedRate == null ? rateClamped : 0.9 * this._smoothedRate + 0.1 * rateClamped;
+    const rate = this._smoothedRate;
 
     for (let i = 0; i < blockLength; i += 1) {
       if (this.available < 4) {
         this.playing = false;
         this.underruns += 1;
-        this.lastL *= 0.965;
-        this.lastR *= 0.965;
+        this.lastL *= 0.992;
+        this.lastR *= 0.992;
+        if (Math.abs(this.lastL) < 1e-5) this.lastL=0;
+        if (Math.abs(this.lastR) < 1e-5) this.lastR=0;
         outL[i] = this.lastL;
         if (outR !== outL) outR[i] = this.lastR;
         continue;
