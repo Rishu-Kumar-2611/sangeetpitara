@@ -223,9 +223,7 @@ async function loadClientConfig() {
 loadClientConfig();
 
 function rewardedAccessActive() {
-  if (state.rewardedAccessConfig?.enabled === false) return true;
-  state.rewardedAccessExpiry = readRewardedAccessExpiry();
-  return hasRewardedAccess({ now: Date.now() });
+  return true;
 }
 
 function renderRewardedAccess() {
@@ -239,41 +237,19 @@ function renderRewardedAccess() {
   const joinButton = $('#join-room');
   if (!gate || !status || !button || !createButton || !joinButton) return;
 
-  const config = state.rewardedAccessConfig;
-  const active = rewardedAccessActive();
-  const duration = config.rewardDurationSeconds;
-  if (state.rewardedAccessTimer) {
-    clearTimeout(state.rewardedAccessTimer);
-    state.rewardedAccessTimer = null;
-  }
-  if (config.enabled !== false && active && state.rewardedAccessExpiry > Date.now()) {
-    state.rewardedAccessTimer = setTimeout(() => {
-      state.rewardedAccessTimer = null;
-      expireRewardedAccess();
-    }, Math.max(0, state.rewardedAccessExpiry - Date.now()) + 50);
-  }
-  gate.hidden = config.enabled === false;
-  gate.classList.toggle('access-active', active);
-  status.textContent = config.enabled === false
-    ? 'Instant room access active'
-    : active
-      ? `Access active · ${formatRewardedAccessRemaining(state.rewardedAccessExpiry)}`
-      : state.rewardedBusy
-        ? 'Demo reward in progress…'
-        : 'Access required';
-  if (copy) copy.textContent = active
-    ? 'Your local access pass is active. You can enter rooms anonymously.'
-    : `Complete the ${duration}-second demo/local rewarded preview to unlock ${config.accessDurationHours} hours of room access.`;
-  button.disabled = state.rewardedBusy || active || config.enabled === false;
-  button.textContent = state.rewardedBusy
-    ? `Completing demo reward…`
-    : active
-      ? 'Room access active'
-      : `Start ${duration}-second demo reward`;
-  createButton.disabled = !active || state.rewardedBusy;
-  joinButton.disabled = !active || state.rewardedBusy;
-  createButton.setAttribute('aria-disabled', String(!active || state.rewardedBusy));
-  joinButton.setAttribute('aria-disabled', String(!active || state.rewardedBusy));
+  gate.hidden = true;
+  gate.classList.remove('access-active');
+  status.textContent = 'Free access — no timer';
+  if (copy) copy.textContent = 'Room creation and joining are free and unrestricted.';
+  button.disabled = true;
+  button.textContent = 'Free access active';
+  button.hidden = true;
+  if (progress) progress.hidden = true;
+  if (progressLabel) progressLabel.textContent = '';
+  createButton.disabled = false;
+  joinButton.disabled = false;
+  createButton.removeAttribute('aria-disabled');
+  joinButton.removeAttribute('aria-disabled');
   if (progress) {
     progress.hidden = !state.rewardedBusy;
     progress.max = duration;

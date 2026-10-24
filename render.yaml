@@ -23,8 +23,6 @@ services:
         value: "0"
       - key: MEDIA_RELAY_ENABLED
         value: "1"
-      - key: REWARDED_ACCESS_ENABLED
-        value: "0"
       - key: REWARDED_AD_PROVIDER
         value: demo-local
       - key: REWARDED_AD_MODE

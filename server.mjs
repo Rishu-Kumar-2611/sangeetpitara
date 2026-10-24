@@ -101,7 +101,7 @@ const adsense = {
   roomSlot: adsenseRoomSlot,
 };
 const rewardedAccess = normalizeRewardedAccessConfig({
-  enabled: ['1', 'true', 'yes', 'on', 'enabled'].includes(String(process.env.REWARDED_ACCESS_ENABLED || '').trim().toLowerCase()),
+  enabled: false,
   provider: process.env.REWARDED_AD_PROVIDER || DEFAULT_REWARDED_ACCESS_CONFIG.provider,
   mode: process.env.REWARDED_AD_MODE || DEFAULT_REWARDED_ACCESS_CONFIG.mode,
   rewardDurationSeconds: process.env.REWARDED_AD_DURATION_SECONDS || DEFAULT_REWARDED_ACCESS_CONFIG.rewardDurationSeconds,
