@@ -9,7 +9,8 @@ sessions remain compatible. It includes:
 
 - Account-less room creation and joining by code or invite link
 - Public landing-page download link for the current Android APK at
-  `/downloads/SangeetPitara-debug.apk`
+  `/downloads/SangeetPitara.apk`, which redirects to the latest GitHub Release
+  (see "Android releases" below)
 - Device-local guest identity
 - Up to 10 people in a room
 - Host, co-host, participant, and active-source state
@@ -293,6 +294,47 @@ The signed APK is written to
 `android/app/build/outputs/apk/release/app-release.apk`, or to the equivalent
 directory below `ROOMSOUND_BUILD_DIR` when that option is set. The keystore
 file pattern is ignored by git; do not commit signing material.
+
+### Android releases
+
+Public APKs are built and signed by GitHub Actions and published to GitHub
+Releases; they are no longer committed under `downloads/`. The site redirects
+every `/downloads/*.apk` link (including the old 1.0.1 names) to
+`https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/latest/download/SangeetPitara.apk`.
+Set `ANDROID_APK_URL` (https only) on the server to point elsewhere.
+
+One-time setup. Create the release keystore once and keep a private backup:
+every future update must be signed with the same key, or users have to
+uninstall before they can install it.
+
+```sh
+keytool -genkeypair -v -keystore sangeetpitara-release.jks -alias sangeetpitara \
+  -keyalg RSA -keysize 4096 -validity 10000
+base64 -i sangeetpitara-release.jks | pbcopy   # macOS; on Linux: base64 -w0 sangeetpitara-release.jks
+```
+
+Then add four repository secrets under Settings → Secrets and variables →
+Actions: `ANDROID_KEYSTORE_BASE64` (the copied text), `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS` (`sangeetpitara` above) and `ANDROID_KEY_PASSWORD`.
+
+To release, push a version tag:
+
+```sh
+git tag v1.0.2
+git push origin v1.0.2
+```
+
+`.github/workflows/release.yml` runs the unit tests, builds `assembleRelease`
+with versionName `1.0.2` and versionCode `10002` (major·10000 + minor·100 +
+patch), verifies the signature, and publishes `SangeetPitara.apk` plus
+`SangeetPitara-v1.0.2.apk` with generated notes. The Android app checks
+`releases/latest` on launch and offers a newer version. Every Android pull
+request also uploads a debug-signed `SangeetPitara-debug-apk` artifact for
+testing, and builds a release APK with a throwaway key to prove the release
+build still works.
+
+The 1.0.1 APK was debug-signed, so the first release-signed install over it
+fails with a signature conflict; uninstall 1.0.1 once, then install.
 
 ## Server hardening and production foundations
 - `GET /config` returns `iceServers` plus `mediaRelay` (`pcm16`, 48 kHz, mono,

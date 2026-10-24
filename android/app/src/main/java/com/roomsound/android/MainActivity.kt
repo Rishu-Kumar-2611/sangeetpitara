@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -43,6 +44,7 @@ import com.roomsound.android.room.RoomEndpointBootstrap
 import com.roomsound.android.room.RoomEndpointValidator
 import com.roomsound.android.room.RoomSoundEvent
 import com.roomsound.android.room.RoomState
+import com.roomsound.android.update.ReleaseUpdateChecker
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.util.ArrayDeque
@@ -74,6 +76,9 @@ class MainActivity : Activity() {
     private lateinit var handoffControlText: TextView
     private lateinit var handoffControlButton: Button
     private lateinit var accessStatusText: TextView
+    private lateinit var updatePanel: LinearLayout
+    private lateinit var updateText: TextView
+    private var updateApkUrl: String? = null
     private lateinit var accessButton: Button
     private lateinit var displayNameInput: EditText
     private lateinit var roomNameInput: EditText
@@ -195,6 +200,7 @@ class MainActivity : Activity() {
         pendingCaptureId = savedInstanceState?.getString(STATE_PENDING_CAPTURE_ID)
         projectionConsentInFlight = savedInstanceState?.getBoolean(STATE_PROJECTION_IN_FLIGHT, false) == true
         setContentView(buildContentView())
+        checkForAppUpdate()
         showPreviousCrashNotice()
         refreshCapability()
         ensureCaptureService()
@@ -387,6 +393,19 @@ class MainActivity : Activity() {
         brandRow.addView(brandCopy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(brandRow, matchWrap())
         content.addView(header, panelLayout())
+
+        updatePanel = panelContainer().apply { visibility = View.GONE }
+        updateText = labelText().apply {
+            setTextColor(getColor(R.color.roomsound_cream))
+            setPadding(0, 0, 0, dp(8))
+        }
+        updatePanel.addView(updateText, matchWrap())
+        updatePanel.addView(button(getString(R.string.update_download)) { openUpdateDownload() }, matchWrap())
+        updatePanel.addView(
+            button(getString(R.string.update_later), ButtonTone.SECONDARY) { updatePanel.visibility = View.GONE },
+            marginLayout(),
+        )
+        content.addView(updatePanel, panelLayout())
 
         val accessPanel = panelContainer()
         accessPanel.visibility = View.GONE
@@ -1536,6 +1555,25 @@ class MainActivity : Activity() {
         LinearLayout.LayoutParams.WRAP_CONTENT,
     ).apply {
         bottomMargin = dp(12)
+    }
+
+    /** Checks GitHub Releases off the main thread; shows a notice only for a newer version. */
+    private fun checkForAppUpdate() {
+        val checker = ReleaseUpdateChecker(BuildConfig.ROOMSOUND_RELEASES_REPOSITORY, BuildConfig.VERSION_NAME)
+        Thread({
+            val update = checker.check() ?: return@Thread
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                updateApkUrl = update.apkUrl
+                updateText.text = getString(R.string.update_available, update.tag.removePrefix("v"))
+                updatePanel.visibility = View.VISIBLE
+            }
+        }, "SangeetPitara-update-check").apply { isDaemon = true }.start()
+    }
+
+    private fun openUpdateDownload() {
+        val url = updateApkUrl ?: return
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
