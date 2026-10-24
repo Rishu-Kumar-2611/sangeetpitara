@@ -43,14 +43,11 @@ class RewardedAccessGate(
         require(grantDurationMillis > 0L) { "The rewarded-access duration must be positive." }
     }
 
-    fun hasAccess(): Boolean = remainingMillis() > 0L
+    // Free build: all rooms are unrestricted — no timer required.
+    // Keep persistence seam for future opt-in, but always report granted.
+    fun hasAccess(): Boolean = true
 
-    fun remainingMillis(): Long {
-        val expiry = store.readGrantExpiryMillis() ?: return 0L
-        val remaining = expiry - nowMillis()
-        if (remaining <= 0L) return 0L
-        return remaining
-    }
+    fun remainingMillis(): Long = ACCESS_DURATION_MILLIS
 
     fun grant(): Long {
         val now = nowMillis()

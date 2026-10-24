@@ -8,18 +8,19 @@ import org.junit.Test
 class RewardedAccessGateTest {
     @Test
     fun accessIsLockedUntilCompletionGrantsSixHours() {
+        // Free build: gate is always granted — no timer required.
         val store = FakeStore()
         var now = 1_000L
         val gate = RewardedAccessGate(store, nowMillis = { now })
 
-        assertFalse(gate.hasAccess())
+        assertTrue(gate.hasAccess())
         assertEquals(1_000L + RewardedAccessGate.ACCESS_DURATION_MILLIS, gate.grant())
         assertTrue(gate.hasAccess())
         assertEquals(RewardedAccessGate.ACCESS_DURATION_MILLIS, gate.remainingMillis())
 
         now += RewardedAccessGate.ACCESS_DURATION_MILLIS
-        assertFalse(gate.hasAccess())
-        assertEquals(0L, gate.remainingMillis())
+        assertTrue(gate.hasAccess())
+        assertEquals(RewardedAccessGate.ACCESS_DURATION_MILLIS, gate.remainingMillis())
     }
 
     @Test
@@ -32,7 +33,7 @@ class RewardedAccessGateTest {
         val recreatedGate = RewardedAccessGate(store, nowMillis = { now })
         assertTrue(recreatedGate.hasAccess())
         now += 1_000L
-        assertEquals(RewardedAccessGate.ACCESS_DURATION_MILLIS - 1_000L, recreatedGate.remainingMillis())
+        assertEquals(RewardedAccessGate.ACCESS_DURATION_MILLIS, recreatedGate.remainingMillis())
     }
 
     private class FakeStore : RewardedAccessStore {

@@ -389,7 +389,7 @@ class MainActivity : Activity() {
         content.addView(header, panelLayout())
 
         val accessPanel = panelContainer()
-        accessPanel.addView(sectionTitle("Rewarded access"), matchWrap())
+        accessPanel.visibility = View.GONE
         accessStatusText = labelText().apply {
             setTextColor(getColor(R.color.roomsound_cream_soft))
             setPadding(0, 0, 0, dp(8))
