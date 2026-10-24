@@ -14,12 +14,6 @@ android/app/*.jks
 *.apk
 oracleJdk-*/
 
-# The public debug APKs are intentionally packaged into the runtime image for
-# stable and versioned download links. Other APK artifacts remain ignored.
-!downloads/
-!downloads/SangeetPitara-debug.apk
-!downloads/SangeetPitara-1.0.1-debug.apk
-
 .DS_Store
 Thumbs.db
 

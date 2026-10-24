@@ -32,6 +32,12 @@ fun String.asBuildConfigStringLiteral(): String = buildString {
 // release values supplied through ROOMSOUND_DEFAULT_ENDPOINT still win.
 val configuredDefaultEndpoint = configuredValue("ROOMSOUND_DEFAULT_ENDPOINT")
     ?: "wss://sangeet-pitaraa.onrender.com"
+// The release workflow derives both from the pushed v<major>.<minor>.<patch> tag.
+val configuredVersionName = configuredValue("ROOMSOUND_VERSION_NAME") ?: "1.0.1"
+val configuredVersionCode = configuredValue("ROOMSOUND_VERSION_CODE")?.toInt() ?: 3
+// GitHub repository whose latest release the app checks for an update notice.
+val configuredReleasesRepository = configuredValue("ROOMSOUND_RELEASES_REPOSITORY")
+    ?: "Rishu-Kumar-2611/sangeetpitara"
 val releaseKeystorePath = configuredValue("ROOMSOUND_KEYSTORE")
 val releaseKeystorePassword = configuredValue("ROOMSOUND_KEYSTORE_PASSWORD")
 val releaseKeyAlias = configuredValue("ROOMSOUND_KEY_ALIAS")
@@ -52,12 +58,17 @@ android {
         applicationId = "com.roomsound.android"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.1"
+        versionCode = configuredVersionCode
+        versionName = configuredVersionName
         buildConfigField(
             "String",
             "ROOMSOUND_DEFAULT_ENDPOINT",
             configuredDefaultEndpoint.asBuildConfigStringLiteral(),
+        )
+        buildConfigField(
+            "String",
+            "ROOMSOUND_RELEASES_REPOSITORY",
+            configuredReleasesRepository.asBuildConfigStringLiteral(),
         )
     }
 
@@ -145,32 +156,8 @@ tasks.register<Copy>("exportDebugApk") {
     rename { "SangeetPitara-debug.apk" }
 }
 
-tasks.register("exportPublicDebugApk") {
-    group = "distribution"
-    description = "Back up the previous public debug APK once and export the current version."
-    dependsOn("assembleDebug")
-
-    val builtApk = project.layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
-    val downloads = rootProject.layout.projectDirectory.dir("../downloads")
-    val stableApk = downloads.file("SangeetPitara-debug.apk").asFile
-    val versionedApk = downloads.file("SangeetPitara-1.0.1-debug.apk").asFile
-    val rollbackApk = rootProject.layout.projectDirectory
-        .file("artifacts/rollback/SangeetPitara-before-1.0.1-debug.apk").asFile
-
-    doLast {
-        val sourceApk = builtApk.get().asFile
-        if (!sourceApk.isFile) {
-            throw GradleException("Cannot export public debug APK: built APK is missing at ${sourceApk.path}")
-        }
-        if (stableApk.isFile && !rollbackApk.exists()) {
-            rollbackApk.parentFile.mkdirs()
-            stableApk.copyTo(rollbackApk, overwrite = false)
-        }
-        downloads.asFile.mkdirs()
-        sourceApk.copyTo(versionedApk, overwrite = true)
-        sourceApk.copyTo(stableApk, overwrite = true)
-    }
-}
+// Public APKs are no longer committed under downloads/: a pushed v* tag makes
+// .github/workflows/release.yml build, sign and publish them to GitHub Releases.
 
 dependencies {
     // JSON signaling/control uses the platform org.json APIs. OkHttp is used

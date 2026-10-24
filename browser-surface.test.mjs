@@ -71,7 +71,7 @@ test('browser module graph uses one release cache version, including the capture
   assert.ok(worklet.includes(`from './relay-pcm.js?v=${assetVersion}'`));
 });
 
-test('release download is labeled 1.0.1 and runtime packages both public APK names and audio modules', async () => {
+test('release download points at GitHub Releases and runtime packages audio modules, not APKs', async () => {
   const [html, dockerfile, gitignore, dockerignore, syntax] = await Promise.all([
     readFile(new URL('index.html', root), 'utf8'),
     readFile(new URL('Dockerfile.runtime', root), 'utf8'),
@@ -79,14 +79,14 @@ test('release download is labeled 1.0.1 and runtime packages both public APK nam
     readFile(new URL('.dockerignore', root), 'utf8'),
     readFile(new URL('checks/syntax.mjs', root), 'utf8'),
   ]);
-  assert.match(html, /class="apk-download-card" href="\/downloads\/SangeetPitara-1\.0\.1-debug\.apk" download/);
-  assert.match(html, /Download SangeetPitara 1\.0\.1 for playback sharing on Android/);
+  // The server redirects this path to the latest GitHub Release asset.
+  assert.match(html, /class="apk-download-card" href="\/downloads\/SangeetPitara\.apk"/);
+  assert.match(html, /Download the latest SangeetPitara for playback sharing on Android/);
   const copies = dockerfile.split(/\r?\n/).filter((line) => /^COPY --chown=node:node /.test(line))
     .map((line) => line.trim().split(/\s+/).slice(2));
-  for (const name of ['SangeetPitara-debug.apk', 'SangeetPitara-1.0.1-debug.apk']) {
-    assert.ok(copies.some((args) => args.at(-1) === './downloads/' && args.slice(0, -1).includes(`downloads/${name}`)), name);
-    assert.ok(dockerignore.split(/\r?\n/).includes(`!downloads/${name}`), name);
-  }
+  assert.ok(!copies.some((args) => args.some((arg) => /\.apk$|^downloads\//.test(arg))), 'APKs ship via GitHub Releases, not the image');
+  assert.ok(dockerignore.split(/\r?\n/).includes('*.apk'));
+  assert.ok(!dockerignore.split(/\r?\n/).some((line) => /^!.*\.apk/.test(line)));
   for (const name of ['capture-tracks.js', 'media-relay.mjs', 'relay-pcm.js', 'relay-capture-worklet.js']) {
     assert.ok(copies.some((args) => args.at(-1) === './' && args.slice(0, -1).includes(name)), name);
     assert.ok((await readFile(new URL(name, root), 'utf8')).length > 0, name);
@@ -101,10 +101,7 @@ test('release download is labeled 1.0.1 and runtime packages both public APK nam
   }
   const ignoreRules = gitignore.split(/\r?\n/);
   assert.ok(ignoreRules.includes('*.apk'));
-  assert.deepEqual(ignoreRules.filter((line) => /^!.*\.apk/.test(line)), [
-    '!downloads/SangeetPitara-debug.apk',
-    '!downloads/SangeetPitara-1.0.1-debug.apk',
-  ]);
+  assert.deepEqual(ignoreRules.filter((line) => /^!.*\.apk/.test(line)), []);
 });
 
 test('browser surface is anonymous and exposes the local rewarded-access gate', async () => {
@@ -126,8 +123,8 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(html, /Demo\/local provider · offline development only/);
   assert.match(html, /id="create-room"[^>]+disabled/);
   assert.match(html, /id="join-room"[^>]+disabled/);
-  assert.match(html, /href="\/downloads\/SangeetPitara-1\.0\.1-debug\.apk"[^>]+download/);
-  assert.match(dockerfile, /downloads\/SangeetPitara-debug\.apk/);
+  assert.match(html, /href="\/downloads\/SangeetPitara\.apk"/);
+  assert.doesNotMatch(dockerfile, /\.apk/);
   assert.match(html, /id="create-tab"[^>]+role="tab"[^>]+aria-selected="true"/);
   assert.match(html, /id="join-tab"[^>]+role="tab"[^>]+aria-selected="false"/);
   assert.match(html, /id="create-panel"[^>]+role="tabpanel"/);

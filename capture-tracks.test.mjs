@@ -36,7 +36,7 @@ test('explains that Firefox screen sharing does not provide room audio', () => {
 
 test('directs mobile browsers to the native app for phone playback audio', () => {
   const android = mobileAudioCaptureGuidance('Mozilla/5.0 (Linux; Android 15; Pixel 9) Chrome/146.0 Mobile');
-  assert.equal(android.downloadHref, '/downloads/SangeetPitara-debug.apk');
+  assert.equal(android.downloadHref, '/downloads/SangeetPitara.apk');
   assert.match(android.title, /Android app/);
   assert.match(android.message, /cannot capture playback/i);
   assert.equal(mobileAudioCaptureGuidance('Mozilla/5.0 (X11; Linux x86_64) Chrome/146.0'), null);
