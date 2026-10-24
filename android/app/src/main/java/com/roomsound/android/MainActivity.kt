@@ -657,10 +657,9 @@ class MainActivity : Activity() {
         Build.MODEL.contains("Android SDK built for", ignoreCase = true)
 
     private fun requireRewardedAccess(): Boolean {
-        if (rewardedAccessGate.hasAccess()) return true
-        renderAccessState()
-        appendRoomEvent("Complete the 30-second local rewarded demo before creating, joining, or sharing audio.")
-        return false
+        // Free build: all rooms are unrestricted — no demo/timer required.
+        // Keep the gate class for a future opt-in, but always grant here.
+        return true
     }
 
     private fun startRewardedAccess() {
@@ -709,50 +708,25 @@ class MainActivity : Activity() {
         if (!::accessStatusText.isInitialized) return
         rewardedAccessExpiryRunnable?.let(transportRenderHandler::removeCallbacks)
         rewardedAccessExpiryRunnable = null
-        val remainingMillis = rewardedAccessGate.remainingMillis()
-        if (remainingMillis > 0L) {
-            accessStatusText.text = "Local access active for ${formatAccessDuration(remainingMillis)}. The grant lasts six hours on this device."
-            accessStatusText.setTextColor(getColor(R.color.roomsound_success))
-            accessButton.text = "Access active"
-            accessButton.isEnabled = false
-            rewardedAccessExpiryRunnable = Runnable { expireRewardedAccess() }.also {
-                transportRenderHandler.postDelayed(it, remainingMillis.coerceAtMost(Int.MAX_VALUE.toLong()))
-            }
-        } else if (rewardedAccessHandle != null) {
-            accessStatusText.setTextColor(getColor(R.color.roomsound_warning))
-            accessButton.text = "Demo countdown in progress"
-            accessButton.isEnabled = false
-        } else {
-            accessStatusText.text = "Access locked. Complete the local/demo 30-second countdown to unlock room creation, joining, and device-audio capture. No real ad SDK is integrated."
-            accessStatusText.setTextColor(getColor(R.color.roomsound_cream_soft))
-            accessButton.text = "Start 30-second demo reward"
-            accessButton.isEnabled = true
-        }
+        accessStatusText.text = "Free access — room creation, joining, and playback sharing are unrestricted on this device."
+        accessStatusText.setTextColor(getColor(R.color.roomsound_success))
+        accessButton.text = "Free access active"
+        accessButton.isEnabled = false
         updateRoomEntryControls()
         renderRoomState(latestRoomState ?: roomSession?.currentRoomState())
     }
 
     private fun expireRewardedAccess() {
-        val hadRoom = roomSession?.currentRoomState() != null
-        val captureActive = latestSnapshot.status in setOf(
-            CaptureStatus.STARTING,
-            CaptureStatus.READY,
-            CaptureStatus.CAPTURING,
-            CaptureStatus.NO_ACTIVE_PLAYBACK,
-        ) || pendingCaptureId != null
-        if (captureActive) stopCapture()
-        if (hadRoom) leaveRoom()
-        appendRoomEvent("Your six-hour room access expired. Complete another rewarded ad to continue.")
+        // Free build: expiry is disabled — keep room/capture alive.
         renderAccessState()
     }
 
     private fun updateRoomEntryControls() {
         if (!::createRoomButton.isInitialized) return
-        val accessGranted = rewardedAccessGate.hasAccess()
         val joined = roomSession?.connectionState() == RoomConnectionState.JOINED
         val canSelect = roomSession?.canSelectRoom() == true && configuredRoomEndpoint() != null
-        createRoomButton.isEnabled = accessGranted && canSelect && !joined
-        joinRoomButton.isEnabled = accessGranted && canSelect && !joined
+        createRoomButton.isEnabled = canSelect && !joined
+        joinRoomButton.isEnabled = canSelect && !joined
     }
 
     private fun formatAccessDuration(remainingMillis: Long): String {
