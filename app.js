@@ -11,6 +11,7 @@ import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
+  MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
 } from './media-relay.mjs?v=20261024-prod';
 import {
@@ -47,8 +48,11 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
   channels: MEDIA_RELAY_CHANNELS,
 };
 const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
-const RELAY_MAX_BUFFERED_BYTES = 96 * 1024; // Allow 96 KiB (~1.0 s) of WebSocket backlog; listeners skip anything later than that anyway.
-const RELAY_MAX_PLAYAHEAD_SECONDS = 1.0; // Cap fallback playahead at 1 s, matching the worklet's automatic target ceiling.
+const SYNC_OFFSET_MAX_MS = 1000; // Matches the #sync-offset slider max and the worklet's target ceiling.
+// Fallback playahead cap: the largest initial cushion plus the worklet's 400 ms
+// excess headroom. It must stay above SYNC_OFFSET_MAX_MS, or the first frame
+// scheduled at the cushion would trip a reset on every following frame.
+const RELAY_MAX_PLAYAHEAD_SECONDS = SYNC_OFFSET_MAX_MS / 1000 + 0.4;
 const RELAY_CAPTURE_MAX_AGE_SECONDS = 1.0; // Drop captured frames older than this instead of sending stale audio.
 
 function clampVolume(v) {
@@ -60,7 +64,7 @@ function clampVolume(v) {
 function clampSyncOffsetMs(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return 150;
-  return Math.min(1000, Math.max(60, Math.round(n / 20) * 20));
+  return Math.min(SYNC_OFFSET_MAX_MS, Math.max(60, Math.round(n / 20) * 20));
 }
 
 function enhanceOpusSdpForMusic(sdp) {
@@ -626,7 +630,7 @@ function sendRelayPcmFrame(samples, sourceEpoch, capturedSequence = null) {
   const sequence = capturedSequence ?? state.relaySequence;
   state.relaySequence = (sequence + 1) >>> 0;
   const frameBytes = 20 + samples.byteLength;
-  if ((Number(state.ws.bufferedAmount) || 0) + frameBytes > RELAY_MAX_BUFFERED_BYTES) return;
+  if ((Number(state.ws.bufferedAmount) || 0) + frameBytes > MEDIA_RELAY_MAX_BACKLOG_BYTES) return;
   try {
     const frame = encodePcm16Frame({
       sourceEpoch,

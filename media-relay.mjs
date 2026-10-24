@@ -13,6 +13,10 @@ export const MEDIA_RELAY_CHANNELS = 1;
 export const MEDIA_RELAY_MAX_CHANNELS = 2;
 export const MEDIA_RELAY_MAX_PAYLOAD_BYTES = 64 * 1024;
 export const MEDIA_RELAY_MAX_FRAME_BYTES = MEDIA_RELAY_HEADER_BYTES + MEDIA_RELAY_MAX_PAYLOAD_BYTES;
+// Socket backlog bound shared by the browser sender and the server's per-listener
+// fan-out: ~1 s of 48 kHz mono PCM16. Later audio is skipped by the listener's
+// playout buffer anyway. The Android sender mirrors this in RoomSoundWebSocketClient.
+export const MEDIA_RELAY_MAX_BACKLOG_BYTES = 96 * 1024;
 
 function asBytes(value) {
   if (value instanceof Uint8Array) return value;

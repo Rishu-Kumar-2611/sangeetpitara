@@ -37,6 +37,7 @@ import { DEFAULT_REWARDED_ACCESS_CONFIG, normalizeRewardedAccessConfig } from '.
 import {
   validatePcm16FrameHeader,
   MEDIA_RELAY_CHANNELS,
+  MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_MAX_FRAME_BYTES,
   MEDIA_RELAY_MAX_PAYLOAD_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
@@ -75,10 +76,6 @@ const BINARY_FRAME_RATE_MAX = 1200;
 // cap alone would admit ~15 MB/s before fan-out. Real-time 48 kHz mono PCM16
 // is 96,000 B/s; allow 2x real time plus per-frame headers.
 const BINARY_BYTES_PER_WINDOW_MAX = 2 * 96_000 * (BINARY_FRAME_WINDOW_MS / 1_000) + BINARY_FRAME_RATE_MAX * 20;
-// Allow up to 96 KiB (~1 s at 48 kHz mono PCM16) per listener socket so
-// mobile/Wi-Fi TCP retransmission bursts do not drop audio frames. Audio later
-// than that is skipped by the listener's playout buffer anyway.
-const MAX_RELAY_BUFFERED_BYTES = 96 * 1024;
 const STREAMING_STATIC_THRESHOLD_BYTES = 256 * 1024;
 const turnEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.TURN_ENABLED || '').trim().toLowerCase());
 const TURN_URLS = turnEnabled && process.env.TURN_URLS
@@ -985,7 +982,7 @@ function handleBinaryFrame(ws, raw) {
   const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
   for (const target of room.members.values()) {
     if (target.id === member.id || !target.ws || target.ws.readyState !== WebSocket.OPEN) continue;
-    if (Number(target.ws.bufferedAmount) > MAX_RELAY_BUFFERED_BYTES) continue;
+    if (Number(target.ws.bufferedAmount) > MEDIA_RELAY_MAX_BACKLOG_BYTES) continue;
     target.ws.send(bytes);
   }
 }

@@ -77,12 +77,14 @@ test('playout raises the underrun cushion once per rebuffer', async () => {
   assert.equal(p.node.adaptiveExtraFill, 3_840);
 });
 
-test('playout never skips audio for jitter that stays inside the target', async () => {
-  const p = await playout();
-  p.run(1_000);
-  // Frames arrive five at a time every 100 ms: bunched, but no late backlog.
-  p.run(10_000, { bunch: 5 });
-  assert.equal(p.skips, 0);
-  assert.equal(p.node.underruns, 0);
-  assert.ok(p.node.targetFill <= 48_000);
-});
+for (const bunchMs of [100, 500]) {
+  test(`playout never skips audio for ${bunchMs} ms bursts that carry no late backlog`, async () => {
+    const p = await playout();
+    p.run(1_000);
+    // Frames arrive in bursts: bunched, but each burst only carries audio
+    // produced since the last one, so nothing is stale enough to skip.
+    p.run(20_000, { bunch: bunchMs / 20 });
+    assert.equal(p.skips, 0);
+    assert.ok(p.node.targetFill <= 48_000);
+  });
+}

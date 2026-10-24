@@ -2,12 +2,13 @@
 // Proportional-Integral (PI) hardware clock-drift compensation, 4-point Hermite
 // cubic interpolation, raised-cosine crossfading, and short loop-based Packet
 // Loss Concealment (PLC) for long-distance (500–10,000+ km) streaming.
-const CAPACITY_SAMPLES = 240_000; // 5,000 ms (5.0 s) ring buffer capacity at 48 kHz
 const DEFAULT_TARGET_FILL = 7_200; // 150 ms base cushion; the jitter estimate and underrun cushion add to it
 const MAX_TARGET_FILL = 48_000; // 1,000 ms ceiling on the automatic target
 const MIN_PREFILL_SAMPLES = 9_600; // 200 ms initial prefill before starting playout
 const EXCESS_HEADROOM_SAMPLES = 19_200; // Skip ahead once a backlog sits 400 ms above target...
 const CATCH_UP_LANDING_SAMPLES = 2_400; // ...landing 50 ms above target, so a stall never leaves lasting delay
+// 2.0 s ring: holds the 1.4 s ceiling plus one maximum-size (64 KiB, ~680 ms) frame.
+const CAPACITY_SAMPLES = 96_000;
 const FADE_SAMPLES = 960; // 20 ms cosine fade-in / crossfade for inaudible transitions
 const PLC_HOLD_SAMPLES = 4_800; // Up to 100 ms of looped waveform continuation before silence decay
 const PLC_PERIOD_SAMPLES = 480; // Fixed 10 ms loop of the most recent audio
@@ -44,7 +45,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       }
       if (data.type === 'config') {
         if (Number.isFinite(data.targetDelayMs)) {
-          const clampedMs = Math.max(60, Math.min(1200, Number(data.targetDelayMs)));
+          const clampedMs = Math.max(60, Math.min(MAX_TARGET_FILL / 48, Number(data.targetDelayMs)));
           this.baseTargetFill = Math.round((clampedMs / 1000) * 48_000);
           this.updateTargetFill();
         }
@@ -102,10 +103,12 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     // of playing seconds-old audio for minutes.
     const maxAllowedSamples = Math.min(CAPACITY_SAMPLES - 16, this.targetFill + EXCESS_HEADROOM_SAMPLES);
     if (this.available + frameCount > maxAllowedSamples) {
-      const dropSamples = (this.available + frameCount) - (this.targetFill + CATCH_UP_LANDING_SAMPLES);
+      // Never skip past buffered audio: an oversized frame would otherwise move
+      // readPos beyond writePos and play stale ring contents.
+      const dropSamples = Math.min(this.available, (this.available + frameCount) - (this.targetFill + CATCH_UP_LANDING_SAMPLES));
       if (dropSamples > 0) {
         this.readPos = (this.readPos + dropSamples) % CAPACITY_SAMPLES;
-        this.available = Math.max(0, this.available - dropSamples);
+        this.available -= dropSamples;
         this.fadeProgress = 0;
       }
     }

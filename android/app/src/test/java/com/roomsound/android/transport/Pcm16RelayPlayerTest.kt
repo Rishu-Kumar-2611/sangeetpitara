@@ -408,9 +408,25 @@ class Pcm16RelayPlayerTest {
                 output.consume(960)
                 output.await { byteCount >= (it + 2) * 960 }
             }
-            assertArrayEquals(concat(packets.take(2) + packets.drop(6)), output.bytes())
+            val written = output.bytes()
+            val expected = concat(packets.take(2) + packets.drop(6))
+            assertEquals(expected.size, written.size)
+            // Only the first 5 ms after the skip is ramped; everything else is exact.
+            val fadeStart = 2 * 960
+            val fadeEnd = fadeStart + 240 * 2
+            assertArrayEquals(expected.copyOfRange(0, fadeStart), written.copyOfRange(0, fadeStart))
+            assertArrayEquals(expected.copyOfRange(fadeEnd, expected.size), written.copyOfRange(fadeEnd, written.size))
+            val before = sample(written, fadeStart - 2)
+            val target = sample(expected, fadeStart)
+            val first = sample(written, fadeStart)
+            assertTrue("first faded sample $first should lie between $before and $target",
+                first in minOf(before, target)..maxOf(before, target))
+            assertTrue("crossfade must change the first sample", first != target || before == target)
         }
     }
+
+    private fun sample(bytes: ByteArray, at: Int): Int =
+        ((bytes[at + 1].toInt() shl 8) or (bytes[at].toInt() and 0xFF)).toShort().toInt()
 
     @Test
     fun catchUpNeverTrimsTheStartupPrefill() {
