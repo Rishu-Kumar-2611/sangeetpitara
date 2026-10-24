@@ -164,8 +164,11 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(app, /RELAY_PROCESSOR_BUFFER_SAMPLES = 2048/);
   assert.match(app, /new AudioWorkletNode/);
   assert.match(app, /syncRelayCaptureLease/);
-  assert.match(app, /RELAY_MAX_BUFFERED_BYTES/);
-  assert.match(app, /RELAY_MAX_PLAYAHEAD_SECONDS/);
+  assert.match(app, /bufferedAmount\) \|\| 0\) \+ frameBytes > MEDIA_RELAY_MAX_BACKLOG_BYTES/);
+  // The fallback reset cap must stay above the largest Sync cushion.
+  assert.match(app, /RELAY_MAX_PLAYAHEAD_SECONDS = SYNC_OFFSET_MAX_MS \/ 1000 \+ 0\.4/);
+  assert.match(html, /id="sync-offset"[^>]*max="1000"/);
+  assert.match(app, /SYNC_OFFSET_MAX_MS = 1000/);
   assert.match(app, /state\.relayPlaybackNextTime > now \+ RELAY_MAX_PLAYAHEAD_SECONDS/);
   assert.match(app, /Math\.max\(now \+ 0\.01, state\.relayPlaybackNextTime \|\| 0\)/);
   assert.match(app, /state\.relayLastSequence = frame\.sequence/);

@@ -21,7 +21,10 @@ internal class AndroidPcm16RelayAudioOutput(format: Pcm16AudioFormat) : Pcm16Rel
             AudioFormat.ENCODING_PCM_16BIT,
         )
         require(minimum > 0) { "Android returned an invalid AudioTrack buffer size: $minimum" }
-        // ~200 ms absorbs WAN/TCP transport and CPU jitter without underrunning.
+        // ~400 ms absorbs WAN/TCP transport and CPU jitter without underrunning;
+        // this path has no packet-loss concealment. Blocking writes keep it full,
+        // so it is also fixed listener latency; Pcm16RelayPlayer's catch-up stops
+        // stall backlogs from adding to it.
         // A device may require a larger minimum; query its actual writable size.
         val targetFrames = (format.sampleRate * 2) / 5
         val created = AudioTrack.Builder()

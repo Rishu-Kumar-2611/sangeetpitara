@@ -34,10 +34,14 @@ class Pcm16RelayPlayer internal constructor(
     private val onStatus: (String) -> Unit = {},
     private val startupTimeoutNanos: Long = TimeUnit.MILLISECONDS.toNanos(120),
     private val nanoTime: () -> Long = System::nanoTime,
+    private val catchUpQueuedBytes: Int = Int.MAX_VALUE,
+    private val catchUpLandingBytes: Int = 0,
 ) : Pcm16RelayPlayerSink {
     constructor(
         maxQueuedFrames: Int = DEFAULT_MAX_QUEUED_FRAMES,
         maxQueuedBytes: Int = MAX_QUEUED_BYTES,
+        catchUpQueuedBytes: Int = Int.MAX_VALUE,
+        catchUpLandingBytes: Int = 0,
         onStatus: (String) -> Unit = {},
     ) : this(
         outputFactory = ::AndroidPcm16RelayAudioOutput,
@@ -45,6 +49,8 @@ class Pcm16RelayPlayer internal constructor(
         maxQueuedFrames = maxQueuedFrames,
         maxQueuedBytes = maxQueuedBytes,
         onStatus = onStatus,
+        catchUpQueuedBytes = catchUpQueuedBytes,
+        catchUpLandingBytes = catchUpLandingBytes,
     )
 
     private class Session(val epoch: Long, val output: Pcm16RelayAudioOutput) {
@@ -53,6 +59,8 @@ class Pcm16RelayPlayer internal constructor(
         var queuedBytes = 0
         var lastSequence: Long? = null
         var firstPacketAt: Long? = null
+        var playbackStarted = false
+        var crossfadeNext = false
         @Volatile var cancelled = false
         // Control calls are serialized, but never share a lock with write().
         val outputLock = Any()
@@ -98,6 +106,7 @@ class Pcm16RelayPlayer internal constructor(
         require(maxQueuedFrames > 0) { "maxQueuedFrames must be positive." }
         require(maxQueuedBytes > 0) { "maxQueuedBytes must be positive." }
         require(startupTimeoutNanos > 0) { "startupTimeoutNanos must be positive." }
+        require(catchUpLandingBytes in 0 until catchUpQueuedBytes) { "catchUpLandingBytes must be below catchUpQueuedBytes." }
     }
 
     override fun start(format: Pcm16AudioFormat, sourceEpoch: Long): Boolean {
@@ -174,6 +183,16 @@ class Pcm16RelayPlayer internal constructor(
         val payload = packet.payload.copyOf()
         session.queue.addLast(payload)
         session.queuedBytes += payload.size
+        // The blocking write is the clock, so a backlog left by a network stall
+        // would otherwise play late forever. Once playing, skip it in one jump.
+        if (session.playbackStarted && session.queuedBytes > catchUpQueuedBytes) {
+            while (session.queuedBytes > catchUpLandingBytes && session.queue.size > 1) {
+                session.queuedBytes -= session.queue.removeFirst().size
+                dropped++
+            }
+            // The kept audio no longer continues the last written sample.
+            session.crossfadeNext = true
+        }
         lock.notifyAll()
         true
     }
@@ -257,6 +276,7 @@ class Pcm16RelayPlayer internal constructor(
         var payload: ByteArray? = null
         var offset = 0
         var noProgressAt: Long? = null
+        var lastSample = 0
 
         while (!session.cancelled) {
             val firstPacketAt = synchronized(lock) { session.firstPacketAt }
@@ -273,7 +293,13 @@ class Pcm16RelayPlayer internal constructor(
                 synchronized(lock) {
                     if (session.cancelled) return
                     payload = session.queue.pollFirst()
-                    if (payload != null) session.queuedBytes -= payload!!.size else {
+                    if (payload != null) {
+                        session.queuedBytes -= payload!!.size
+                        if (session.crossfadeNext) {
+                            session.crossfadeNext = false
+                            crossfadeFrom(lastSample, payload!!)
+                        }
+                    } else {
                         // Only startup has a timed prefill wait. After play(),
                         // the next single frame is written immediately.
                         val remaining = if (!playing && firstPacketAt != null) {
@@ -311,14 +337,35 @@ class Pcm16RelayPlayer internal constructor(
             noProgressAt = null
             offset += written
             if (!playing) primedBytes += written
-            if (offset == bytes.size) payload = null
+            if (offset == bytes.size) {
+                lastSample = readSample(bytes, bytes.size - 2)
+                payload = null
+            }
         }
     }
+
+    /**
+     * Ramps the start of [payload] (little-endian PCM16, an owned copy) from the
+     * last written sample, so a catch-up skip does not write a step into the track.
+     */
+    private fun crossfadeFrom(lastSample: Int, payload: ByteArray) {
+        val samples = minOf(CATCH_UP_CROSSFADE_SAMPLES, payload.size / 2)
+        for (i in 0 until samples) {
+            val gain = (i + 1).toFloat() / (samples + 1)
+            val mixed = Math.round(lastSample * (1 - gain) + readSample(payload, i * 2) * gain)
+            payload[i * 2] = mixed.toByte()
+            payload[i * 2 + 1] = (mixed shr 8).toByte()
+        }
+    }
+
+    private fun readSample(bytes: ByteArray, at: Int): Int =
+        ((bytes[at + 1].toInt() shl 8) or (bytes[at].toInt() and 0xFF)).toShort().toInt()
 
     private fun beginPlayback(session: Session, primedBytes: Int): Boolean = synchronized(session.outputLock) {
         if (session.cancelled || session.released) return false
         session.output.setVolume(synchronized(lock) { volume })
         session.output.play(primedBytes)
+        synchronized(lock) { session.playbackStarted = true }
         true
     }
 
@@ -333,6 +380,10 @@ class Pcm16RelayPlayer internal constructor(
         const val DEFAULT_MAX_QUEUED_FRAMES = 12
         const val PRODUCTION_MAX_QUEUED_FRAMES = 75
         const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 1_500 / 1_000
+        // Skip ahead once 400 ms is queued behind the full AudioTrack, keeping 50 ms.
+        const val PRODUCTION_CATCH_UP_QUEUED_BYTES = 48_000 * 2 * 400 / 1_000
+        const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 50 / 1_000
+        private const val CATCH_UP_CROSSFADE_SAMPLES = 240 // 5 ms at 48 kHz
         val FORMAT = Pcm16AudioFormat(48_000, 1)
         private const val UINT32_MAX = Pcm16RelayPacketCodec.UINT32_MAX
         private const val MAX_QUEUED_BYTES = 48_000 * 2 * 120 / 1_000

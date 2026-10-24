@@ -229,3 +229,20 @@ test('PCM16 relay rejects unauthorized, stale, malformed, and oversized frames',
   source.socket.send(oversized);
   assert.match((await tooLarge).message, /too large/i);
 });
+
+test('PCM16 relay bounds binary bytes per window, not only frame count', async (t) => {
+  const running = await startServer();
+  const source = client(running.url);
+  t.after(() => {
+    source.socket.close();
+    running.server.kill();
+  });
+
+  await source.open();
+  // Twenty maximum-size frames are far below the frame-count cap but carry
+  // ~13 s of PCM16 audio, more than twice real time for the 5 s window.
+  const maxSizeFrame = new Uint8Array(20 + 64 * 1024);
+  const tooFast = source.waitJson((message) => message.type === 'error' && /too quickly/i.test(message.message));
+  for (let i = 0; i < 20; i += 1) source.socket.send(maxSizeFrame);
+  assert.match((await tooFast).message, /too quickly/i);
+});

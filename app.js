@@ -11,6 +11,7 @@ import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
+  MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
 } from './media-relay.mjs?v=20261024-prod';
 import {
@@ -47,8 +48,12 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
   channels: MEDIA_RELAY_CHANNELS,
 };
 const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
-const RELAY_MAX_BUFFERED_BYTES = 192 * 1024; // Allow 192 KiB (~2.0 s) of WebSocket backlog so long-distance WAN TCP bursts never drop frames.
-const RELAY_MAX_PLAYAHEAD_SECONDS = 2.5; // Allow up to 2.5 s fallback playahead for long-distance WAN links without resetting the queue.
+const SYNC_OFFSET_MAX_MS = 1000; // Matches the #sync-offset slider max and the worklet's target ceiling.
+// Fallback playahead cap: the largest initial cushion plus the worklet's 400 ms
+// excess headroom. It must stay above SYNC_OFFSET_MAX_MS, or the first frame
+// scheduled at the cushion would trip a reset on every following frame.
+const RELAY_MAX_PLAYAHEAD_SECONDS = SYNC_OFFSET_MAX_MS / 1000 + 0.4;
+const RELAY_CAPTURE_MAX_AGE_SECONDS = 1.0; // Drop captured frames older than this instead of sending stale audio.
 
 function clampVolume(v) {
   const n = Number(v);
@@ -58,8 +63,8 @@ function clampVolume(v) {
 
 function clampSyncOffsetMs(v) {
   const n = Number(v);
-  if (!Number.isFinite(n)) return 280;
-  return Math.min(1000, Math.max(60, Math.round(n / 20) * 20));
+  if (!Number.isFinite(n)) return 150;
+  return Math.min(SYNC_OFFSET_MAX_MS, Math.max(60, Math.round(n / 20) * 20));
 }
 
 function enhanceOpusSdpForMusic(sdp) {
@@ -124,7 +129,7 @@ const state = {
   liveAudioLevel: 0,
   muted: false,
   volume: clampVolume(localStorage.getItem('roomsound-volume') ?? 0.9),
-  syncOffsetMs: clampSyncOffsetMs(localStorage.getItem('roomsound-sync-offset-ms') ?? 280),
+  syncOffsetMs: clampSyncOffsetMs(localStorage.getItem('roomsound-sync-offset-ms') ?? 150),
   peers: new Map(),
   pendingIntent: null,
   lastSourceId: null,
@@ -625,7 +630,7 @@ function sendRelayPcmFrame(samples, sourceEpoch, capturedSequence = null) {
   const sequence = capturedSequence ?? state.relaySequence;
   state.relaySequence = (sequence + 1) >>> 0;
   const frameBytes = 20 + samples.byteLength;
-  if ((Number(state.ws.bufferedAmount) || 0) + frameBytes > RELAY_MAX_BUFFERED_BYTES) return;
+  if ((Number(state.ws.bufferedAmount) || 0) + frameBytes > MEDIA_RELAY_MAX_BACKLOG_BYTES) return;
   try {
     const frame = encodePcm16Frame({
       sourceEpoch,
@@ -709,8 +714,8 @@ async function ensureRelayPublisher() {
           if (!current() || state.relayProcessor !== node) return;
           node.port.postMessage({ type: 'ack' });
           if (!(data?.samples instanceof Int16Array)) return;
-          // Allow up to 640 ms for background-tab message delivery before dropping.
-          if (context.currentTime - data.capturedAt > 1.8) return;
+          // Allow up to 1 s for background-tab message delivery before dropping.
+          if (context.currentTime - data.capturedAt > RELAY_CAPTURE_MAX_AGE_SECONDS) return;
           sendRelayPcmFrame(data.samples, data.sourceEpoch, data.sequence);
         };
       } catch (error) {
