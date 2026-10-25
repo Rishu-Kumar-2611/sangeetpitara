@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261025-fix1';
+const assetVersion = '20261025-glass1';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
@@ -59,7 +59,7 @@ test('browser module graph uses one release cache version, including the capture
   ]);
   const importPattern = /^import\s[\s\S]*?\sfrom ['"]([^'"]+)['"];/gm;
   const imports = [...app.matchAll(importPattern)].map((match) => match[1]);
-  for (const name of ['guest-id.js', 'relay-pcm.js', 'capture-tracks.js', 'media-relay.mjs', 'ads.mjs']) {
+  for (const name of ['guest-id.js', 'relay-pcm.js', 'capture-tracks.js', 'media-relay.mjs', 'ads.mjs', 'room-palette.js']) {
     assert.ok(imports.includes(`./${name}?v=${assetVersion}`), name);
   }
   for (const source of [app, worklet]) {
@@ -218,6 +218,49 @@ test('landing page presents the browser room as the primary path and clarifies t
   // Fonts are self-hosted so the CSP keeps default-src 'self'.
   assert.match(css, /@font-face \{ font-family: 'Poppins';[^}]*url\('\/fonts\/poppins-600-latin\.woff2'\)/);
   assert.doesNotMatch(html, /fonts\.googleapis\.com/);
+});
+
+test('glass redesign: room aura, frosted panels, now-playing hero and phone tabs keep their hooks', async () => {
+  const [html, css, app] = await Promise.all([
+    readFile(new URL('index.html', root), 'utf8'),
+    readFile(new URL('styles.css', root), 'utf8'),
+    readFile(new URL('app.js', root), 'utf8'),
+  ]);
+
+  // Aura: one fixed element, coloured by per-room custom properties set from JS.
+  assert.match(html, /<div class="aura" id="aura" aria-hidden="true">/);
+  assert.match(css, /@property --room-color-1 \{ syntax: '<color>'/);
+  assert.match(css, /\.aura \{[^}]*position: fixed;[^}]*transform: scale\(calc\(1 \+ var\(--aura-level\) \* 0\.06\)\)/s);
+  assert.match(app, /rootStyle\.setProperty\('--room-hue-1', String\(palette\.hue1\)\)/);
+  assert.match(app, /rootStyle\.setProperty\('--room-color-2', palette\.color2\)/);
+  assert.match(app, /applyRoomPalette\(room\.code\)/);
+  assert.match(app, /applyRoomPalette\(null\)/);
+  assert.match(app, /setAuraLevel\(state\.liveAudioLevel\)/);
+  assert.match(app, /reducedMotionQuery\?\.matches \? 0/);
+
+  // Glass with a solid fallback, and motion that stops for reduced-motion users.
+  assert.match(css, /backdrop-filter: var\(--glass-blur\)/);
+  assert.match(css, /@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*\.aura, \.aura-blob, \.source-cover \{ animation: none !important; transform: none !important; \}/);
+  assert.match(css, /@font-face \{ font-family: 'Poppins';[^}]*font-weight: 700;[^}]*url\('\/fonts\/poppins-700-latin\.woff2'\)/);
+
+  // Now playing keeps every scripted id inside the cover/title hero.
+  for (const id of ['source-card', 'source-orb', 'source-kicker', 'source-title', 'source-detail', 'source-status', 'source-status-label', 'source-waveform', 'source-cover-initial']) {
+    assert.match(html, new RegExp(`id="${id}"`), id);
+  }
+  assert.match(html, /class="source-orb source-cover" id="source-orb"/);
+  assert.match(css, /\.source-waveform \{[^}]*color: var\(--room-tint-1\); caret-color: var\(--room-tint-2\)/);
+
+  // Phone tabs: Chat / People / Health, wired by data attributes.
+  assert.match(html, /id="room-view" class="room-view hidden" data-room-tab="chat"/);
+  assert.match(html, /id="room-tabs" role="tablist"/);
+  for (const tab of ['chat', 'people', 'health']) assert.match(html, new RegExp(`id="room-tab-${tab}"[^>]+data-room-tab="${tab}"[^>]+role="tab"`));
+  assert.match(html, /id="chat-panel" data-room-section="chat"/);
+  assert.match(html, /id="request-panel" data-room-section="people"/);
+  assert.match(html, /id="telemetry-panel" data-room-section="health"/);
+  assert.match(css, /\.room-tabs \{ display: none; \}/);
+  assert.match(css, /@media \(max-width: 600px\) \{[\s\S]*\.room-view\[data-room-tab="people"\] \[data-room-section\]:not\(\[data-room-section="people"\]\)/);
+  assert.match(app, /function selectRoomTab\(tabName\)/);
 });
 
 test('browser audio sharing opens the native DEVICE_AUDIO picker without a source modal', async () => {
