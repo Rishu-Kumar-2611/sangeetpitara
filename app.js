@@ -1,19 +1,19 @@
-import { createGuestId } from './guest-id.js?v=20261025-redesign';
-import { RelayPcmPacketizer } from './relay-pcm.js?v=20261025-redesign';
+import { createGuestId } from './guest-id.js?v=20261025-fix1';
+import { RelayPcmPacketizer } from './relay-pcm.js?v=20261025-fix1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261025-redesign';
+} from './capture-tracks.js?v=20261025-fix1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261025-redesign';
+} from './media-relay.mjs?v=20261025-fix1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -25,7 +25,7 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261025-redesign';
+} from './ads.mjs?v=20261025-fix1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -251,6 +251,7 @@ function renderRewardedAccess() {
   const createButton = $('#create-room');
   const joinButton = $('#join-room');
   if (!gate || !status || !button || !createButton || !joinButton) return;
+  const duration = state.rewardedAccessConfig?.rewardDurationSeconds ?? 30;
 
   gate.hidden = true;
   gate.classList.remove('access-active');
@@ -786,7 +787,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261025-redesign');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261025-fix1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -860,7 +861,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261025-redesign')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261025-fix1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
