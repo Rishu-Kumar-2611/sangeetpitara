@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="SangeetPitara — private live audio rooms for listening together." />
     <meta name="google-site-verification" content="google4e6792fe7b47be54" />
-    <meta name="theme-color" content="#2b1a11" />
+    <meta name="theme-color" content="#15110F" />
     <link rel="canonical" href="https://sangeet-pitaraa.onrender.com/" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="SangeetPitara — listen together" />
@@ -22,9 +22,9 @@
     <meta name="roomsound-media-relay" content="server-configured-pcm16" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob: data:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'" />
     <title>SangeetPitara — listen together</title>
-    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod" />
+    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261025-redesign" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=20261024-prod" />
+    <link rel="stylesheet" href="/styles.css?v=20261025-redesign" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -32,7 +32,7 @@
     <main id="app" class="shell">
       <section id="landing-view" class="landing-view">
         <div class="landing-copy">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261025-redesign" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="eyebrow">PRIVATE LIVE AUDIO ROOMS</div>
           <h1>Listen together.</h1>
           <p class="landing-hint">Create a room or join with an invite code.</p>
@@ -98,7 +98,7 @@
 
       <section id="room-view" class="room-view hidden">
         <header class="topbar">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261025-redesign" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="room-crumb"><span class="crumb-room-name" id="top-room-name">Listening room</span><span class="crumb-separator">/</span><span class="room-code-small" id="top-room-code">------</span></div>
           <div class="topbar-actions">
             <span class="connection-chip" id="connection-chip"><span class="connection-dot"></span><span id="connection-label">Connecting</span></span>
@@ -128,15 +128,17 @@
               <div class="room-code-display"><span>ROOM CODE</span><strong id="room-code-display">------</strong><small>Share this code with listeners</small></div>
             </div>
 
+            <section class="now-playing" aria-label="Now playing">
             <div class="source-card" id="source-card">
               <div class="source-orb" id="source-orb"><span class="orb-wave"></span><span class="orb-wave orb-wave-two"></span><span class="orb-center">◒</span></div>
               <div class="source-card-copy">
-                <div class="source-kicker" id="source-kicker">NO ACTIVE SOURCE</div>
+                <div class="source-kicker" id="source-kicker">Nothing playing</div>
                 <h2 id="source-title">The room is quiet</h2>
                 <p id="source-detail">Choose an audio source to start sharing with the room.</p>
               </div>
               <div class="source-status" id="source-status"><span class="status-pulse"></span><span id="source-status-label">Waiting</span></div>
             </div>
+            <canvas id="source-waveform" class="source-waveform" aria-hidden="true"></canvas>
 
             <input id="audio-file-input" type="file" accept="audio/*" hidden />
 
@@ -163,7 +165,7 @@
             </div>
 
             <div class="audio-controls-panel">
-              <div class="audio-control-title"><span class="speaker-icon">◖</span> Your listening controls</div>
+              <div class="audio-control-title">Your listening</div>
               <button id="local-mute" class="mute-button" type="button"><span id="mute-icon">◒</span><span id="mute-label">Mute</span></button>
               <input id="local-volume" class="volume-slider" type="range" min="0" max="1" step="0.01" value="0.9" aria-label="Your room volume" />
               <span id="volume-label" class="volume-label">90%</span>
@@ -173,16 +175,15 @@
                 <span id="sync-offset-label" class="sync-label">150ms</span>
               </label>
             </div>
+            </section>
 
             <div class="lower-grid">
-              <section class="panel activity-panel">
-                <div class="panel-heading"><div><span class="section-label">ROOM ACTIVITY</span><h3>What is happening</h3></div></div>
-                <div id="activity-feed" class="activity-feed"></div>
-              </section>
               <section class="panel chat-panel">
-                <div class="panel-heading"><div><span class="section-label">ROOM CHAT</span><h3>Say something</h3></div><span class="chat-count" id="chat-count">0</span></div>
+                <div class="panel-heading"><div><span class="section-label">ROOM CHAT</span><h3>Chat</h3></div><span class="chat-count" id="chat-count">0</span></div>
                 <div id="chat-feed" class="chat-feed"></div>
+                <div id="emoji-bar" class="emoji-bar" role="group" aria-label="Insert emoji"></div>
                 <form id="chat-form" class="chat-form">
+                  <button id="emoji-toggle" class="emoji-toggle" type="button" aria-controls="emoji-bar" aria-expanded="false" aria-label="Emoji">😊</button>
                   <input id="chat-input" class="chat-input" maxlength="280" placeholder="Message the room…" autocomplete="off" />
                   <button class="send-button" type="submit" aria-label="Send message">↑</button>
                 </form>
@@ -192,7 +193,7 @@
 
           <aside class="room-sidebar">
             <section class="panel roster-panel">
-              <div class="panel-heading"><div><span class="section-label">IN THE ROOM</span><h3>Listeners <span id="member-count">0</span></h3></div></div>
+              <div class="panel-heading"><div><span class="section-label">IN THE ROOM</span><h3>In the room <span id="member-count">0</span></h3></div></div>
               <div id="member-list" class="member-list"></div>
             </section>
 
@@ -201,9 +202,13 @@
               <div id="request-list" class="request-list"></div>
             </section>
 
+            <section class="panel activity-panel">
+              <div class="panel-heading"><div><span class="section-label">ROOM ACTIVITY</span><h3>Activity</h3></div></div>
+              <div id="activity-feed" class="activity-feed"></div>
+            </section>
             <section class="panel telemetry-panel" id="telemetry-panel">
               <div class="panel-heading">
-                <div><span class="section-label">STREAM HEALTH</span><h3>Audio diagnostics</h3></div>
+                <div><span class="section-label">STREAM HEALTH</span><h3>Stream health</h3></div>
                 <span class="telemetry-state pending" id="telemetry-state">Waiting</span>
               </div>
               <p class="telemetry-summary" id="telemetry-summary">No active source · diagnostics will appear when audio starts.</p>
@@ -230,6 +235,6 @@
     </div>
     <div id="toast-stack" class="toast-stack"></div>
     <div id="modal-root"></div>
-    <script type="module" src="/app.js?v=20261024-prod"></script>
+    <script type="module" src="/app.js?v=20261025-redesign"></script>
   </body>
 </html>

@@ -2,7 +2,7 @@
     <item android:state_enabled="false">
         <shape>
             <solid android:color="@color/roomsound_button_disabled" />
-            <corners android:radius="12dp" />
+            <corners android:radius="14dp" />
             <stroke
                 android:width="1dp"
                 android:color="@color/roomsound_button_disabled_stroke" />
@@ -10,11 +10,8 @@
     </item>
     <item android:state_pressed="true">
         <shape>
-            <gradient
-                android:angle="270"
-                android:endColor="@color/roomsound_button_danger_pressed_bottom"
-                android:startColor="@color/roomsound_button_danger_pressed_top" />
-            <corners android:radius="12dp" />
+            <solid android:color="@color/roomsound_button_danger_pressed_top" />
+            <corners android:radius="14dp" />
             <stroke
                 android:width="1dp"
                 android:color="@color/roomsound_skin" />
@@ -22,23 +19,17 @@
     </item>
     <item android:state_focused="true">
         <shape>
-            <gradient
-                android:angle="270"
-                android:endColor="@color/roomsound_button_danger_bottom"
-                android:startColor="@color/roomsound_button_danger_top" />
-            <corners android:radius="12dp" />
+            <solid android:color="@color/roomsound_button_danger_top" />
+            <corners android:radius="14dp" />
             <stroke
                 android:width="2dp"
-                android:color="@color/roomsound_skin" />
+                android:color="@color/roomsound_danger" />
         </shape>
     </item>
     <item>
         <shape>
-            <gradient
-                android:angle="270"
-                android:endColor="@color/roomsound_button_danger_bottom"
-                android:startColor="@color/roomsound_button_danger_top" />
-            <corners android:radius="12dp" />
+            <solid android:color="@color/roomsound_button_danger_top" />
+            <corners android:radius="14dp" />
             <stroke
                 android:width="1dp"
                 android:color="@color/roomsound_skin" />

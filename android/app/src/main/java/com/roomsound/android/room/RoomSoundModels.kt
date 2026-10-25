@@ -54,6 +54,8 @@ data class RoomChatMessage(
     val senderName: String?,
     val text: String,
     val createdAt: Long,
+    /** Emoji to member ids that reacted with it; empty on servers without reactions. */
+    val reactions: Map<String, List<String>> = emptyMap(),
 )
 
 data class RoomState(
@@ -104,6 +106,8 @@ data class RoomMediaRelayConfig(
 data class RoomServerConfig(
     val iceServers: List<RoomIceServer> = emptyList(),
     val mediaRelay: RoomMediaRelayConfig = RoomMediaRelayConfig.DEFAULT,
+    /** Reaction set the server accepts; empty means the server has no reactions. */
+    val chatReactions: List<String> = emptyList(),
 ) {
     companion object {
         val DEFAULT = RoomServerConfig()
@@ -146,6 +150,7 @@ sealed interface RoomSoundEvent {
     data class Error(val message: String) : RoomSoundEvent
     data class LocalError(val message: String) : RoomSoundEvent
     data class Chat(val message: RoomChatMessage) : RoomSoundEvent
+    data class Reaction(val messageId: String, val reactions: Map<String, List<String>>) : RoomSoundEvent
     data class ControlRequested(val request: RoomRequest) : RoomSoundEvent
     data class RequestResult(val status: String, val request: RoomRequest?) : RoomSoundEvent
     data class ControlRequestExpired(val requestId: String) : RoomSoundEvent
@@ -225,7 +230,22 @@ internal fun parseChatMessage(json: JSONObject): RoomChatMessage = RoomChatMessa
     senderName = json.stringOrNull("senderName"),
     text = json.stringOrNull("text") ?: "",
     createdAt = json.optLong("createdAt", 0L),
+    reactions = parseReactions(json.optJSONObject("reactions")),
 )
+
+/** `{"🔥": ["memberId", …]}`; anything malformed is skipped, never thrown. */
+internal fun parseReactions(json: JSONObject?): Map<String, List<String>> {
+    if (json == null) return emptyMap()
+    val result = linkedMapOf<String, List<String>>()
+    for (emoji in json.keys()) {
+        val members = json.optJSONArray(emoji) ?: continue
+        val ids = buildList {
+            for (index in 0 until members.length()) members.optString(index).takeIf { it.isNotEmpty() }?.let { add(it) }
+        }
+        if (ids.isNotEmpty()) result[emoji] = ids
+    }
+    return result
+}
 
 internal fun parseRoomState(json: JSONObject): RoomState {
     val membersJson = json.arrayOrEmpty("members")
@@ -295,4 +315,10 @@ internal fun parseMediaRelayConfig(json: JSONObject): RoomMediaRelayConfig {
 internal fun parseRoomServerConfig(json: JSONObject): RoomServerConfig = RoomServerConfig(
     iceServers = parseIceServers(json),
     mediaRelay = parseMediaRelayConfig(json),
+    chatReactions = buildList {
+        val reactions = json.arrayOrEmpty("chatReactions")
+        for (index in 0 until minOf(reactions.length(), 12)) {
+            reactions.optString(index).takeIf { it.isNotEmpty() && it.length <= 16 }?.let { add(it) }
+        }
+    },
 )

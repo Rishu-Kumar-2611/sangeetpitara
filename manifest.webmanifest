@@ -5,11 +5,11 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#2b1a11",
-  "theme_color": "#2b1a11",
+  "background_color": "#15110F",
+  "theme_color": "#15110F",
   "icons": [
     {
-      "src": "/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261024-prod",
+      "src": "/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261025-redesign",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

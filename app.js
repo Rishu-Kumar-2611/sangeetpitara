@@ -1,19 +1,19 @@
-import { createGuestId } from './guest-id.js?v=20261024-prod';
-import { RelayPcmPacketizer } from './relay-pcm.js?v=20261024-prod';
+import { createGuestId } from './guest-id.js?v=20261025-redesign';
+import { RelayPcmPacketizer } from './relay-pcm.js?v=20261025-redesign';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261024-prod';
+} from './capture-tracks.js?v=20261025-redesign';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261024-prod';
+} from './media-relay.mjs?v=20261025-redesign';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -25,7 +25,7 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261024-prod';
+} from './ads.mjs?v=20261025-redesign';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -80,7 +80,13 @@ function enhanceOpusSdpForMusic(sdp) {
   });
 }
 
+// Server-enforced reaction set; /config replaces this with the live list.
+const DEFAULT_CHAT_REACTIONS = ['❤️', '🔥', '😂', '👏', '🙏', '🎵'];
+// Free emoji the composer can insert into a message.
+const CHAT_COMPOSER_EMOJI = ['😀', '😂', '😍', '🥹', '😎', '🙌', '👏', '🙏', '❤️', '🔥', '🎵', '🎶', '🪔', '💃', '🕺', '✨'];
+
 const state = {
+  chatReactions: [...DEFAULT_CHAT_REACTIONS],
   ws: null,
   room: null,
   self: null,
@@ -209,6 +215,10 @@ async function loadClientConfig() {
     if (Array.isArray(j.iceServers) && j.iceServers.length) rtcConfig = { iceServers: j.iceServers };
     const wasMediaRelayEnabled = isMediaRelayEnabled();
     state.mediaRelay = normalizeMediaRelayConfig(j.mediaRelay);
+    if (Array.isArray(j.chatReactions)) {
+      const reactions = j.chatReactions.filter((emoji) => typeof emoji === 'string' && emoji.length <= 16).slice(0, 12);
+      if (reactions.length) state.chatReactions = reactions;
+    }
     if (j.rewardedAccess) state.rewardedAccessConfig = normalizeRewardedAccessConfig(j.rewardedAccess);
     applyAdSenseConfig(j.adsense);
     iceConfigLoaded = true;
@@ -595,27 +605,101 @@ function applyOutputVolume() {
   if (state.relayPlaybackGain) state.relayPlaybackGain.gain.value = state.muted ? 0 : state.volume;
 }
 
+const WAVEFORM_BARS = 48;
+const SILENT_SHARE_LEVEL = 0.01;
+const SILENT_SHARE_WARNING_MS = 10_000;
+
+function audioLevel(analyser, samples) {
+  analyser.getByteTimeDomainData(samples);
+  let sumSquares = 0;
+  for (let i = 0; i < samples.length; i += 1) {
+    const centered = (samples[i] - 128) / 128;
+    sumSquares += centered * centered;
+  }
+  return Math.min(1, Math.sqrt(sumSquares / samples.length) * 2.4);
+}
+
+/** Mirrored frequency bars on the source card; flat when nothing is playing. */
+function drawSourceWaveform(analyser) {
+  const canvas = $('#source-waveform');
+  const context = canvas?.getContext?.('2d');
+  if (!context) return;
+  const ratio = window.devicePixelRatio || 1;
+  const width = Math.round(canvas.clientWidth * ratio);
+  const height = Math.round(canvas.clientHeight * ratio);
+  if (!width || !height) return;
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  context.clearRect(0, 0, width, height);
+  const bins = analyser ? new Uint8Array(analyser.frequencyBinCount) : null;
+  if (bins) analyser.getByteFrequencyData(bins);
+  const color = getComputedStyle(canvas).color || '#ebc979';
+  context.fillStyle = color;
+  const slot = width / WAVEFORM_BARS;
+  const barWidth = Math.max(1, slot * 0.56);
+  const middle = height / 2;
+  // Use the lower ~70% of the spectrum, where music actually has energy.
+  const usable = bins ? Math.floor(bins.length * 0.7) : 0;
+  for (let bar = 0; bar < WAVEFORM_BARS; bar += 1) {
+    let value = 0;
+    if (bins && usable) {
+      const from = Math.floor((bar / WAVEFORM_BARS) * usable);
+      const to = Math.max(from + 1, Math.floor(((bar + 1) / WAVEFORM_BARS) * usable));
+      for (let i = from; i < to; i += 1) value = Math.max(value, bins[i]);
+      value /= 255;
+    }
+    const half = Math.max(ratio, value * middle * 0.94);
+    const x = bar * slot + (slot - barWidth) / 2;
+    context.globalAlpha = 0.35 + value * 0.65;
+    context.beginPath();
+    if (context.roundRect) context.roundRect(x, middle - half, barWidth, half * 2, barWidth / 2);
+    else context.rect(x, middle - half, barWidth, half * 2);
+    context.fill();
+  }
+  context.globalAlpha = 1;
+}
+
+/** Warns the sharer once per share when their capture stays silent. */
+function checkSilentShare(level) {
+  if (!isSelfSource() || state.room?.sourceStatus !== 'LIVE' || !state.captureStream) {
+    state.silentShareSince = null;
+    return;
+  }
+  if (level > SILENT_SHARE_LEVEL) {
+    state.silentShareSince = null;
+    return;
+  }
+  const now = performance.now();
+  state.silentShareSince ??= now;
+  if (now - state.silentShareSince < SILENT_SHARE_WARNING_MS || state.silentShareWarnedFor === state.captureStream) return;
+  state.silentShareWarnedFor = state.captureStream;
+  toast('No sound is reaching the room. If you shared a tab or screen, stop and share again with "Share tab audio" (or "Share system audio") turned on.', 'bad');
+}
+
 function updateSourceOrbVisualizer() {
   const orb = $('#source-orb');
-  if (!orb) return;
   const analyser = state.relayPlaybackAnalyser || state.relayPublisherAnalyser;
   if (!analyser || !state.room?.activeSourceId || state.room?.sourceStatus !== 'LIVE') {
-    orb.style.transform = '';
+    if (orb) orb.style.transform = '';
+    drawSourceWaveform(null);
     state.liveAudioLevel = 0;
+    state.silentShareSince = null;
     state.visualizerRaf = null;
     return;
   }
-  const bins = new Uint8Array(analyser.frequencyBinCount);
-  analyser.getByteTimeDomainData(bins);
-  let sumSquares = 0;
-  for (let i = 0; i < bins.length; i += 1) {
-    const centered = (bins[i] - 128) / 128;
-    sumSquares += centered * centered;
+  const samples = new Uint8Array(analyser.fftSize);
+  state.liveAudioLevel = audioLevel(analyser, samples);
+  if (orb) orb.style.transform = `scale(${(1 + state.liveAudioLevel * 0.16).toFixed(3)})`;
+  drawSourceWaveform(analyser);
+  // The sharer's own playback analyser is absent, so this reads their capture.
+  if (state.relayPublisherAnalyser) {
+    const published = analyser === state.relayPublisherAnalyser
+      ? state.liveAudioLevel
+      : audioLevel(state.relayPublisherAnalyser, new Uint8Array(state.relayPublisherAnalyser.fftSize));
+    checkSilentShare(published);
   }
-  const rms = Math.sqrt(sumSquares / bins.length);
-  state.liveAudioLevel = Math.min(1, rms * 2.4);
-  const scale = 1 + state.liveAudioLevel * 0.16;
-  orb.style.transform = `scale(${scale.toFixed(3)})`;
   state.visualizerRaf = requestAnimationFrame(updateSourceOrbVisualizer);
 }
 
@@ -702,7 +786,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261024-prod');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261025-redesign');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -740,7 +824,7 @@ async function ensureRelayPublisher() {
     source = context.createMediaStreamSource(stream);
     if (context.createAnalyser) {
       const pubAnalyser = context.createAnalyser();
-      pubAnalyser.fftSize = 64;
+      pubAnalyser.fftSize = 512; // Enough bins for the waveform; RMS reads the same data.
       source.connect(pubAnalyser);
       state.relayPublisherAnalyser = pubAnalyser;
       ensureVisualizerLoop();
@@ -776,7 +860,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261024-prod')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261025-redesign')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -810,7 +894,7 @@ function ensureRelayPlaybackContext() {
     const gain = context.createGain();
     const analyser = context.createAnalyser ? context.createAnalyser() : null;
     if (analyser) {
-      analyser.fftSize = 64;
+      analyser.fftSize = 512;
       gain.connect(analyser);
     }
     // Route PCM through a real media element for Android background media-session
@@ -1039,8 +1123,13 @@ function addActivity(text, force = false) {
 }
 
 function addMessages(messages) {
-  const known = new Set(state.messages.map((message) => message.id));
-  for (const message of messages || []) if (!known.has(message.id)) state.messages.push(message);
+  const known = new Map(state.messages.map((message) => [message.id, message]));
+  for (const message of messages || []) {
+    const existing = known.get(message.id);
+    // A rejoin resends history; keep its newer reaction counts.
+    if (existing) existing.reactions = message.reactions;
+    else state.messages.push(message);
+  }
   state.messages.sort((a, b) => a.createdAt - b.createdAt);
   state.messages = state.messages.slice(-80);
   renderChat();
@@ -1273,6 +1362,14 @@ function handleServerMessage(message) {
     if (message.message.kind === 'system') toast(message.message.text, 'success');
     return;
   }
+  if (message.type === 'reaction') {
+    const target = state.messages.find((item) => item.id === message.messageId);
+    if (target) {
+      target.reactions = message.reactions;
+      renderChat();
+    }
+    return;
+  }
   if (message.type === 'control-requested') {
     addActivity(`${message.request.requesterName} requested audio control.`, true);
     if (isModerator()) {
@@ -1414,12 +1511,14 @@ function renderSource() {
   const starting = state.room.sourceStatus === 'STARTING';
   const card = $('#source-card');
   card.classList.toggle('live', live);
-  $('#source-kicker').textContent = live ? (starting ? 'CONNECTING SOURCE' : 'ACTIVE AUDIO SOURCE') : 'NO ACTIVE SOURCE';
+  $('#source-kicker').textContent = live ? (starting ? 'Connecting…' : `Now playing · ${sourceLabel(state.room.activeSourceType)}`) : 'Nothing playing';
   $('#source-title').textContent = live ? `${sourceMember.name} is sharing` : 'The room is quiet';
   $('#source-detail').textContent = live
-    ? `${sourceLabel(state.room.activeSourceType)} · ${starting ? 'waiting for the source device' : 'everyone can listen now'}`
+    ? (starting ? 'Waiting for the source device…' : 'Everyone in the room can listen.')
     : 'Choose an audio source to start sharing with the room.';
-  $('#source-status-label').textContent = live ? (starting ? 'Starting' : 'Live now') : 'Waiting';
+  $('#source-status-label').textContent = live ? (starting ? 'Starting' : 'Live') : 'Waiting';
+  // Draw resting bars once the card has a size; the live loop takes over while audio plays.
+  if (!state.visualizerRaf && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { if (!state.visualizerRaf) drawSourceWaveform(null); });
 }
 
 function renderControls() {
@@ -1521,13 +1620,38 @@ function renderRequests() {
   $('#request-list').innerHTML = requests.map((request) => `<div class="request-item"><div class="request-top"><span>${escapeHtml(request.requesterName)} wants to play</span><span>${timeLabel(request.createdAt)}</span></div><div class="request-note">${escapeHtml(request.note || `${sourceLabel(request.sourceType)} request`)}</div>${canModerate ? `<div class="request-actions"><button class="approve-request" data-request-action="approve" data-request-id="${request.id}">Approve</button><button class="reject-request" data-request-action="reject" data-request-id="${request.id}">Reject</button></div>` : '<div class="request-note">Waiting for host approval…</div>'}</div>`).join('');
 }
 
+function chatReactionsHtml(message) {
+  const selfId = state.self?.id;
+  const reactions = message.reactions && typeof message.reactions === 'object' ? message.reactions : {};
+  const chips = state.chatReactions.map((emoji) => {
+    const members = Array.isArray(reactions[emoji]) ? reactions[emoji] : [];
+    const mine = selfId && members.includes(selfId);
+    const label = `${mine ? 'Remove' : 'React with'} ${emoji}${members.length ? ` (${members.length})` : ''}`;
+    return `<button type="button" class="reaction-chip${members.length ? ' has-count' : ''}${mine ? ' mine' : ''}" data-react-id="${escapeHtml(message.id)}" data-emoji="${escapeHtml(emoji)}" aria-pressed="${mine ? 'true' : 'false'}" aria-label="${escapeHtml(label)}">${escapeHtml(emoji)}${members.length ? `<span class="reaction-count">${members.length}</span>` : ''}</button>`;
+  }).join('');
+  return `<div class="chat-reactions">${chips}</div>`;
+}
+
+function insertComposerEmoji(emoji) {
+  const input = $('#chat-input');
+  if (!input) return;
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  const next = input.value.slice(0, start) + emoji + input.value.slice(end);
+  if (next.length > Number(input.maxLength || 280)) return;
+  input.value = next;
+  const caret = start + emoji.length;
+  input.focus();
+  input.setSelectionRange(caret, caret);
+}
+
 function renderChat() {
   const feed = $('#chat-feed');
   if (!feed) return;
   const wasNearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 48;
   const chat = state.messages.filter((message) => message.kind === 'chat');
   $('#chat-count').textContent = chat.length;
-  feed.innerHTML = chat.length ? chat.map((message) => `<div class="chat-message"><div class="avatar">${escapeHtml(initials(message.senderName))}</div><div class="chat-body"><div class="chat-meta"><span class="chat-name">${escapeHtml(message.senderName)}</span><span class="chat-time">${timeLabel(message.createdAt)}</span></div><div class="chat-text">${escapeHtml(message.text)}</div></div></div>`).join('') : '<div class="request-empty">Start the conversation with the room.</div>';
+  feed.innerHTML = chat.length ? chat.map((message) => `<div class="chat-message"><div class="avatar">${escapeHtml(initials(message.senderName))}</div><div class="chat-body"><div class="chat-meta"><span class="chat-name">${escapeHtml(message.senderName)}</span><span class="chat-time">${timeLabel(message.createdAt)}</span></div><div class="chat-text">${escapeHtml(message.text)}</div>${chatReactionsHtml(message)}</div></div>`).join('') : '<div class="request-empty">Start the conversation with the room.</div>';
   if (wasNearBottom) feed.scrollTop = feed.scrollHeight;
 }
 
@@ -2497,6 +2621,24 @@ function wireEvents() {
   });
   document.addEventListener('resume', () => { void resumeRoomMediaAfterVisibility(); });
   window.addEventListener('pageshow', () => { void resumeRoomMediaAfterVisibility(); });
+  $('#chat-feed').addEventListener('click', (event) => {
+    const chip = event.target.closest('[data-react-id]');
+    if (!chip) return;
+    send({ type: 'react', messageId: chip.dataset.reactId, emoji: chip.dataset.emoji });
+  });
+  const emojiBar = $('#emoji-bar');
+  if (emojiBar) {
+    emojiBar.innerHTML = CHAT_COMPOSER_EMOJI.map((emoji) => `<button type="button" class="emoji-pick" data-emoji="${escapeHtml(emoji)}" aria-label="Insert ${escapeHtml(emoji)}">${escapeHtml(emoji)}</button>`).join('');
+    emojiBar.addEventListener('click', (event) => {
+      const pick = event.target.closest('[data-emoji]');
+      if (pick) insertComposerEmoji(pick.dataset.emoji);
+    });
+  }
+  $('#emoji-toggle')?.addEventListener('click', () => {
+    const bar = $('#emoji-bar');
+    const open = bar.classList.toggle('open');
+    $('#emoji-toggle').setAttribute('aria-expanded', String(open));
+  });
   $('#chat-form').addEventListener('submit', (event) => {
     event.preventDefault();
     const text = $('#chat-input').value.trim();
