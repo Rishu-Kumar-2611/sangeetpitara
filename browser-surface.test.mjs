@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261025-redesign';
+const assetVersion = '20261025-fix1';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
@@ -269,4 +269,14 @@ test('browser RTC keeps transiently disconnected peers for ICE recovery', async 
   assert.match(app, /if \(pc\.connectionState === 'closed'\) removePeerConnection\(/g);
   assert.doesNotMatch(app, /\['closed', 'disconnected'\]\.includes\(pc\.connectionState\)\) removePeerConnection/);
   assert.match(app, /disconnected.*recoverable|transient `disconnected` state is not terminal/s);
+});
+
+test('renderRewardedAccess declares every value it reads, so module start-up runs to the end', async () => {
+  const app = await readFile(new URL('app.js', root), 'utf8');
+  const body = app.match(/function renderRewardedAccess\(\) \{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(body, 'renderRewardedAccess exists');
+  // A ReferenceError here once aborted app.js before invite links (?room=) were handled.
+  assert.ok(body.indexOf('const duration') !== -1 && body.indexOf('const duration') < body.indexOf('progress.max = duration'));
+  const tail = app.slice(app.lastIndexOf('\nrenderRewardedAccess();'));
+  assert.match(tail, /locationParams\.get\('room'\)/, 'invite-link handling runs after the start-up render');
 });
