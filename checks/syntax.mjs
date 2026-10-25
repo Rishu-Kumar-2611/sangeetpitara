@@ -14,6 +14,7 @@ const files = [
   'ads.mjs',
   'media-relay.mjs',
   'app.js',
+  'room-palette.js',
   'relay-pcm.js',
   'relay-capture-worklet.js',
   'relay-playout-worklet.js',

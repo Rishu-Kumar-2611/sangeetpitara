@@ -14,7 +14,7 @@ const controller = new AbortController();
 const budget = setTimeout(() => controller.abort(), 260_000);
 const normalize = (text) => text.replace(/\r\n/g, '\n');
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const assetVersion = '20261025-fix1';
+const assetVersion = '20261025-glass1';
 
 async function get(path) {
   const url = new URL(path, origin);
@@ -48,7 +48,7 @@ try {
   console.log('PASS PCM16 relay enabled');
 
   for (const file of [
-    'privacy.html', 'terms.html', 'styles.css', 'app.js', 'guest-id.js',
+    'privacy.html', 'terms.html', 'styles.css', 'app.js', 'guest-id.js', 'room-palette.js',
     'capture-tracks.js', 'media-relay.mjs', 'relay-pcm.js',
     'relay-capture-worklet.js', 'ads.mjs', 'notifications-sw.js',
     'branding/sangeetpitara/05-diya-eighth-note.svg',

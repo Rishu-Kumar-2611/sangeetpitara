@@ -1,19 +1,19 @@
-import { createGuestId } from './guest-id.js?v=20261025-fix1';
-import { RelayPcmPacketizer } from './relay-pcm.js?v=20261025-fix1';
+import { createGuestId } from './guest-id.js?v=20261025-glass1';
+import { RelayPcmPacketizer } from './relay-pcm.js?v=20261025-glass1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261025-fix1';
+} from './capture-tracks.js?v=20261025-glass1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261025-fix1';
+} from './media-relay.mjs?v=20261025-glass1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -25,7 +25,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261025-fix1';
+} from './ads.mjs?v=20261025-glass1';
+import { roomPalette } from './room-palette.js?v=20261025-glass1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -133,6 +134,8 @@ const state = {
   relayUnavailableNotified: false,
   visualizerRaf: null,
   liveAudioLevel: 0,
+  auraLevel: null,
+  paletteCode: null,
   muted: false,
   volume: clampVolume(localStorage.getItem('roomsound-volume') ?? 0.9),
   syncOffsetMs: clampSyncOffsetMs(localStorage.getItem('roomsound-sync-offset-ms') ?? 150),
@@ -636,8 +639,13 @@ function drawSourceWaveform(analyser) {
   context.clearRect(0, 0, width, height);
   const bins = analyser ? new Uint8Array(analyser.frequencyBinCount) : null;
   if (bins) analyser.getByteFrequencyData(bins);
-  const color = getComputedStyle(canvas).color || '#ebc979';
-  context.fillStyle = color;
+  // Bars fade between the two room tints; caret-color carries the second (canvas never shows a caret).
+  const styles = getComputedStyle(canvas);
+  const color = styles.color || '#ebc979';
+  const gradient = context.createLinearGradient(0, 0, width, 0);
+  gradient.addColorStop(0, color);
+  gradient.addColorStop(1, styles.caretColor && styles.caretColor !== 'auto' ? styles.caretColor : color);
+  context.fillStyle = gradient;
   const slot = width / WAVEFORM_BARS;
   const barWidth = Math.max(1, slot * 0.56);
   const middle = height / 2;
@@ -679,6 +687,34 @@ function checkSilentShare(level) {
   toast('No sound is reaching the room. If you shared a tab or screen, stop and share again with "Share tab audio" (or "Share system audio") turned on.', 'bad');
 }
 
+const reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+const ROOM_PALETTE_PROPERTIES = ['--room-hue-1', '--room-hue-2', '--room-color-1', '--room-color-2'];
+
+/** Sets the room's aura colours on :root; no code restores the brand default. */
+function applyRoomPalette(code) {
+  const rootStyle = document.documentElement.style;
+  if (!code) {
+    for (const name of ROOM_PALETTE_PROPERTIES) rootStyle.removeProperty(name);
+    state.paletteCode = null;
+    return;
+  }
+  if (state.paletteCode === code) return;
+  const palette = roomPalette(code);
+  rootStyle.setProperty('--room-hue-1', String(palette.hue1));
+  rootStyle.setProperty('--room-hue-2', String(palette.hue2));
+  rootStyle.setProperty('--room-color-1', palette.color1);
+  rootStyle.setProperty('--room-color-2', palette.color2);
+  state.paletteCode = code;
+}
+
+/** Lets the aura breathe with the live level; held still for reduced motion. */
+function setAuraLevel(level) {
+  const value = reducedMotionQuery?.matches ? 0 : Math.round(Math.min(1, level) * 50) / 50;
+  if (value === state.auraLevel) return;
+  state.auraLevel = value;
+  $('#aura')?.style.setProperty('--aura-level', String(value));
+}
+
 function updateSourceOrbVisualizer() {
   const orb = $('#source-orb');
   const analyser = state.relayPlaybackAnalyser || state.relayPublisherAnalyser;
@@ -686,13 +722,15 @@ function updateSourceOrbVisualizer() {
     if (orb) orb.style.transform = '';
     drawSourceWaveform(null);
     state.liveAudioLevel = 0;
+    setAuraLevel(0);
     state.silentShareSince = null;
     state.visualizerRaf = null;
     return;
   }
   const samples = new Uint8Array(analyser.fftSize);
   state.liveAudioLevel = audioLevel(analyser, samples);
-  if (orb) orb.style.transform = `scale(${(1 + state.liveAudioLevel * 0.16).toFixed(3)})`;
+  if (orb && !reducedMotionQuery?.matches) orb.style.transform = `scale(${(1 + state.liveAudioLevel * 0.035).toFixed(3)})`;
+  setAuraLevel(state.liveAudioLevel);
   drawSourceWaveform(analyser);
   // The sharer's own playback analyser is absent, so this reads their capture.
   if (state.relayPublisherAnalyser) {
@@ -787,7 +825,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261025-fix1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261025-glass1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -861,7 +899,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261025-fix1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261025-glass1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1164,6 +1202,17 @@ function selectEntryTab(entryType) {
   });
 }
 
+function selectRoomTab(tabName) {
+  const selected = ['chat', 'people', 'health'].includes(tabName) ? tabName : 'chat';
+  $('#room-view').dataset.roomTab = selected;
+  $$('.room-tab').forEach((tab) => {
+    const active = tab.dataset.roomTab === selected;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
+  });
+}
+
 function resetToLanding(reason = '') {
   if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
   state.reconnectAttempts = 0;
@@ -1185,6 +1234,8 @@ function resetToLanding(reason = '') {
   state.messages = [];
   state.activity = [];
   $('#room-banner').classList.add('hidden');
+  applyRoomPalette(null);
+  selectRoomTab('chat');
   showLanding(reason);
 }
 
@@ -1495,6 +1546,7 @@ function renderAll() {
   $('#top-room-code').textContent = room.code;
   $('#room-title').textContent = room.name;
   $('#room-code-display').textContent = room.code;
+  applyRoomPalette(room.code);
   $('#member-count').textContent = state.members.filter((m) => m.online).length;
   $('#end-room')?.classList.toggle('hidden', state.self?.role !== 'HOST');
   renderSource();
@@ -1518,6 +1570,9 @@ function renderSource() {
     ? (starting ? 'Waiting for the source device…' : 'Everyone in the room can listen.')
     : 'Choose an audio source to start sharing with the room.';
   $('#source-status-label').textContent = live ? (starting ? 'Starting' : 'Live') : 'Waiting';
+  const initial = live ? (Array.from(String(sourceMember.name || '').trim())[0] || '').toUpperCase() : '';
+  $('#source-cover-initial').textContent = initial;
+  $('#source-orb').classList.toggle('has-initial', Boolean(initial));
   // Draw resting bars once the card has a size; the live loop takes over while audio plays.
   if (!state.visualizerRaf && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { if (!state.visualizerRaf) drawSourceWaveform(null); });
 }
@@ -1614,6 +1669,11 @@ function renderRequests() {
   $('#request-panel').classList.toggle('hidden', !canModerate && !state.requests.some((request) => request.requesterId === state.self?.id));
   const requests = canModerate ? state.requests : state.requests.filter((request) => request.requesterId === state.self?.id);
   $('#request-count').textContent = requests.length;
+  const badge = $('#room-tab-badge');
+  if (badge) {
+    badge.textContent = requests.length;
+    badge.hidden = !canModerate || !requests.length;
+  }
   if (!requests.length) {
     $('#request-list').innerHTML = `<div class="request-empty">${canModerate ? 'No pending requests. The room is under control.' : 'Your requests will appear here.'}</div>`;
     return;
@@ -2548,6 +2608,19 @@ function sendRequest() {
 
 function wireEvents() {
   $$('.entry-tab').forEach((tab) => tab.addEventListener('click', () => selectEntryTab(tab.dataset.entryTab)));
+  $$('.room-tab').forEach((tab) => tab.addEventListener('click', () => selectRoomTab(tab.dataset.roomTab)));
+  $('#room-tabs')?.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = $$('.room-tab');
+    const current = tabs.indexOf(document.activeElement);
+    if (current === -1) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? tabs.length - 1
+        : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    selectRoomTab(tabs[next].dataset.roomTab);
+    tabs[next].focus();
+  });
 
   $('#create-room').addEventListener('click', () => connectAnd({ type: 'create', roomName: $('#room-name').value.trim() }));
   $('#join-room').addEventListener('click', () => {
