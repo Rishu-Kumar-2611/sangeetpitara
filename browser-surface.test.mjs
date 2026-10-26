@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261025-glass1';
+const assetVersion = '20261026-mobile1';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
@@ -259,6 +259,7 @@ test('glass redesign: room aura, frosted panels, now-playing hero and phone tabs
   assert.match(html, /id="request-panel" data-room-section="people"/);
   assert.match(html, /id="telemetry-panel" data-room-section="health"/);
   assert.match(css, /\.room-tabs \{ display: none; \}/);
+  assert.match(css, /@media \(max-width: 860px\) \{[\s\S]*\.room-view\[data-room-tab="health"\] \[data-room-section\]:not\(\[data-room-section="health"\]\)/);
   assert.match(css, /@media \(max-width: 600px\) \{[\s\S]*\.room-view\[data-room-tab="people"\] \[data-room-section\]:not\(\[data-room-section="people"\]\)/);
   assert.match(app, /function selectRoomTab\(tabName\)/);
 });

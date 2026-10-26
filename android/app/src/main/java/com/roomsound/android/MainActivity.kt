@@ -95,6 +95,9 @@ class MainActivity : Activity() {
     private lateinit var roomCodeText: TextView
     private lateinit var roomEventsText: TextView
     private lateinit var transportText: TextView
+    private lateinit var peopleText: TextView
+    private lateinit var activityText: TextView
+    private lateinit var healthText: TextView
     private lateinit var approvalContainer: LinearLayout
     private lateinit var moderationContainer: LinearLayout
     private lateinit var chatText: TextView
@@ -501,11 +504,29 @@ class MainActivity : Activity() {
         endRoomButton = button("End room", ButtonTone.DANGER) { endRoom() }
         roomPanel.addView(endRoomButton, marginLayout())
 
-        approvalContainer = dynamicPanel()
-        roomPanel.addView(approvalContainer, marginLayout())
-        moderationContainer = dynamicPanel()
-        roomPanel.addView(moderationContainer, marginLayout())
         content.addView(roomPanel, panelLayout())
+
+        // The browser exposes People as a first-class room surface. Keep the
+        // same roster, request queue, moderation actions, and recent activity
+        // reachable on a phone instead of burying them in room controls.
+        val peoplePanel = panelContainer()
+        peoplePanel.addView(sectionTitle("People"), matchWrap())
+        peopleText = diagnosticText().apply {
+            text = "Join a room to see everyone here."
+            setPadding(dp(12), dp(11), dp(12), dp(11))
+        }
+        peoplePanel.addView(peopleText, marginLayout())
+        approvalContainer = dynamicPanel()
+        peoplePanel.addView(approvalContainer, marginLayout())
+        moderationContainer = dynamicPanel()
+        peoplePanel.addView(moderationContainer, marginLayout())
+        peoplePanel.addView(sectionLabel("Recent activity"), marginLayout())
+        activityText = diagnosticText().apply {
+            text = "No room activity yet."
+            setPadding(dp(12), dp(11), dp(12), dp(11))
+        }
+        peoplePanel.addView(activityText, matchWrap())
+        content.addView(peoplePanel, panelLayout())
 
         val chatPanel = panelContainer()
         chatPanel.addView(sectionTitle("Chat"), matchWrap())
@@ -559,6 +580,16 @@ class MainActivity : Activity() {
         }
         listeningPanel.addView(transportText, marginLayout())
         content.addView(listeningPanel, panelLayout())
+
+        val healthPanel = panelContainer()
+        healthPanel.addView(sectionTitle("Health diagnostics"), matchWrap())
+        healthPanel.addView(sectionLabel("LIVE STREAM STATUS"), matchWrap())
+        healthText = diagnosticText().apply {
+            text = "Join a room to inspect connection, capture, relay, and native audio health."
+            setPadding(dp(12), dp(11), dp(12), dp(11))
+        }
+        healthPanel.addView(healthText, matchWrap())
+        content.addView(healthPanel, panelLayout())
 
         val capturePanel = panelContainer()
         capturePanel.addView(sectionTitle("Playback sharing"), matchWrap())
@@ -851,7 +882,8 @@ class MainActivity : Activity() {
             roomConnectionText.text = "Connection: ${state.name.lowercase(Locale.US)}"
             val joined = state == RoomConnectionState.JOINED
             updateRoomEntryControls()
-        if (!joined && latestRoomState == null) runCatching { renderRoomState(null) }
+            if (!joined && latestRoomState == null) runCatching { renderRoomState(null) }
+            renderHealth()
         } catch (t: Throwable) { android.util.Log.e("RoomSound", "renderRoomConnection failed", t) }
     }
 
@@ -880,7 +912,9 @@ class MainActivity : Activity() {
                 moderationContainer.removeAllViews()
                 moderationContainer.visibility = View.GONE
             }
+            renderPeople(null)
             chatText.text = "—"
+            renderHealth()
             return
         }
 
@@ -908,8 +942,43 @@ class MainActivity : Activity() {
         endRoomButton.isEnabled = isHost
         runCatching { renderApprovalControls(state, isModerator) }
         runCatching { renderModerationControls(state, isHost, isModerator) }
+        renderPeople(state)
         renderChat(state)
+        renderHealth()
         } catch (t: Throwable) { android.util.Log.e("RoomSound", "renderRoomState failed", t); appendRoomEvent("Room UI hit an internal error: ${t.message}") }
+    }
+
+    private fun renderPeople(state: RoomState?) {
+        if (!::peopleText.isInitialized) return
+        if (state == null) {
+            peopleText.text = "Join a room to see the people, source, and request queue."
+            renderActivity()
+            return
+        }
+        val sourceId = state.room.activeSourceId
+        peopleText.text = buildString {
+            append(state.members.size).append(if (state.members.size == 1) " person" else " people")
+            append(" in room\n\n")
+            state.members.forEachIndexed { index, member ->
+                if (index > 0) append('\n')
+                append(if (member.online) "● " else "○ ")
+                append(member.name)
+                if (member.id == state.self?.id) append(" (You)")
+                append(" — ").append(member.role.lowercase(Locale.US))
+                if (member.id == sourceId) append(" · sharing audio")
+                else if (!member.online) append(" · offline")
+            }
+            val pending = state.requests.count { it.status.equals("PENDING", ignoreCase = true) }
+            append("\n\nPending requests: ").append(pending)
+        }
+        renderActivity()
+    }
+
+    private fun renderActivity() {
+        if (!::activityText.isInitialized) return
+        activityText.text = roomEvents.toList().takeLast(8)
+            .joinToString("\n") { "• $it" }
+            .ifBlank { "No room activity yet." }
     }
 
     private fun renderChat(state: RoomState) {
@@ -1018,12 +1087,66 @@ class MainActivity : Activity() {
         val snapshot = roomSession?.transportSnapshot()
         if (snapshot == null) {
             transportText.text = "Audio sharing is unavailable."
+            renderHealth()
             return
         }
         transportText.text = when {
             !snapshot.mediaBackendConfigured -> "Audio sharing is unavailable."
             snapshot.backendReady -> "Audio sharing is ready."
             else -> "Audio sharing is preparing."
+        }
+        renderHealth()
+    }
+
+    private fun renderHealth() {
+        if (!::healthText.isInitialized) return
+        val session = roomSession
+        val room = latestRoomState
+        val transport = session?.transportSnapshot()
+        val capture = latestSnapshot
+        healthText.text = buildString {
+            append("Connection: ")
+                .append(session?.connectionState()?.name?.lowercase(Locale.US) ?: "not connected")
+            append("\nCapture: ").append(capture.status.name.lowercase(Locale.US))
+            append(" · frames ").append(capture.framesCaptured)
+            append(" · non-silent ").append(capture.nonSilentFrames)
+            room?.let {
+                append("\nRoom: ").append(it.room.code)
+                append(" · source ").append(it.room.sourceStatus.lowercase(Locale.US))
+                append(" · epoch ").append(it.room.sourceEpoch)
+            }
+            if (transport == null) {
+                append("\nMedia: not configured")
+                return@buildString
+            }
+            append("\nMedia: ").append(if (transport.mediaRelayEnabled) "PCM16 relay" else "direct WebRTC")
+            append("\nBackend: ").append(
+                when {
+                    !transport.mediaBackendConfigured -> "unavailable"
+                    transport.backendReady -> "ready"
+                    else -> "preparing"
+                },
+            )
+            append("\nPublished: ").append(transport.acceptedFrames)
+            append(" · dropped: ").append(
+                transport.droppedUnauthorizedFrames +
+                    transport.droppedNotLiveFrames +
+                    transport.droppedStaleEpochFrames +
+                    transport.droppedUnavailableFrames,
+            )
+            if (transport.mediaRelayEnabled) {
+                append("\nReceived relay: ").append(transport.receivedRelayFrames)
+                append(" · rejected: ").append(
+                    transport.droppedRelayUnauthorizedFrames +
+                        transport.droppedRelayStaleEpochFrames +
+                        transport.droppedRelayMalformedFrames +
+                        transport.droppedRelayUnavailableFrames,
+                )
+            }
+            transport.publisherDiagnostics
+                ?.takeIf { it.isNotBlank() }
+                ?.take(1800)
+                ?.let { append("\n\nNative diagnostics:\n").append(it) }
         }
     }
 
@@ -1425,6 +1548,7 @@ class MainActivity : Activity() {
         }
         renderCaptureControls(latestRoomState ?: roomSession?.currentRoomState())
         renderPlaybackHandoffControl()
+        renderHealth()
         requestTransportRender()
     }
 
@@ -1496,6 +1620,7 @@ class MainActivity : Activity() {
             roomEventsText.text = message
             roomEventsText.visibility = View.VISIBLE
         }
+        renderActivity()
     }
 
     private enum class ButtonTone {

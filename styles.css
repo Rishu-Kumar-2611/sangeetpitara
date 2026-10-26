@@ -985,6 +985,20 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
 @media (max-width: 860px) {
   .landing-view { grid-template-columns: minmax(0, 1fr); min-height: 0; padding: 8px 0 24px; }
   .landing-copy .brand-mark { margin-bottom: 32px; }
+
+  /* Keep the desktop sidebar's People and Health surfaces reachable on
+     narrow tablets and phones whose browser reports a viewport above 600px. */
+  .room-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    border-radius: 16px;
+  }
+  .room-view[data-room-tab="chat"] [data-room-section]:not([data-room-section="chat"]),
+  .room-view[data-room-tab="people"] [data-room-section]:not([data-room-section="people"]),
+  .room-view[data-room-tab="health"] [data-room-section]:not([data-room-section="health"]) { display: none; }
+  .room-view[data-room-tab="people"] .lower-grid, .room-view[data-room-tab="health"] .lower-grid { display: none; }
 }
 
 @media (max-width: 600px) {
