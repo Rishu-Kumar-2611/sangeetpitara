@@ -15,6 +15,9 @@ const budget = setTimeout(() => controller.abort(), 260_000);
 const normalize = (text) => text.replace(/\r\n/g, '\n');
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const assetVersion = '20261026-mobile1';
+const releaseProperties = await readFile(new URL('../release.properties', import.meta.url), 'utf8');
+const expectedVersion = releaseProperties.match(/^VERSION_NAME=(.+)$/m)?.[1]?.trim();
+assert.match(expectedVersion || '', /^\d+\.\d+\.\d+$/, 'release.properties must define VERSION_NAME');
 
 async function get(path) {
   const url = new URL(path, origin);
@@ -40,6 +43,7 @@ try {
   for (const path of ['/health', '/ready']) {
     const status = await (await get(path)).json();
     assert.equal(status.ok, true, `${path} is not healthy`);
+    assert.equal(status.version, expectedVersion, `${path} is serving version ${status.version}, expected ${expectedVersion}`);
     console.log(`PASS ${path}`);
   }
   // Never print the complete config: explicitly enabled TURN can contain credentials.
