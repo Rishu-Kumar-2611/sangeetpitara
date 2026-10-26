@@ -34,6 +34,7 @@ import {
   RequestBodyError as SecureRequestBodyError,
 } from './security.mjs';
 import { DEFAULT_REWARDED_ACCESS_CONFIG, normalizeRewardedAccessConfig } from './ads.mjs';
+import { assertProductionConfig } from './config.mjs';
 import {
   validatePcm16FrameHeader,
   MEDIA_RELAY_CHANNELS,
@@ -45,6 +46,10 @@ import {
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const rootPath = resolve(root);
+const releaseProperties = await readFile(new URL('./release.properties', import.meta.url), 'utf8').catch(() => '');
+const releaseProperty = (name) => releaseProperties.match(new RegExp(`^${name}=(.+)$`, 'm'))?.[1]?.trim() || '';
+const appVersion = String(process.env.APP_VERSION || releaseProperty('VERSION_NAME') || '0.0.0').trim();
+assertProductionConfig(process.env, { appVersion });
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || '0.0.0.0';
 const canonicalPublicHost = String(
@@ -58,6 +63,7 @@ const legacyPublicHosts = new Set(
     .filter(Boolean),
 );
 const rooms = new Map();
+const reservedRoomCodes = new Set();
 const requestTtlMs = 45_000;
 
 const requestJitterMs = 5_000;
@@ -78,8 +84,8 @@ const BINARY_FRAME_RATE_MAX = 1200;
 const BINARY_BYTES_PER_WINDOW_MAX = 2 * 96_000 * (BINARY_FRAME_WINDOW_MS / 1_000) + BINARY_FRAME_RATE_MAX * 20;
 const STREAMING_STATIC_THRESHOLD_BYTES = 256 * 1024;
 // The Android app ships through GitHub Releases (.github/workflows/release.yml).
-// Every /downloads/*.apk link, including ones already shared and the 1.0.1
-// in-app guidance, redirects to the newest published APK.
+// Every /downloads/*.apk link, including legacy names already shared in the
+// wild, redirects to the newest published APK.
 const ANDROID_APK_URL = /^https:\/\//.test(process.env.ANDROID_APK_URL || '')
   ? process.env.ANDROID_APK_URL
   : 'https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/latest/download/SangeetPitara.apk';
@@ -109,7 +115,7 @@ const adsense = {
   roomSlot: adsenseRoomSlot,
 };
 const rewardedAccess = normalizeRewardedAccessConfig({
-  enabled: false,
+  enabled: !['0', 'false', 'off', 'no'].includes(String(process.env.REWARDED_ACCESS_ENABLED ?? '0').trim().toLowerCase()),
   provider: process.env.REWARDED_AD_PROVIDER || DEFAULT_REWARDED_ACCESS_CONFIG.provider,
   mode: process.env.REWARDED_AD_MODE || DEFAULT_REWARDED_ACCESS_CONFIG.mode,
   rewardDurationSeconds: process.env.REWARDED_AD_DURATION_SECONDS || DEFAULT_REWARDED_ACCESS_CONFIG.rewardDurationSeconds,
@@ -138,7 +144,7 @@ const audit = createAuditRecorder({
 });
 const health = createHealthState({
   service: 'roomsound',
-  version: process.env.APP_VERSION || '0.1.0',
+  version: appVersion,
   ready: false,
   checks: {
     repository: async () => ({ ok: await repository.healthCheck(), kind: repository.kind }),
@@ -180,10 +186,12 @@ const securityHeaders = {
 
 const rateLimit = new Map();
 const staticRateLimit = new Map();
+const authRateLimit = new Map();
 setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of rateLimit) if (now > entry.resetAt) rateLimit.delete(ip);
   for (const [ip, entry] of staticRateLimit) if (now > entry.resetAt) staticRateLimit.delete(ip);
+  for (const [ip, entry] of authRateLimit) if (now > entry.resetAt) authRateLimit.delete(ip);
 }, 60_000).unref();
 
 function checkRateLimit(ip, { isStaticAsset = false } = {}) {
@@ -197,6 +205,17 @@ function checkRateLimit(ip, { isStaticAsset = false } = {}) {
   }
   entry.count += 1;
   return entry.count <= max;
+}
+
+function checkAuthRateLimit(ip) {
+  const now = Date.now();
+  let entry = authRateLimit.get(ip);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+    authRateLimit.set(ip, entry);
+  }
+  entry.count += 1;
+  return entry.count <= 20;
 }
 
 function isAllowedOrigin(origin, allowedList) {
@@ -572,6 +591,11 @@ async function handleAuthRequest(req, res, requestPath) {
     return true;
   }
 
+  if ((isRegister || isLogin) && !checkAuthRateLimit(getClientIp(req))) {
+    sendJson(res, 429, { error: 'Too many authentication attempts. Try again later.', code: 'AUTH_RATE_LIMITED' }, { 'Retry-After': '60' });
+    return true;
+  }
+
   try {
     if (isCurrentUser) {
       const user = await auth.currentUser(sessionTokenFromRequest(req));
@@ -636,6 +660,10 @@ function findRoomByCode(code) {
   return [...rooms.values()].find((room) => room.code === normalizedCode);
 }
 
+function roomCodeIsUnavailable(code) {
+  return reservedRoomCodes.has(code) || Boolean(findRoomByCode(code));
+}
+
 function persistedRoomRecord(room) {
   return {
     id: room.id,
@@ -656,7 +684,11 @@ function persistedRoomRecord(room) {
 async function persistRoom(room) {
   if (typeof repository.updateRoom !== 'function') return;
   room.updatedAt = Date.now();
-  await repository.updateRoom(persistedRoomRecord(room));
+  const record = persistedRoomRecord(room);
+  room.persistenceTail = (room.persistenceTail || Promise.resolve())
+    .catch(() => {})
+    .then(() => repository.updateRoom(record));
+  await room.persistenceTail;
 }
 
 async function createPersistedRoom(room) {
@@ -693,6 +725,7 @@ async function restorePersistedRooms() {
       endedAt: null,
       cleanupTimer: null,
       hostFailoverTimer: null,
+      persistenceTail: Promise.resolve(),
     };
     rooms.set(room.id, room);
   }
@@ -751,13 +784,15 @@ function attachRoom(ws, room, member) {
 }
 
 async function createRoom(ws, message) {
+  if (ws.roomId || ws.memberId) return sendError(ws, 'You are already in a room. Leave it before creating another room.');
   if (await moderationBlocksEntry(ws)) return;
   const roomName = safeText(message.name, 60);
   const displayName = safeText(message.displayName, 40);
   if (!roomName) return sendError(ws, 'Enter a room name before creating a room.');
   if (!displayName) return sendError(ws, 'Enter your name before creating or joining a room.');
   let code = randomCode();
-  while (findRoomByCode(code)) code = randomCode();
+  while (roomCodeIsUnavailable(code)) code = randomCode();
+  reservedRoomCodes.add(code);
 
   const room = {
     id: randomId(),
@@ -796,18 +831,24 @@ async function createRoom(ws, message) {
     await createPersistedRoom(room);
     rooms.set(room.id, room);
   } catch (error) {
+    reservedRoomCodes.delete(code);
     logger.error('Room persistence failed during creation', { error });
     return sendError(ws, 'The room could not be saved. Try again.');
   }
+  reservedRoomCodes.delete(code);
   attachRoom(ws, room, member);
 }
 
 async function joinRoom(ws, message) {
+  if (ws.roomId || ws.memberId) return sendError(ws, 'You are already in a room. Leave it before joining another room.');
   const displayName = safeText(message.displayName, 40);
   if (!displayName) return sendError(ws, 'Enter your name before creating or joining a room.');
   const room = findRoomByCode(message.code);
   if (!room || room.status !== 'ACTIVE') return sendError(ws, 'That room is unavailable or has ended.');
   if (await moderationBlocksEntry(ws, room)) return;
+  // Entry checks include an async repository lookup. Re-check the room after
+  // it completes so an end/remove action cannot be followed by a stale join.
+  if (rooms.get(room.id) !== room || room.status !== 'ACTIVE') return sendError(ws, 'That room is unavailable or has ended.');
 
   const guestIdClean = safeText(message.guestId, 80);
   const reconnectSecretClean = safeText(message.reconnectSecret, 80) || null;
@@ -1534,7 +1575,8 @@ const wss = new WebSocketServer({
 });
 
 function dispatchMessage(ws, data) {
-  void handleMessage(ws, data).catch((error) => {
+  const next = (ws._dispatchTail || Promise.resolve()).then(() => handleMessage(ws, data));
+  ws._dispatchTail = next.catch((error) => {
     logger.error('WebSocket message handling failed', { error });
     sendError(ws, 'The server could not process that action.');
   });
@@ -1582,6 +1624,11 @@ wss.on('connection', (ws, req) => {
   ws.authenticatedUser = null;
   ws.authReady = false;
   ws.pendingMessages = [];
+  // JSON room commands can contain async repository checks. Serialize them
+  // per socket so two rapid clicks cannot create/join/leave against stale
+  // membership state. Binary media remains synchronous and independently
+  // bounded so audio is not queued behind a slow control request.
+  ws._dispatchTail = Promise.resolve();
   websocketConnections.set(wss.clients.size);
   void auth.currentUser(sessionTokenFromRequest(req)).then((user) => {
     ws.authenticatedUser = user;

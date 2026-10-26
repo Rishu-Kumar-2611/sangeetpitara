@@ -66,13 +66,15 @@ Browser room create/join is always anonymous. Older deployments may still have
 WebSocket room create/join; the internal HTTP account/admin APIs remain
 authenticated.
 
-Before a browser can create or join a room, it must complete the configured
-rewarded-access flow. The current `/config` response publishes:
+When rewarded access is enabled by deployment configuration, a browser must
+complete the configured access flow before entering a room. The default
+production configuration keeps room access unrestricted. The current default
+`/config` response publishes:
 
 ```json
 {
   "rewardedAccess": {
-    "enabled": true,
+    "enabled": false,
     "provider": "demo-local",
     "mode": "offline",
     "rewardDurationSeconds": 30,
@@ -320,14 +322,14 @@ Actions: `ANDROID_KEYSTORE_BASE64` (the copied text), `ANDROID_KEYSTORE_PASSWORD
 To release, push a version tag:
 
 ```sh
-git tag v1.0.2
-git push origin v1.0.2
+git tag v1.1.2
+git push origin v1.1.2
 ```
 
-`.github/workflows/release.yml` runs the unit tests, builds `assembleRelease`
-with versionName `1.0.2` and versionCode `10002` (major·10000 + minor·100 +
-patch), verifies the signature, and publishes `SangeetPitara.apk` plus
-`SangeetPitara-v1.0.2.apk` with generated notes. The Android app checks
+`.github/workflows/release.yml` runs the web and Android tests, builds
+`assembleRelease` with the tag's versionName and versionCode
+(major·10000 + minor·100 + patch), verifies the signature, and publishes
+`SangeetPitara.apk` plus a versioned APK with generated notes. The Android app checks
 `releases/latest` on launch and offers a newer version. Every Android pull
 request also uploads a debug-signed `SangeetPitara-debug-apk` artifact for
 testing, and builds a release APK with a throwaway key to prove the release

@@ -10,6 +10,7 @@ const files = [
   'security.mjs',
   'migrate.mjs',
   'billing.mjs',
+  'config.mjs',
   'account-client.mjs',
   'ads.mjs',
   'media-relay.mjs',

@@ -321,6 +321,9 @@ class PlaybackCaptureController(
             AudioFormat.ENCODING_PCM_16BIT,
         )
         check(minBuffer > 0) { "Android returned an invalid AudioRecord buffer size: $minBuffer" }
+        check(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            "Android playback-capture permission is no longer granted."
+        }
         return AudioRecord.Builder()
             .setAudioFormat(format)
             .setBufferSizeInBytes(max(minBuffer, FRAME_SAMPLES * 2 * CAPTURE_BUFFER_FRAME_MULTIPLIER))

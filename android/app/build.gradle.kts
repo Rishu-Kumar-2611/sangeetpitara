@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,6 +14,10 @@ fun configuredValue(name: String): String? = providers.gradleProperty(name)
     .orNull
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
+
+val releaseProperties = Properties().apply {
+    rootProject.file("../release.properties").inputStream().use { load(it) }
+}
 
 fun String.asBuildConfigStringLiteral(): String = buildString {
     append('"')
@@ -33,8 +39,10 @@ fun String.asBuildConfigStringLiteral(): String = buildString {
 val configuredDefaultEndpoint = configuredValue("ROOMSOUND_DEFAULT_ENDPOINT")
     ?: "wss://sangeet-pitaraa.onrender.com"
 // The release workflow derives both from the pushed v<major>.<minor>.<patch> tag.
-val configuredVersionName = configuredValue("ROOMSOUND_VERSION_NAME") ?: "1.0.1"
-val configuredVersionCode = configuredValue("ROOMSOUND_VERSION_CODE")?.toInt() ?: 3
+val configuredVersionName = configuredValue("ROOMSOUND_VERSION_NAME")
+    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.2")
+val configuredVersionCode = configuredValue("ROOMSOUND_VERSION_CODE")?.toInt()
+    ?: releaseProperties.getProperty("VERSION_CODE", "10102").toInt()
 // GitHub repository whose latest release the app checks for an update notice.
 val configuredReleasesRepository = configuredValue("ROOMSOUND_RELEASES_REPOSITORY")
     ?: "Rishu-Kumar-2611/sangeetpitara"

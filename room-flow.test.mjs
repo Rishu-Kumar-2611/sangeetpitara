@@ -85,9 +85,24 @@ test('config stays STUN-only when relay credentials exist but TURN is disabled',
   assert.deepEqual(config.iceServers, [{ urls: 'stun:stun.l.google.com:19302' }]);
 });
 
+test('rapid duplicate room-entry commands are serialized and cannot create two memberships', async (t) => {
+  const { server, url } = await startServer();
+  t.after(() => server.kill());
+  const socket = client(url);
+  t.after(() => socket.socket.close());
+  await socket.open();
+  const joined = socket.wait((message) => message.type === 'joined');
+  const errors = socket.wait((message) => message.type === 'error' && /already in a room/i.test(message.message));
+  socket.socket.send(JSON.stringify({ type: 'create-room', name: 'Race room', displayName: 'Host', guestId: 'race-host' }));
+  socket.socket.send(JSON.stringify({ type: 'create-room', name: 'Second room', displayName: 'Host', guestId: 'race-host' }));
+  await joined;
+  await errors;
+});
+
 test('legacy public hostname redirects to the canonical room service', async (t) => {
   const { server, http: httpUrl } = await startServer({
     NODE_ENV: 'production',
+    ROOMSOUND_TEST_MODE: '1',
     CANONICAL_PUBLIC_HOST: 'canonical.example.test',
     LEGACY_PUBLIC_HOSTS: 'legacy.example.test',
   });

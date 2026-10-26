@@ -1,7 +1,7 @@
 name: Android release
 
-# Push a tag like v1.0.2 to build, sign and publish the Android app:
-#   git tag v1.0.2 && git push origin v1.0.2
+# Push a tag like v1.1.2 to build, sign and publish the Android app:
+#   git tag v1.1.2 && git push origin v1.1.2
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
 #   ANDROID_KEYSTORE_BASE64    base64 of the release .jks/.keystore file
 #   ANDROID_KEYSTORE_PASSWORD  keystore password
@@ -51,6 +51,27 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Set up Node.js and run web release checks
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install and test web release
+        working-directory: .
+        run: npm ci && npm test && npm run check
+
+      - name: Verify repository release identity
+        working-directory: .
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          expected="$(sed -n 's/^VERSION_NAME=//p' release.properties)"
+          if [ "$TAG" != "v$expected" ]; then
+            echo "::error::Tag $TAG does not match release.properties version $expected."
+            exit 1
+          fi
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -79,7 +100,7 @@ jobs:
           ROOMSOUND_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ROOMSOUND_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ROOMSOUND_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon --console=plain
+        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease :app:lintRelease --no-daemon --console=plain
 
       - name: Verify signature and stage assets
         env:

@@ -63,10 +63,11 @@ package, RoomSound wire protocol, and
   `https://`. `http://` becomes `ws://`, and `https://` becomes `wss://` before
   the native client is created. The normal room UI does not display the raw
   endpoint or provide a manual connection probe.
-- A local six-hour rewarded-access gate blocks room creation, joining, and
-  capture until a 30-second completion callback. Offline builds use the
-  explicit `LocalDemoRewardedAccessProvider` countdown; this is provider-neutral
-  plumbing and **does not integrate a real ad SDK**.
+- An optional local six-hour rewarded-access gate can block room creation,
+  joining, and capture when explicitly enabled. Offline builds use the explicit
+  `LocalDemoRewardedAccessProvider` countdown; this is provider-neutral
+  plumbing and **does not integrate a real ad SDK**. The shipped production
+  configuration keeps access unrestricted.
   When `ROOMSOUND_DEFAULT_ENDPOINT` is omitted, debug emulator builds default
   to `ws://10.0.2.2:4173`. Physical-device and release builds use the current
   public Render endpoint `wss://sangeet-pitaraa.onrender.com`; pass an explicit

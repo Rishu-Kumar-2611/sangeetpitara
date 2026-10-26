@@ -29,6 +29,7 @@ WORKDIR /app/android
 COPY android/gradlew ./gradlew
 COPY android/gradle ./gradle
 COPY android/settings.gradle.kts android/build.gradle.kts android/gradle.properties ./
+COPY release.properties ../release.properties
 COPY android/app ./app
 RUN chmod +x ./gradlew \
     && ./gradlew :app:assembleDebug --no-daemon --console=plain \

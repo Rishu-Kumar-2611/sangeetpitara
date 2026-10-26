@@ -11,6 +11,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: APP_VERSION
+        value: 1.1.2
       - key: HOST
         value: 0.0.0.0
       - key: TRUST_PROXY
@@ -34,7 +36,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: ALLOWED_ORIGINS
-        sync: false
+        value: https://sangeet-pitaraa.onrender.com
       - key: ADSENSE_ENABLED
         sync: false
       - key: ADSENSE_CLIENT

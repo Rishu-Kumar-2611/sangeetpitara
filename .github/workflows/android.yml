@@ -32,8 +32,8 @@ jobs:
           java-version: '17'
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-      - name: Run JVM unit tests and build a test APK
-        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
+      - name: Run JVM unit tests, lint, and build a test APK
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --no-daemon --console=plain
       # Debug-signed build for trying a pull request on a phone before merge.
       # Published releases come only from release.yml.
       - name: Upload test APK
