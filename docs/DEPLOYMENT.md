@@ -14,6 +14,10 @@ needed to run the web service.
 - The reverse proxy forwards HTTP and WebSocket upgrade requests and sets
   `X-Forwarded-For` only when `TRUST_PROXY=1` is enabled.
 - `ALLOWED_ORIGINS` contains the browser's exact HTTPS origin.
+- `APP_VERSION` matches the release tag and `METRICS_BEARER_TOKEN` is a random
+  secret of at least 32 characters; `/metrics` must not be public.
+- `SESSION_COOKIE_SECURE=1` and `TRUST_PROXY=1` are set when TLS terminates at
+  the managed reverse proxy.
 - The default `TURN_ENABLED=0` STUN-only mode is tested on reachable networks;
   if cross-network validation requires a relay, explicitly set `TURN_ENABLED=1`
   and inject TURN values from the secret store.
@@ -87,6 +91,13 @@ managed PostgreSQL database. In the Render dashboard, review the generated
 service, set `ALLOWED_ORIGINS`, TURN values, and any billing secrets, then apply
 the blueprint. Render supplies `PORT`; the blueprint sets `/health` as the
 deployment health check and enables TLS at the platform edge.
+
+The production server intentionally refuses to start if `DATABASE_URL`, an
+exact HTTPS `ALLOWED_ORIGINS`, a 32-character `METRICS_BEARER_TOKEN`, secure
+cookies, proxy trust, or a semantic `APP_VERSION` is missing. This prevents a
+deployment from silently falling back to the in-memory repository or exposing
+operational metrics. `ROOMSOUND_TEST_MODE=1` is reserved for isolated tests and
+must never be set on a public service.
 
 The `STRIPE_*` values are `sync: false`. Leave them unset to keep billing
 disabled; configure the secret key, webhook secret, price ID, and return URLs
