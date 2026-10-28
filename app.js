@@ -1143,7 +1143,7 @@ function openMobileAudioGuide() {
   if (!guidance) return false;
   const roomCode = state.room?.code ? ` Room code: <strong>${escapeHtml(state.room.code)}</strong>.` : '';
   const download = guidance.downloadHref
-    ? `<a class="primary-button mobile-audio-download" href="${escapeHtml(guidance.downloadHref)}" download>${escapeHtml(guidance.downloadLabel)}</a>`
+    ? `<a class="primary-button mobile-audio-download" href="${escapeHtml(guidance.downloadHref)}" target="_blank" rel="noopener" download>${escapeHtml(guidance.downloadLabel)}</a>`
     : '';
   const steps = guidance.downloadHref
     ? '<ol class="mobile-audio-steps"><li>Open or install the SangeetPitara Android app (or tap <strong>Share audio file</strong> in the room to stream a local MP3/WAV file directly from this browser).</li><li>Join this same room with the displayed code.</li><li>Request device audio, approve it on the laptop, then tap <strong>Share device audio</strong> in the app.</li></ol>'
@@ -2709,6 +2709,14 @@ function wireEvents() {
   $('#end-room').addEventListener('click', () => openRoomConfirmation('end'));
   document.addEventListener('click', (event) => {
     if (!event.target.closest('.room-actions')) closeRoomMenu();
+    const link = event.target.closest('a[href]');
+    if (link) {
+      const href = link.getAttribute('href') || '';
+      if (href && href !== '#' && !href.startsWith('javascript:')) {
+        link.setAttribute('target', '_blank');
+        link.setAttribute('rel', 'noopener');
+      }
+    }
   });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeRoomMenu();

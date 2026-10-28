@@ -12,7 +12,9 @@ import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
+import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.net.wifi.WifiManager
@@ -64,6 +66,7 @@ class PlaybackCaptureService : Service() {
     private var notificationToken: String? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var sleepKeepAliveTrack: AudioTrack? = null
     private var mediaSession: MediaSession? = null
     private var mediaSessionToken: String? = null
     private var focusRequest: AudioFocusRequest? = null
@@ -406,6 +409,14 @@ class PlaybackCaptureService : Service() {
     @Suppress("DEPRECATION")
     private fun setNetworkLocks(required: Boolean) {
         if (!required) {
+            releaseResource("sleep keep-alive track") {
+                sleepKeepAliveTrack?.let { track ->
+                    runCatching { track.pause() }
+                    runCatching { track.flush() }
+                    runCatching { track.release() }
+                }
+                sleepKeepAliveTrack = null
+            }
             releaseResource("CPU lock") { wakeLock?.let { if (it.isHeld) it.release() } }
             releaseResource("Wi-Fi lock") { wifiLock?.let { if (it.isHeld) it.release() } }
             return
@@ -415,13 +426,51 @@ class PlaybackCaptureService : Service() {
                 setReferenceCounted(false)
                 wakeLock = this
             }
+        val wifiMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+        } else {
+            WifiManager.WIFI_MODE_FULL_HIGH_PERF
+        }
         val wifi = wifiLock ?: applicationContext.getSystemService(WifiManager::class.java)
-            .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "RoomSound:room-audio").apply {
+            .createWifiLock(wifiMode, "RoomSound:room-audio").apply {
                 setReferenceCounted(false)
                 wifiLock = this
             }
         if (!cpu.isHeld) cpu.acquire()
         if (!wifi.isHeld) wifi.acquire()
+        ensureSleepKeepAliveTrack()
+    }
+
+    private fun ensureSleepKeepAliveTrack() {
+        val existing = sleepKeepAliveTrack
+        if (existing != null && existing.state == AudioTrack.STATE_INITIALIZED) {
+            if (existing.playState != AudioTrack.PLAYSTATE_PLAYING) {
+                runCatching { existing.play() }
+            }
+            return
+        }
+        runCatching {
+            val sampleRate = 8_000
+            val frames = 800 // 100 ms of silent mono PCM16 looped in hardware
+            val silence = ByteArray(frames * 2)
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(mediaAudioAttributes())
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build(),
+                )
+                .setBufferSizeInBytes(silence.size)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+            track.write(silence, 0, silence.size)
+            track.setLoopPoints(0, frames, -1)
+            track.setVolume(0f)
+            track.play()
+            sleepKeepAliveTrack = track
+        }
     }
 
     private fun updateMediaSession(token: String, capture: Boolean) {

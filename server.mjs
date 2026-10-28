@@ -856,15 +856,21 @@ async function joinRoom(ws, message) {
     (ws.authenticatedUser && member.accountId === ws.authenticatedUser.id)
       || (!ws.authenticatedUser && member.guestId === guestIdClean)
   ));
-  if (existing?.ws) return sendError(ws, 'This account is already connected to the room.');
-  if (existing && !existing.ws) {
-    // Prevent another room participant from spoofing a disconnected member's guestId
+  if (existing) {
+    // Prevent another room participant from spoofing a member's guestId
     // when a client-side reconnectSecret was bound to the member slot.
     if (existing.reconnectSecret && reconnectSecretClean !== existing.reconnectSecret) {
       return sendError(ws, 'This account is already connected to the room.');
     }
+    if (existing.ws && existing.ws !== ws) {
+      const staleSocket = existing.ws;
+      existing.ws = null;
+      clearSocketRoom(staleSocket);
+      try { staleSocket.close(1000, 'Replaced by reconnect'); } catch {}
+    }
     existing.ws = ws;
     existing.name = displayName;
+    if (reconnectSecretClean) existing.reconnectSecret = reconnectSecretClean;
     attachRoom(ws, room, existing);
     return;
   }

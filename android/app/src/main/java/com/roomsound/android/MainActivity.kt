@@ -897,7 +897,7 @@ class MainActivity : Activity() {
             takeoverButton.isEnabled = false
             requestAudioButton.text = "Request to share device audio"
             requestAudioButton.isEnabled = false
-            leaveRoomButton.isEnabled = false
+            leaveRoomButton.isEnabled = roomSession?.connectionState() !in setOf(null, RoomConnectionState.IDLE, RoomConnectionState.CLOSED)
             endRoomButton.isEnabled = false
             runCatching {
                 approvalContainer.removeAllViews()

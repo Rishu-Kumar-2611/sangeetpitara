@@ -99,7 +99,7 @@ class RoomSessionCoordinator(
     fun pendingCapture(): PendingCapture? = attempt?.let { PendingCapture(it.id, it.phase) }
     fun isTakeoverPending(): Boolean = takeover != null
     fun isRoomSelectionPending(): Boolean = roomSelectionPending
-    fun canSelectRoom(): Boolean = !closed && !roomSelectionPending && client?.currentRoomState() == null
+    fun canSelectRoom(): Boolean = !closed && !roomSelectionPending && joinedState() == null
     fun playbackVolume(): Double = volume
     fun hasMediaBackend(): Boolean = transport?.hasMediaBackend() == true
     fun transportSnapshot(): RoomAudioTransportSnapshot? = transport?.snapshot()
@@ -219,9 +219,12 @@ class RoomSessionCoordinator(
     }
     private fun selectRoom(action: (RoomSoundWebSocketClient) -> Unit) {
         val active = client ?: return
-        if (roomSelectionPending || active.currentRoomState() != null) {
+        if (roomSelectionPending || joinedState() != null) {
             status("Leave the current room before selecting another room.")
             return
+        }
+        if (active.connectionState() != RoomConnectionState.IDLE && active.connectionState() != RoomConnectionState.CLOSED) {
+            active.disconnect()
         }
         roomSelectionPending = true
         if (!mediaConfigured) {
@@ -500,15 +503,12 @@ class RoomSessionCoordinator(
 
     private fun handleConnection(state: RoomConnectionState) {
         if (state != RoomConnectionState.JOINED) {
-            val keepLiveCaptureAcrossReconnect = state in setOf(
-                RoomConnectionState.RECONNECT_WAIT,
-                RoomConnectionState.CONNECTING,
-                RoomConnectionState.OPEN,
-            ) && attempt?.phase in setOf(
-                ConsentPhase.INITIALIZING,
-                ConsentPhase.AWAITING_LIVE,
-                ConsentPhase.LIVE,
-            )
+            val keepLiveCaptureAcrossReconnect = !closed && !endPending && client != null &&
+                attempt?.phase in setOf(
+                    ConsentPhase.INITIALIZING,
+                    ConsentPhase.AWAITING_LIVE,
+                    ConsentPhase.LIVE,
+                )
             if (!keepLiveCaptureAcrossReconnect) {
                 abortAttempt("Room signaling is unavailable. Share again after reconnecting.", false)
             }

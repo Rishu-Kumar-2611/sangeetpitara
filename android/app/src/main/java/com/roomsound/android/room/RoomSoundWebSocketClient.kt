@@ -466,10 +466,24 @@ class RoomSoundWebSocketClient(
                 "state" -> handleRoomState(message, joined = false)
                 "error" -> {
                     val serverMessage = message.stringOrNull("message") ?: "SangeetPitara rejected the request."
+                    val isTransientDuplicate = serverMessage.contains("already connected", ignoreCase = true)
+                    var shouldDisconnectUnjoined = false
+                    var shouldRetryDuplicate = false
                     synchronized(lock) {
-                        if (roomState == null) roomIntent = null
+                        if (isTransientDuplicate && roomIntent != null) {
+                            shouldRetryDuplicate = true
+                        } else if (roomState == null) {
+                            roomIntent = null
+                            shouldDisconnectUnjoined = true
+                        }
                     }
                     emit(RoomSoundEvent.Error(serverMessage))
+                    if (shouldRetryDuplicate) {
+                        webSocketSnapshot()?.close(NORMAL_CLOSE, "Retry reconnect")
+                        scheduleReconnectIfNeeded()
+                    } else if (shouldDisconnectUnjoined) {
+                        disconnect()
+                    }
                 }
                 "chat" -> emit(RoomSoundEvent.Chat(parseChatMessage(message.objectOrEmpty("message"))))
                 "reaction" -> message.stringOrNull("messageId")?.let { id ->
@@ -687,7 +701,7 @@ class RoomSoundWebSocketClient(
         private const val MAX_RELAY_QUEUED_BYTES = 192_000L
 
         private fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
-            .pingInterval(20, TimeUnit.SECONDS)
+            .pingInterval(15, TimeUnit.SECONDS)
             .build()
     }
 }
