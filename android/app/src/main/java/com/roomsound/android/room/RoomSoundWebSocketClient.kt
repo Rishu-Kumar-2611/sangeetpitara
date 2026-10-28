@@ -222,7 +222,7 @@ class RoomSoundWebSocketClient(
         val isModerator = self != null && (self.id == room?.hostId || self.id == room?.cohostId)
         val isCurrentSource = self != null && self.id == room?.activeSourceId
         val canAskServer = self != null && room != null &&
-            (isCurrentSource || (isModerator && (room.activeSourceId == null || isCurrentSource)))
+            (isCurrentSource || isModerator || room.activeSourceId == null)
         if (!canAskServer) {
             emit(RoomSoundEvent.LocalError("The current room state does not authorize this client to start a source."))
             return false
@@ -684,7 +684,7 @@ class RoomSoundWebSocketClient(
         // Keep sender backlog near 1 s of PCM16 (matching the web sender) so
         // Wi-Fi bursts do not drop frames prematurely while avoiding
         // multi-second stale queues.
-        private const val MAX_RELAY_QUEUED_BYTES = 96_000L
+        private const val MAX_RELAY_QUEUED_BYTES = 192_000L
 
         private fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
             .pingInterval(20, TimeUnit.SECONDS)

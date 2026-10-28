@@ -967,11 +967,24 @@ function ensureRelayPlaybackContext() {
     applyOutputVolume();
     setupRelayPlaybackWorklet(context, gain);
     ensureVisualizerLoop();
-    if (typeof navigator !== 'undefined' && navigator.mediaSession && typeof MediaMetadata !== 'undefined') {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: 'Room audio',
-        artist: state.room?.name || 'SangeetPitara',
-      });
+    if (typeof navigator !== 'undefined' && navigator.mediaSession) {
+      if (typeof MediaMetadata !== 'undefined') {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: 'Room audio',
+          artist: state.room?.name || 'SangeetPitara',
+        });
+      }
+      try {
+        navigator.mediaSession.setActionHandler('play', () => {
+          state.muted = false;
+          applyOutputVolume();
+          void resumeRoomMediaAfterVisibility();
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          state.muted = true;
+          applyOutputVolume();
+        });
+      } catch {}
     }
     const relayAudio = audio;
     void relayAudio.play().catch(() => {
@@ -1505,9 +1518,10 @@ function applyRoomState(next) {
     resetRelayPlaybackQueue(state.room?.sourceEpoch ?? null);
   }
   syncRelayCaptureLease();
-  const wasHostSource = wasSelfSource && state.self?.role === 'HOST';
-  if (wasSelfSource && state.room.activeSourceId !== state.self?.id && !wasHostSource) stopLocalCapture(false);
-  if (state.captureRecoveryPending && wasHostSource && state.captureStream && !state.room.activeSourceId && state.room.sourceStatus === 'NONE') {
+  const canRecoverCapture = Boolean(state.captureRecoveryPending && state.captureStream && !state.room.activeSourceId && state.room.sourceStatus === 'NONE');
+  const wasHostSource = wasSelfSource && (state.self?.role === 'HOST' || state.self?.role === 'CO_HOST');
+  if (wasSelfSource && state.room.activeSourceId !== state.self?.id && !wasHostSource && !canRecoverCapture) stopLocalCapture(false);
+  if (canRecoverCapture) {
     send({ type: 'start-source', sourceType: state.captureType || 'DEVICE_AUDIO', sourceLabel: state.captureLabel || 'Browser device audio' });
     state.captureRecoveryPending = false;
   }
@@ -2114,7 +2128,9 @@ async function startLocalCapture(sourceType, intent = 'host') {
       throw new Error('Audio capture could not initialize. Please try sharing again.');
     }
     if (nonce !== state.captureNonce) return;
-    if (intent === 'takeover') send({ type: 'takeover', sourceType });
+    if (intent === 'takeover' || (isModerator() && state.room?.activeSourceId && state.room.activeSourceId !== state.self?.id)) {
+      send({ type: 'takeover', sourceType });
+    }
     send({ type: 'start-source', sourceType, sourceLabel: label });
     toast(`Sharing ${label}.`, 'success');
     addActivity(`You started sharing ${label}.`, true);
@@ -2549,7 +2565,14 @@ function openRoomConfirmation(action) {
   modal.querySelector('[data-confirm-action]').addEventListener('click', () => {
     if (ending) {
       state.pendingRoomEnd = true;
+      state.explicitLeave = true;
+      state.lastRoomCode = null;
+      stopLocalCapture(false);
+      closeRelayPlayback();
       send({ type: 'end-room' });
+      window.setTimeout(() => {
+        if (state.room || state.ws) resetToLanding();
+      }, 600);
     } else {
       state.explicitLeave = true;
       state.lastRoomCode = null;
@@ -2691,10 +2714,22 @@ function wireEvents() {
     if (event.key === 'Escape') closeRoomMenu();
   });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) void resumeRoomMediaAfterVisibility();
+    void resumeRoomMediaAfterVisibility();
   });
   document.addEventListener('resume', () => { void resumeRoomMediaAfterVisibility(); });
   window.addEventListener('pageshow', () => { void resumeRoomMediaAfterVisibility(); });
+  window.addEventListener('focus', () => { void resumeRoomMediaAfterVisibility(); });
+  window.addEventListener('online', () => {
+    if (!state.explicitLeave && state.lastRoomCode && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
+      if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
+      state.reconnectAttempts = 0;
+      connectAnd({ type: 'join', code: state.lastRoomCode }, true);
+    }
+    void resumeRoomMediaAfterVisibility();
+  });
+  window.setInterval(() => {
+    if (!state.explicitLeave && state.room) void resumeRoomMediaAfterVisibility();
+  }, 2500);
   $('#chat-feed').addEventListener('click', (event) => {
     const chip = event.target.closest('[data-react-id]');
     if (!chip) return;

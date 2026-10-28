@@ -263,8 +263,7 @@ class RoomSessionCoordinator(
         val state = joinedState() ?: return false
         val self = state.self ?: return false
         if (sourceType != DEVICE_AUDIO || isModerator(state) || self.id == state.room.activeSourceId || requestPending ||
-            state.requests.any { it.requesterId == self.id && it.status == "PENDING" } ||
-            (state.room.activeSourceId != null && state.room.activeSourceId !in setOf(state.room.hostId, state.room.cohostId))
+            state.requests.any { it.requesterId == self.id && it.status == "PENDING" }
         ) return false
         val sent = client?.requestControl(DEVICE_AUDIO, note) == true
         if (sent) {
@@ -313,16 +312,26 @@ class RoomSessionCoordinator(
     }
 
     fun endRoom(): Boolean {
-        val state = joinedState() ?: return false
-        if (state.self?.id != state.room.hostId || endPending) return false
+        val state = joinedState() ?: client?.currentRoomState()
+        if (state != null && state.self?.id != state.room.hostId) return false
+        if (endPending) return false
         val sent = client?.endRoom() == true
-        if (sent) {
-            endPending = true
-            notifyRoomSessionStopped()
-            abortAttempt("The host is ending the room.", releaseOwnSlot = false)
-            changed()
+        endPending = true
+        notifyRoomSessionStopped()
+        abortAttempt("The host is ending the room.", releaseOwnSlot = false)
+        if (!sent) {
+            disposeRoom(notifyStopped = false)
+        } else {
+            val activeClient = client
+            main.postDelayed({
+                if (endPending && client === activeClient) {
+                    disposeRoom(notifyStopped = false)
+                    changed()
+                }
+            }, 1_200L)
         }
-        return sent
+        changed()
+        return true
     }
 
     /** Creates a fresh transaction only from the current joined room state. */
@@ -332,7 +341,7 @@ class RoomSessionCoordinator(
         val self = state.self ?: return null
         val ownSlot = self.id == state.room.activeSourceId && state.room.activeSourceType == DEVICE_AUDIO &&
             state.room.sourceStatus in setOf("STARTING", "LIVE")
-        if (!ownSlot && !(isModerator(state) && state.room.activeSourceId == null)) return null
+        if (!ownSlot && !isModerator(state)) return null
         val id = UUID.randomUUID().toString()
         attempt = Attempt(
             id = id,
@@ -491,7 +500,18 @@ class RoomSessionCoordinator(
 
     private fun handleConnection(state: RoomConnectionState) {
         if (state != RoomConnectionState.JOINED) {
-            abortAttempt("Room signaling is unavailable. Share again after reconnecting.", false)
+            val keepLiveCaptureAcrossReconnect = state in setOf(
+                RoomConnectionState.RECONNECT_WAIT,
+                RoomConnectionState.CONNECTING,
+                RoomConnectionState.OPEN,
+            ) && attempt?.phase in setOf(
+                ConsentPhase.INITIALIZING,
+                ConsentPhase.AWAITING_LIVE,
+                ConsentPhase.LIVE,
+            )
+            if (!keepLiveCaptureAcrossReconnect) {
+                abortAttempt("Room signaling is unavailable. Share again after reconnecting.", false)
+            }
             takeover = null
             requestPending = false
         }
@@ -554,6 +574,19 @@ class RoomSessionCoordinator(
         }
         val pending = attempt
         if (pending != null) {
+            if (pending.phase == ConsentPhase.LIVE && state.room.id == pending.roomId && state.self?.id == pending.memberId) {
+                val active = client
+                val audio = transport
+                if (state.room.activeSourceId == pending.memberId && state.room.sourceStatus == "LIVE") {
+                    val slot = Slot(state.room.id, pending.memberId, state.room.sourceEpoch)
+                    pending.slot = slot
+                    if (active != null && audio != null) mediaBinding = MediaBinding(pending.id, slot, active, audio)
+                } else if (state.room.activeSourceId == null && state.room.sourceStatus == "NONE" && active != null) {
+                    pending.expectedLiveEpoch = state.room.sourceEpoch + 1
+                    pending.phase = ConsentPhase.AWAITING_LIVE
+                    active.startSource(DEVICE_AUDIO, "Android device audio")
+                }
+            }
             adoptExpectedLiveSlot(pending)
             val stillAuthorized = canContinue(pending)
             if (!stillAuthorized) {
@@ -584,7 +617,7 @@ class RoomSessionCoordinator(
         ) return true
         val slot = pending.slot
         return if (slot != null) matches(slot, state) && state.room.sourceStatus in setOf("STARTING", "LIVE")
-        else isModerator(state) && state.room.activeSourceId == null && state.room.sourceEpoch == pending.baselineEpoch
+        else isModerator(state) && (state.room.activeSourceId == null || state.room.sourceEpoch == pending.baselineEpoch)
     }
 
     private fun adoptExpectedLiveSlot(pending: Attempt) {

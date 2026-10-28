@@ -934,9 +934,9 @@ class MainActivity : Activity() {
         val ownPendingRequest = self != null && state.requests.any {
             it.requesterId == self.id && it.status.equals("PENDING", ignoreCase = true)
         }
-        requestAudioButton.text = if (ownPendingRequest) "Audio request pending" else "Request to share device audio"
+        requestAudioButton.text = if (ownPendingRequest) "Cancel audio request" else "Request to share device audio"
         val accessGranted = rewardedAccessGate.hasAccess()
-        requestAudioButton.isEnabled = accessGranted && self != null && !isModerator && !ownPendingRequest
+        requestAudioButton.isEnabled = accessGranted && self != null && !isModerator && self.id != room.activeSourceId
         takeoverButton.isEnabled = accessGranted && isModerator && room.activeSourceId != null && self?.id != room.activeSourceId
         leaveRoomButton.isEnabled = true
         endRoomButton.isEnabled = isHost
@@ -1186,11 +1186,12 @@ class MainActivity : Activity() {
             sourceButton.isEnabled = (rewardedAccessGate.hasAccess() || captureActive) && !consentPending && (!captureActive || room.sourceStatus.equals("LIVE", ignoreCase = true) ||
                 room.sourceStatus.equals("STARTING", ignoreCase = true)
             )
-        } else if (isModerator && room.activeSourceId == null) {
+        } else if (isModerator) {
             sourceButton.text = when {
                 !rewardedAccessGate.hasAccess() -> "Unlock access to share device audio"
                 consentPending -> "Awaiting Android consent…"
                 captureActive -> "Preparing device audio…"
+                room.activeSourceId != null -> "Take over & share device audio"
                 else -> "Share device audio"
             }
             sourceButton.isEnabled = rewardedAccessGate.hasAccess() && !consentPending && !captureActive
@@ -1235,11 +1236,11 @@ class MainActivity : Activity() {
         )
         if (isSelfSource && captureActive) {
             stopCapture()
-        } else if (isSelfSource || (isModerator && state.room.activeSourceId == null)) {
+        } else if (isSelfSource || isModerator) {
             if (!requireRewardedAccess()) return
             beginCapture(forRoomSource = true)
         } else {
-            appendRoomEvent("Refresh the room state before sharing; this phone is not the active source.")
+            appendRoomEvent("Tap Request to share device audio first so the host can approve your turn.")
         }
     }
 
@@ -1250,6 +1251,17 @@ class MainActivity : Activity() {
         val self = state?.self
         if (state == null || self == null || self.id == state.room.hostId || self.id == state.room.cohostId) {
             appendRoomEvent("A request is available to a participant while the room is active.")
+            return
+        }
+        val existingPending = state.requests.firstOrNull {
+            it.requesterId == self.id && it.status.equals("PENDING", ignoreCase = true)
+        }
+        if (existingPending != null) {
+            if (session.cancelRequest(existingPending.id)) {
+                appendRoomEvent("Canceled pending audio request.")
+            } else {
+                appendRoomEvent("Could not cancel the audio request.")
+            }
             return
         }
         if (session.requestControl("ANDROID_DEVICE_AUDIO", "I want to share Android playback audio.")) {
@@ -1315,12 +1327,18 @@ class MainActivity : Activity() {
 
     private fun endRoom() {
         val session = roomSession ?: return
-        val state = session.currentRoomState() ?: return
+        val state = session.currentRoomState() ?: latestRoomState ?: return
         if (state.self?.id != state.room.hostId) {
             appendRoomEvent("Only the host can end the room.")
             return
         }
-        if (session.endRoom()) appendRoomEvent("Ending the room…")
+        pendingCaptureStart = false
+        projectionConsentInFlight = false
+        notificationPermissionRequestedRoomId = null
+        cancelPendingCapture("Ended the room before capture consent completed.")
+        if (session.endRoom()) {
+            appendRoomEvent("Ending the room…")
+        }
     }
 
     private fun sendChat() {

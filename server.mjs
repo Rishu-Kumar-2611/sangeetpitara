@@ -986,6 +986,8 @@ function handleDisconnect(ws) {
   member.ws = null;
 
   if (room.activeSourceId === member.id) {
+    room.lastDisconnectedSourceId = member.id;
+    room.lastDisconnectedSourceType = room.activeSourceType;
     stopSource(room, 'The active audio source has disconnected.', true);
     broadcast(room, { type: 'source-disconnected', memberId: member.id });
   }
@@ -1213,10 +1215,18 @@ async function handleMessage(ws, message) {
   }
 
   if (type === 'start-source') {
-    const authorized = member.id === room.activeSourceId || (isModerator(room, member) && (!room.activeSourceId || room.activeSourceId === member.id));
+    const authorized = member.id === room.activeSourceId
+      || isModerator(room, member)
+      || (!room.activeSourceId && room.lastDisconnectedSourceId === member.id);
     if (!authorized) return sendError(ws, 'You are not authorized to publish audio right now.');
     const sourceType = requestedSourceType(message.sourceType);
     if (!isSupportedSourceType(sourceType)) return sendError(ws, 'Only device playback audio is supported.');
+    if (room.activeSourceId && room.activeSourceId !== member.id && isModerator(room, member)) {
+      room.resumeSourceId = null;
+      room.resumeSourceType = null;
+    }
+    room.lastDisconnectedSourceId = null;
+    room.lastDisconnectedSourceType = null;
     setSource(room, member, sourceType, 'LIVE');
     addSystemMessage(room, `${member.name} is sharing ${safeText(message.sourceLabel, 80) || 'audio'}.`);
     broadcastState(room);

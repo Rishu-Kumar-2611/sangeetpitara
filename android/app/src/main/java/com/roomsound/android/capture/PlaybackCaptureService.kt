@@ -79,10 +79,7 @@ class PlaybackCaptureService : Service() {
     private val roomNotificationListener = object : RoomSessionCoordinator.Listener {
         override fun onConnectionStateChanged(state: RoomConnectionState) {
             if (state != RoomConnectionState.JOINED) controlRequestNotifications.dismissAll()
-            if (lifecycle.phase == RoomPlaybackLifecycle.Phase.PREPARING && state in setOf(
-                    RoomConnectionState.FAILED, RoomConnectionState.CLOSED, RoomConnectionState.RECONNECT_WAIT,
-                )
-            ) {
+            if (lifecycle.phase == RoomPlaybackLifecycle.Phase.PREPARING && state == RoomConnectionState.CLOSED) {
                 roomSession.leaveRoom()
                 return
             }
@@ -221,7 +218,7 @@ class PlaybackCaptureService : Service() {
         }
         } catch (t: Throwable) { android.util.Log.e("RoomSound", "onStartCommand failed", t) }
         if (!lifecycle.protected) stopSelf(startId)
-        return START_NOT_STICKY
+        return if (lifecycle.protected) START_STICKY else START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -360,7 +357,7 @@ class PlaybackCaptureService : Service() {
                 foregroundSessionId = lifecycle.captureId
                 notificationToken = token
             }
-            setNetworkLocks(lifecycle.needsLocks)
+            setNetworkLocks(lifecycle.protected)
             scheduleProtectionTimeout()
             updateAudioFocus()
             return true
@@ -437,11 +434,18 @@ class PlaybackCaptureService : Service() {
         mediaSession = MediaSession(this, "RoomSound listening").apply {
             setCallback(object : MediaSession.Callback() {
                 override fun onStop() { if (lifecycle.acceptsAction(token)) roomSession.leaveRoom() }
-                override fun onPause() { if (lifecycle.acceptsAction(token)) roomSession.leaveRoom() }
+                override fun onPause() {
+                    if (!lifecycle.acceptsAction(token)) return
+                    // Pause/mute local playback without disconnecting from the room.
+                    focusSuppressed = true
+                    hasAudioFocus = false
+                    roomSession.setPlaybackAllowed(false)
+                    updateMediaPlaybackState()
+                }
                 override fun onPlay() {
                     if (!lifecycle.acceptsAction(token)) return
-                    // Only an explicit transport action may retry after permanent focus loss.
                     focusSuppressed = false
+                    hasAudioFocus = true
                     updateAudioFocus()
                 }
             }, main)
@@ -473,37 +477,42 @@ class PlaybackCaptureService : Service() {
                 .setWillPauseWhenDucked(false)
                 .setOnAudioFocusChangeListener({ change ->
                     if (destroyed || lifecycle.sessionId != roomId || focusRequest !== request) return@setOnAudioFocusChangeListener
+                    val audioManager = getSystemService(AudioManager::class.java)
+                    val inVoiceCall = audioManager?.mode in setOf(
+                        AudioManager.MODE_IN_CALL,
+                        AudioManager.MODE_IN_COMMUNICATION,
+                        AudioManager.MODE_RINGTONE,
+                    )
                     when (change) {
                         AudioManager.AUDIOFOCUS_GAIN,
                         AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
                         -> {
-                            // A competing app may ask us to duck, but that must
-                            // not pause the relay. The native output is already
-                            // a media stream and Android applies the ducking
-                            // policy at the focus boundary when appropriate.
+                            focusSuppressed = false
                             hasAudioFocus = true
                         }
-                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                            hasAudioFocus = false
-                        }
-                        AudioManager.AUDIOFOCUS_LOSS -> {
-                            focusSuppressed = true
-                            abandonAudioFocus()
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+                        AudioManager.AUDIOFOCUS_LOSS,
+                        -> {
+                            // Keep background room playback alive when switching to other apps;
+                            // only yield audio during an active phone/voice call.
+                            hasAudioFocus = !inVoiceCall
                         }
                     }
-                    // Never request focus in response to a loss.
-                    roomSession.setPlaybackAllowed(hasAudioFocus)
+                    roomSession.setPlaybackAllowed(hasAudioFocus && !focusSuppressed)
                     updateMediaPlaybackState()
                 }, main)
                 .build()
             focusRequest = request
-            hasAudioFocus = getSystemService(AudioManager::class.java).requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-            if (!hasAudioFocus) {
-                focusSuppressed = true
-                abandonAudioFocus()
-            }
+            val audioManager = getSystemService(AudioManager::class.java)
+            val granted = audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            val inVoiceCall = audioManager.mode in setOf(
+                AudioManager.MODE_IN_CALL,
+                AudioManager.MODE_IN_COMMUNICATION,
+                AudioManager.MODE_RINGTONE,
+            )
+            hasAudioFocus = granted || !inVoiceCall
         }
-        roomSession.setPlaybackAllowed(remoteAudio && hasAudioFocus)
+        roomSession.setPlaybackAllowed(remoteAudio && hasAudioFocus && !focusSuppressed)
         updateMediaPlaybackState()
     }
 

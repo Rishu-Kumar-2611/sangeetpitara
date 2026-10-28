@@ -26,7 +26,7 @@ internal class AndroidPcm16RelayAudioOutput(format: Pcm16AudioFormat) : Pcm16Rel
         // so it is also fixed listener latency; Pcm16RelayPlayer's catch-up stops
         // stall backlogs from adding to it.
         // A device may require a larger minimum; query its actual writable size.
-        val targetFrames = (format.sampleRate * 2) / 5
+        val targetFrames = (format.sampleRate * 3) / 5
         val created = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()

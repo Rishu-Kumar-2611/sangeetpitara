@@ -378,11 +378,11 @@ class Pcm16RelayPlayer internal constructor(
 
     companion object {
         const val DEFAULT_MAX_QUEUED_FRAMES = 12
-        const val PRODUCTION_MAX_QUEUED_FRAMES = 75
-        const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 1_500 / 1_000
-        // Skip ahead once 400 ms is queued behind the full AudioTrack, keeping 50 ms.
-        const val PRODUCTION_CATCH_UP_QUEUED_BYTES = 48_000 * 2 * 400 / 1_000
-        const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 50 / 1_000
+        const val PRODUCTION_MAX_QUEUED_FRAMES = 120
+        const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 2_400 / 1_000
+        // Allow up to 900 ms of software burst cushion on weak mobile networks before skipping ahead, landing at 250 ms.
+        const val PRODUCTION_CATCH_UP_QUEUED_BYTES = 48_000 * 2 * 900 / 1_000
+        const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 250 / 1_000
         private const val CATCH_UP_CROSSFADE_SAMPLES = 240 // 5 ms at 48 kHz
         val FORMAT = Pcm16AudioFormat(48_000, 1)
         private const val UINT32_MAX = Pcm16RelayPacketCodec.UINT32_MAX

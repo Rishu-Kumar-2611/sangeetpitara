@@ -80,6 +80,6 @@ internal class RoomPlaybackLifecycle {
 
     companion object {
         const val PREPARATION_TIMEOUT_MS = 60_000L
-        const val RECOVERY_TIMEOUT_MS = 90_000L
+        const val RECOVERY_TIMEOUT_MS = 900_000L
     }
 }
