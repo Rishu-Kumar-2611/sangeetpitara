@@ -18,7 +18,7 @@ class RelayCaptureProcessor extends AudioWorkletProcessor {
       if (data?.type === 'ack') this.inFlight = Math.max(0, this.inFlight - 1);
       if (data?.type === 'stop') this.stopped = true;
       if (data?.type === 'config' && Number.isInteger(data.maxInFlight) && data.maxInFlight >= 8) {
-        this.maxInFlight = Math.min(64, data.maxInFlight);
+        this.maxInFlight = Math.min(128, data.maxInFlight);
       }
       if (data?.type === 'lease' && data.epoch !== this.epoch) {
         this.epoch = Number.isInteger(data.epoch) ? data.epoch : null;

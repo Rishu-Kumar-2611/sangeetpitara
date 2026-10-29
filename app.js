@@ -54,7 +54,7 @@ const SYNC_OFFSET_MAX_MS = 1000; // Matches the #sync-offset slider max and the 
 // excess headroom. It must stay above SYNC_OFFSET_MAX_MS, or the first frame
 // scheduled at the cushion would trip a reset on every following frame.
 const RELAY_MAX_PLAYAHEAD_SECONDS = SYNC_OFFSET_MAX_MS / 1000 + 0.4;
-const RELAY_CAPTURE_MAX_AGE_SECONDS = 1.0; // Drop captured frames older than this instead of sending stale audio.
+const RELAY_CAPTURE_MAX_AGE_SECONDS = 2.5; // Allow up to 2.5 s of background-tab delivery jitter before dropping.
 
 function clampVolume(v) {
   const n = Number(v);
@@ -707,9 +707,11 @@ function applyRoomPalette(code) {
   state.paletteCode = code;
 }
 
-/** Lets the aura breathe with the live level; held still for reduced motion. */
+/** Lets the aura breathe with the live level; held still for reduced motion or mobile GPU conservation. */
 function setAuraLevel(level) {
-  const value = reducedMotionQuery?.matches ? 0 : Math.round(Math.min(1, level) * 50) / 50;
+  const baseValue = reducedMotionQuery?.matches ? 0 : Math.round(Math.min(1, level) * 20) / 20;
+  const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const value = isMobile ? 0 : baseValue;
   if (value === state.auraLevel) return;
   state.auraLevel = value;
   $('#aura')?.style.setProperty('--aura-level', String(value));
@@ -727,9 +729,16 @@ function updateSourceOrbVisualizer() {
     state.visualizerRaf = null;
     return;
   }
+  const nowVis = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const isMobileVis = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (isMobileVis && state._lastVisAt && nowVis - state._lastVisAt < 65) {
+    state.visualizerRaf = requestAnimationFrame(updateSourceOrbVisualizer);
+    return;
+  }
+  state._lastVisAt = nowVis;
   const samples = new Uint8Array(analyser.fftSize);
   state.liveAudioLevel = audioLevel(analyser, samples);
-  if (orb && !reducedMotionQuery?.matches) orb.style.transform = `scale(${(1 + state.liveAudioLevel * 0.035).toFixed(3)})`;
+  if (orb && !reducedMotionQuery?.matches && !isMobileVis) orb.style.transform = `scale(${(1 + state.liveAudioLevel * 0.035).toFixed(3)})`;
   setAuraLevel(state.liveAudioLevel);
   drawSourceWaveform(analyser);
   // The sharer's own playback analyser is absent, so this reads their capture.
@@ -831,7 +840,7 @@ async function ensureRelayPublisher() {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
           channelCount: 2, channelCountMode: 'max', channelInterpretation: 'speakers',
         });
-        processor.port.postMessage({ type: 'config', maxInFlight: 64 });
+        processor.port.postMessage({ type: 'config', maxInFlight: 128 });
         const node = processor;
         node.port.onmessage = ({ data }) => {
           if (!current() || state.relayProcessor !== node) return;
@@ -914,7 +923,11 @@ function setupRelayPlaybackWorklet(context, gain) {
           state.relayWorkletTargetMs = data.targetMs ?? state.syncOffsetMs;
           state.relayWorkletJitterMs = data.jitterMs ?? 0;
           state.relayWorkletUnderruns = data.underruns ?? 0;
-          renderTelemetry();
+          const nowStats = Date.now();
+          if (!state._lastTelemetryRenderAt || nowStats - state._lastTelemetryRenderAt >= 900) {
+            state._lastTelemetryRenderAt = nowStats;
+            renderTelemetry();
+          }
         }
       };
       worklet.connect(gain);

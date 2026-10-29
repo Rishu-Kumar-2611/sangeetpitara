@@ -25,13 +25,13 @@ class PlaybackCaptureController(
     companion object {
         const val SAMPLE_RATE = 48_000
         const val CHANNELS = 1
-        const val FRAME_SAMPLES = 480
+        const val FRAME_SAMPLES = 960
         private const val SILENCE_TIMEOUT_MS = 2_000L
-        private const val UI_UPDATE_MS = 250L
+        private const val UI_UPDATE_MS = 500L
         private const val EMPTY_READ_TIMEOUT_MS = 5_000L
         private const val RECORD_RECOVERY_ATTEMPTS = 3
         private const val RECORD_RECOVERY_DELAY_MS = 250L
-        private const val CAPTURE_BUFFER_FRAME_MULTIPLIER = 2
+        private const val CAPTURE_BUFFER_FRAME_MULTIPLIER = 8
     }
 
     private class CaptureRun(
@@ -132,6 +132,7 @@ class PlaybackCaptureController(
     }
 
     private fun captureLoop(run: CaptureRun) {
+        runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO) }
         try {
             var reader = startAudioRecord(run) ?: return
             val frame = ShortArray(FRAME_SAMPLES)

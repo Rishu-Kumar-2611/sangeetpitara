@@ -6,12 +6,12 @@ const DEFAULT_TARGET_FILL = 7_200; // 150 ms base cushion; the jitter estimate a
 const MAX_TARGET_FILL = 48_000; // 1,000 ms ceiling on the automatic target
 const MIN_PREFILL_SAMPLES = 9_600; // 200 ms initial prefill before starting playout
 const EXCESS_HEADROOM_SAMPLES = 19_200; // Skip ahead once a backlog sits 400 ms above target...
-const CATCH_UP_LANDING_SAMPLES = 2_400; // ...landing 50 ms above target, so a stall never leaves lasting delay
+const CATCH_UP_LANDING_SAMPLES = 7_200; // ...landing 150 ms above target, so a stall never leaves lasting delay or immediate underrun
 // 2.0 s ring: holds the 1.4 s ceiling plus one maximum-size (64 KiB, ~680 ms) frame.
 const CAPACITY_SAMPLES = 96_000;
 const FADE_SAMPLES = 960; // 20 ms cosine fade-in / crossfade for inaudible transitions
-const PLC_HOLD_SAMPLES = 4_800; // Up to 100 ms of looped waveform continuation before silence decay
-const PLC_PERIOD_SAMPLES = 480; // Fixed 10 ms loop of the most recent audio
+const PLC_HOLD_SAMPLES = 8_640; // Up to 180 ms of looped waveform continuation before silence decay
+const PLC_PERIOD_SAMPLES = 960; // Smooth 20 ms loop of the most recent audio
 
 class RelayPlayoutProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -88,13 +88,18 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     const expectedInterval = frameCount / 48_000;
     if (this.lastEnqueueTime !== null) {
       const actualInterval = Math.max(0, now - this.lastEnqueueTime);
-      const deviation = Math.abs(actualInterval - expectedInterval);
-      // Ignore multi-second pauses (e.g., track change), track WAN burst jitter up to 1.5s
-      if (deviation < 1.5) {
-        this.jitterSeconds += (deviation - this.jitterSeconds) * 0.0625;
+      // Only update jitter when packets arrive in distinct audio blocks (not same-tick TCP burst tail)
+      if (actualInterval >= expectedInterval * 0.25) {
+        const deviation = Math.abs(actualInterval - expectedInterval);
+        // Ignore multi-second pauses (e.g., track change), track WAN burst jitter up to 1.5s
+        if (deviation < 1.5) {
+          this.jitterSeconds += (deviation - this.jitterSeconds) * 0.0625;
+        }
+        this.lastEnqueueTime = now;
       }
+    } else {
+      this.lastEnqueueTime = now;
     }
-    this.lastEnqueueTime = now;
     this.updateTargetFill();
 
     // Excess-latency ceiling. Normal jitter stays inside targetFill, so a backlog
@@ -127,7 +132,9 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.writePos = (this.writePos + frameCount) % CAPACITY_SAMPLES;
     this.available += frameCount;
 
-    const requiredPrefill = Math.max(MIN_PREFILL_SAMPLES, Math.min(this.targetFill, 38_400));
+    // Resume playout as soon as 200-280 ms is buffered so rebuffering never mutes for 800+ ms;
+    // the PI controller then gently builds the remaining cushion while music plays.
+    const requiredPrefill = Math.max(MIN_PREFILL_SAMPLES, Math.min(this.targetFill, 13_440));
     if (!this.playing && this.available >= requiredPrefill) {
       this.playing = true;
       this.fadeProgress = 0;
@@ -160,9 +167,9 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Slowly decay adaptive extra cushion during stable playback (~2.5 ms/sec)
-    if (this.adaptiveExtraFill > 0 && this.available > this.targetFill * 0.75) {
-      this.adaptiveExtraFill = Math.max(0, this.adaptiveExtraFill - 0.32);
+    // Slowly decay adaptive extra cushion during stable playback (~4 ms/sec)
+    if (this.adaptiveExtraFill > 0 && this.available >= MIN_PREFILL_SAMPLES) {
+      this.adaptiveExtraFill = Math.max(0, this.adaptiveExtraFill - 0.5);
       this.updateTargetFill();
     }
 

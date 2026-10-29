@@ -604,13 +604,13 @@ class RoomSoundWebSocketClient(
      * frames above a ~500 ms wire window instead of accumulating old audio.
      */
     fun sendPcm16Frame(frame: ByteString): Boolean {
-        val packet = runCatching { Pcm16RelayPacketCodec.decode(frame) }.getOrNull() ?: return false
+        val frameEpoch = Pcm16RelayPacketCodec.peekSourceEpoch(frame) ?: return false
         return synchronized(lock) {
             val state = roomState ?: return@synchronized false
             val socket = webSocket ?: return@synchronized false
             if (permanentlyClosed || stopRequested || connectionState != RoomConnectionState.JOINED ||
                 !serverConfig.mediaRelay.isPcm16Enabled || !state.room.status.equals("ACTIVE", true) ||
-                !state.sourceAuthorization().canPublishFrames || state.room.sourceEpoch != packet.sourceEpoch ||
+                !state.sourceAuthorization().canPublishFrames || state.room.sourceEpoch != frameEpoch ||
                 socket.queueSize() + frame.size > MAX_RELAY_QUEUED_BYTES
             ) return@synchronized false
             socket.send(frame)

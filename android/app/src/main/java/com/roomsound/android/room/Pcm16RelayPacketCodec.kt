@@ -82,6 +82,29 @@ object Pcm16RelayPacketCodec {
         sequence: Long,
     ): ByteString = encode(samples, sampleCount, sampleRate, channels, sourceEpoch, sequence).toByteString()
 
+    /** Fast O(1) zero-allocation header validator returning sourceEpoch if valid. */
+    fun peekSourceEpoch(input: ByteString, maxPayloadBytes: Int = MAX_PAYLOAD_BYTES): Long? {
+        if (maxPayloadBytes !in 0..MAX_PAYLOAD_BYTES) return null
+        val size = input.size
+        if (size < HEADER_BYTES || size > HEADER_BYTES + maxPayloadBytes) return null
+        if (input[0] != MAGIC[0] || input[1] != MAGIC[1] || input[2] != MAGIC[2] || input[3] != MAGIC[3]) return null
+        if ((input[4].toInt() and 0xff) != VERSION) return null
+        if ((input[5].toInt() and 0xff) != CHANNELS) return null
+        val sr = (input[6].toLong() and 0xffL) or
+            ((input[7].toLong() and 0xffL) shl 8) or
+            ((input[8].toLong() and 0xffL) shl 16) or
+            ((input[9].toLong() and 0xffL) shl 24)
+        if (sr != SAMPLE_RATE.toLong()) return null
+        val sampleCount = (input[18].toInt() and 0xff) or ((input[19].toInt() and 0xff) shl 8)
+        if (sampleCount <= 0) return null
+        val payloadBytes = size - HEADER_BYTES
+        if (payloadBytes != sampleCount * BYTES_PER_SAMPLE || payloadBytes > maxPayloadBytes) return null
+        return (input[10].toLong() and 0xffL) or
+            ((input[11].toLong() and 0xffL) shl 8) or
+            ((input[12].toLong() and 0xffL) shl 16) or
+            ((input[13].toLong() and 0xffL) shl 24)
+    }
+
     fun decode(input: ByteString, maxPayloadBytes: Int = MAX_PAYLOAD_BYTES): Pcm16RelayPacket {
         require(maxPayloadBytes in 0..MAX_PAYLOAD_BYTES) { "Invalid PCM16 relay payload bound." }
         require(input.size in HEADER_BYTES..HEADER_BYTES + maxPayloadBytes) {
