@@ -18,6 +18,28 @@ import { InMemoryRepository, createRepositoryFromEnv } from './persistence.mjs';
 
 const credentials = { email: 'Listener@Example.test', password: 'correct horse battery staple' };
 
+test('reserved operator addresses cannot be claimed through public registration', async (t) => {
+  const { server, baseUrl } = await startServer({ ADMIN_EMAILS: 'operator@example.test' });
+  t.after(() => server.kill());
+  const blocked = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'Operator@Example.test', password: credentials.password }),
+  });
+  assert.equal(blocked.status, 400);
+  assert.equal(blocked.headers.get('set-cookie'), null);
+  const ordinary = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(credentials),
+  });
+  assert.equal(ordinary.status, 201);
+  assert.equal((await ordinary.json()).user.isAdmin, false);
+  const ban = await fetch(`${baseUrl}/api/moderation/bans`, {
+    method: 'POST', headers: { Cookie: cookieHeader(ordinary), 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(ban.status, 403);
+});
+
 async function unusedPort() {
   const probe = net.createServer();
   await new Promise((resolve, reject) => {
@@ -30,10 +52,10 @@ async function unusedPort() {
   return port;
 }
 
-async function startServer() {
+async function startServer(extraEnv = {}) {
   const port = await unusedPort();
   const server = spawn(process.execPath, ['server.mjs'], {
-    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), DATABASE_URL: '' },
+    env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), DATABASE_URL: '', ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const output = [];

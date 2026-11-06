@@ -1,6 +1,6 @@
 {
   "name": "roomsound-prototype",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "private": true,
   "description": "RoomSound private real-time audio room prototype",
   "type": "module",
@@ -12,10 +12,15 @@
     "migrate": "node --env-file-if-exists=.env migrate.mjs",
     "check": "node checks/syntax.mjs",
     "test": "node --test && node checks/origin.mjs && node checks/payload.mjs && node checks/rtc.mjs",
-    "smoke": "node smoke.mjs"
+    "smoke": "node smoke.mjs",
+    "test:browser": "playwright test",
+    "test:postgres": "node checks/postgres-integration.mjs"
   },
   "dependencies": {
     "pg": "^8.16.3",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0"
   }
 }

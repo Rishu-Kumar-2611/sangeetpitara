@@ -179,9 +179,11 @@ export function createAuthService({
   tokenGenerator = () => randomBytes(32).toString('base64url'),
   passwordHasher = hashPassword,
   passwordVerifier = verifyPassword,
+  reservedEmails = [],
 } = {}) {
   if (!repository) throw new Error('An auth repository is required.');
   const ttl = configuredTtl(sessionTtlMs);
+  const reserved = new Set([...reservedEmails].map((email) => normalizeEmail(email)));
 
   async function issueSession(userId) {
     const token = tokenFromGenerator(tokenGenerator);
@@ -198,6 +200,7 @@ export function createAuthService({
 
   async function register(input) {
     const { email, password } = validateCredentials(input);
+    if (reserved.has(email)) throw new AuthValidationError('Registration is unavailable for this email.', 'email');
     const existing = await repository.findUserByEmail(email);
     if (existing) throw new AuthConflictError();
     let user;

@@ -164,6 +164,84 @@ function client(url, options = {}) {
   };
 }
 
+test('public guest IDs never authorize takeover, including legacy native clients without a secret', async (t) => {
+  const { server, url } = await startServer();
+  t.after(() => server.kill());
+  const host = client(url);
+  const listener = client(url);
+  const impostor = client(url);
+  const recovered = client(url);
+  for (const peer of [host, listener, impostor, recovered]) t.after(() => peer.socket.terminate());
+  await host.open();
+  host.socket.send(JSON.stringify({ type: 'create-room', name: 'Protected native room', displayName: 'Native host', guestId: 'native-public-id' }));
+  const created = await host.wait((m) => m.type === 'joined');
+  assert.match(created.reconnectSecret, /^[A-Za-z0-9_-]{32,80}$/);
+  assert.equal('reconnectSecret' in created.state.self, false);
+  await listener.open();
+  listener.socket.send(JSON.stringify({ type: 'join-room', code: created.state.room.code, displayName: 'Listener', guestId: 'listener-public-id' }));
+  const joined = await listener.wait((m) => m.type === 'joined');
+  assert.ok(joined.state.members.every((m) => !('reconnectSecret' in m)));
+  assert.notEqual(joined.reconnectSecret, created.reconnectSecret);
+  await impostor.open();
+  impostor.socket.send(JSON.stringify({ type: 'join-room', code: created.state.room.code, displayName: 'Impostor', guestId: 'native-public-id' }));
+  assert.match((await impostor.wait((m) => m.type === 'error')).message, /already connected/i);
+  assert.equal(host.socket.readyState, WebSocket.OPEN);
+  await recovered.open();
+  recovered.socket.send(JSON.stringify({ type: 'join-room', code: created.state.room.code, displayName: 'Recovered host', guestId: 'native-public-id', reconnectSecret: created.reconnectSecret }));
+  const restored = await recovered.wait((m) => m.type === 'joined');
+  assert.equal(restored.state.self.id, created.state.self.id);
+  assert.equal(restored.state.self.role, 'HOST');
+});
+
+test('an allowed origin does not authorize its subdomains', async (t) => {
+  const { server, url } = await startServer({ ALLOWED_ORIGINS: 'https://allowed.example.test' });
+  t.after(() => server.kill());
+  const bad = new WebSocket(url, { origin: 'https://sub.allowed.example.test' });
+  t.after(() => bad.terminate());
+  await assert.rejects(new Promise((resolve, reject) => {
+    bad.once('open', resolve);
+    bad.once('error', reject);
+  }), /403/);
+  const good = client(url, { origin: 'https://allowed.example.test' });
+  t.after(() => good.socket.terminate());
+  await good.open();
+});
+
+test('backend files stay private while required browser assets remain available', async (t) => {
+  const { server, http: baseUrl } = await startServer();
+  t.after(() => server.kill());
+  for (const path of ['/auth.mjs', '/audit.mjs', '/persistence.mjs', '/config.mjs', '/checks/release.mjs', '/.env']) {
+    assert.equal((await fetch(baseUrl + path)).status, 404, path);
+  }
+  for (const path of ['/', '/app.js', '/media-relay.mjs', '/relay-playout-worklet.js', '/fonts/mukta-400-latin.woff2']) {
+    assert.equal((await fetch(baseUrl + path)).status, 200, path);
+  }
+});
+
+test('removed member identifiers and reconnect capabilities cannot reenter the room', async (t) => {
+  const { server, url } = await startServer();
+  t.after(() => server.kill());
+  const peers = [client(url), client(url), client(url), client(url)];
+  for (const peer of peers) t.after(() => peer.socket.terminate());
+  const [host, guest, sameIdentity, sameCapability] = peers;
+  await host.open();
+  host.socket.send(JSON.stringify({ type: 'create-room', name: 'Moderated', displayName: 'Host', guestId: 'host' }));
+  const created = await host.wait((m) => m.type === 'joined');
+  await guest.open();
+  guest.socket.send(JSON.stringify({ type: 'join-room', code: created.state.room.code, displayName: 'Guest', guestId: 'removed-identity' }));
+  const joined = await guest.wait((m) => m.type === 'joined');
+  host.socket.send(JSON.stringify({ type: 'remove-member', memberId: joined.state.self.id }));
+  await guest.wait((m) => m.type === 'removed');
+  for (const [peer, guestId, reconnectSecret] of [
+    [sameIdentity, 'removed-identity', undefined],
+    [sameCapability, 'new-identity', joined.reconnectSecret],
+  ]) {
+    await peer.open();
+    peer.socket.send(JSON.stringify({ type: 'join-room', code: created.state.room.code, displayName: 'Guest again', guestId, reconnectSecret }));
+    assert.match((await peer.wait((m) => m.type === 'error')).message, /removed/i);
+  }
+});
+
 test('phone request keeps source authorization through RTC signaling', async (t) => {
   const { server, url } = await startServer();
   const host = client(url);
@@ -377,6 +455,7 @@ test('leave releases the host before reconnect so the host can end the same room
     code: created.state.room.code,
     displayName: 'Host again',
     guestId: 'lifecycle-host',
+    reconnectSecret: created.reconnectSecret,
   }));
   const rejoined = await reconnect.wait((message) => message.type === 'joined');
   assert.equal(rejoined.state.self.role, 'HOST');

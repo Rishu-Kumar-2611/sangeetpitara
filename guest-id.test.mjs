@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGuestId } from './guest-id.js';
+import { createGuestId, createSafeStorage } from './guest-id.js';
+
+test('storage-denied browsers retain a usable transient identity', () => {
+  const storage = createSafeStorage(() => { throw new Error('Storage denied'); });
+  assert.equal(storage.getItem('identity'), null);
+  storage.setItem('identity', 'private-session-id');
+  assert.equal(storage.getItem('identity'), 'private-session-id');
+  storage.removeItem('identity');
+  assert.equal(storage.getItem('identity'), null);
+});
 
 test('uses native randomUUID when available', () => {
   const expected = 'f0ebcfce-6839-4a98-9d28-a22301d475ec';

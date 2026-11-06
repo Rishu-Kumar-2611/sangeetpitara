@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const FRAME_SAMPLES = 960;
 const QUANTUM = 128;
 
-async function playout(targetDelayMs = 150) {
+async function playout(targetDelayMs = 40) {
   const source = await readFile(new URL('./relay-playout-worklet.js', import.meta.url), 'utf8');
   let Processor;
   const scope = vm.createContext({
@@ -43,7 +43,7 @@ async function playout(targetDelayMs = 150) {
       const end = rendered + Math.round(ms * 48);
       while (rendered < end) {
         const groupEnd = () => (Math.floor(delivered / bunch) + 1) * bunch;
-        while (connected && groupEnd() * FRAME_SAMPLES <= rendered + 9_600) {
+        while (connected && groupEnd() * FRAME_SAMPLES <= rendered) {
           for (let i = delivered, last = groupEnd(); i < last; i += 1) feed();
         }
         render();
@@ -64,8 +64,8 @@ test('playout skips a post-stall backlog instead of playing it late', async () =
   p.run(1_000);
   const bufferedMs = p.node.available / 48;
   const targetMs = p.node.targetFill / 48;
-  assert.ok(bufferedMs <= targetMs + 400, `buffered ${bufferedMs} ms vs target ${targetMs} ms`);
-  assert.ok(bufferedMs < 1_000, `stall left ${bufferedMs} ms of lasting delay`);
+  assert.ok(bufferedMs <= targetMs + 80, `buffered ${bufferedMs} ms vs target ${targetMs} ms`);
+  assert.ok(bufferedMs < 300, `stall left ${bufferedMs} ms of lasting delay`);
 });
 
 test('playout raises the underrun cushion once per rebuffer', async () => {
@@ -74,12 +74,14 @@ test('playout raises the underrun cushion once per rebuffer', async () => {
   assert.equal(p.node.adaptiveExtraFill, 0);
   p.run(400, { connected: false });
   assert.equal(p.node.underruns, 1);
-  assert.equal(p.node.adaptiveExtraFill, 3_840);
+  assert.equal(p.node.adaptiveExtraFill, 960);
 });
 
 for (const bunchMs of [100, 500]) {
-  test(`playout never skips audio for ${bunchMs} ms bursts that carry no late backlog`, async () => {
-    const p = await playout();
+  test(`playout preserves ${bunchMs} ms bursts with an appropriate chosen cushion`, async () => {
+    // Half-second delivery bursts inherently need a half-second buffer to
+    // preserve every sample. Keep that available as an explicit user choice.
+    const p = await playout(bunchMs === 500 ? 600 : 40);
     p.run(1_000);
     // Frames arrive in bursts: bunched, but each burst only carries audio
     // produced since the last one, so nothing is stale enough to skip.
@@ -88,3 +90,12 @@ for (const bunchMs of [100, 500]) {
     assert.ok(p.node.targetFill <= 48_000);
   });
 }
+
+test('default latency stays bounded instead of growing to hide half-second network stalls', async () => {
+  const p = await playout();
+  p.run(1_000);
+  p.run(10_000, { bunch: 25 });
+  assert.ok(p.node.targetFill / 48 <= 160);
+  assert.ok(p.node.available / 48 < 260);
+  assert.ok(p.skips > 0, 'severely delayed audio should be skipped to return to live');
+});

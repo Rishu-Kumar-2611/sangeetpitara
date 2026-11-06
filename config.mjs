@@ -11,7 +11,10 @@ function nonEmpty(value) {
 /** Validate deployment controls before a production listener is opened. */
 export function productionConfigErrors(env = process.env, { appVersion = env.APP_VERSION } = {}) {
   if (String(env.NODE_ENV || '').trim().toLowerCase() !== 'production') return [];
-  if (truthy(env.ROOMSOUND_TEST_MODE)) return [];
+  if (truthy(env.ROOMSOUND_TEST_MODE)) {
+    if (['127.0.0.1', '::1', 'localhost'].includes(env.HOST)) return [];
+    return ['ROOMSOUND_TEST_MODE is restricted to explicitly loopback-bound test servers.'];
+  }
 
   const errors = [];
   if (!nonEmpty(env.DATABASE_URL)) errors.push('DATABASE_URL must be configured in production.');

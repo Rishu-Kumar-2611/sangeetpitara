@@ -5,23 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="SangeetPitara — Privacy Policy for SangeetPitara — data, cookies, AdSense." />
 <title>SangeetPitara — Privacy Policy</title>
-<link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261026-mobile1" />
-<link rel="stylesheet" href="/styles.css?v=20261026-mobile1" />
+<link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261106-lowlatency1" />
+<link rel="stylesheet" href="/styles.css?v=20261106-lowlatency1" />
 <link rel="canonical" href="https://sangeet-pitaraa.onrender.com/privacy.html" />
 </head>
 <body>
 <main class="legal-page">
-<a class="brand-mark" href="/"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261026-mobile1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></a>
+<a class="brand-mark" href="/"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261106-lowlatency1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></a>
 <h1>Privacy Policy</h1>
-<p class="legal-muted">Effective 24 Oct 2024 · Updated 24 Oct 2026 · DG, India · <a href="/contact.html">Contact</a> · <a href="mailto:support@sangeet-pitaraa.onrender.com">support@sangeet-pitaraa.onrender.com</a></p>
+<p class="legal-muted">Effective 24 Oct 2024 · Updated 6 Nov 2026 · DG, India · <a href="/contact.html">Contact</a> · <a href="mailto:rishu2311singh@gmail.com">rishu2311singh@gmail.com</a></p>
 <p>SangeetPitara runs private live audio rooms at sangeet-pitaraa.onrender.com. Audio is relayed live in memory and never stored on disk. We collect only what is needed to keep rooms working.</p>
 <h2>Data we process</h2>
 <ul>
 <li>Display name + device guest ID in localStorage (no account needed).</li>
-<li>Room code, roster, host role, source requests, ephemeral chat (200/100) and live PCM16/WebRTC signals — in memory, gone when room closes.</li>
+<li>Room membership, source requests, chat and live audio are held in memory. When persistent storage is configured, room metadata, accounts and moderation records are stored in PostgreSQL. Guest-created rooms end when the server restarts.</li>
 <li>Security: IP (X-Forwarded-For only behind trusted proxy), User-Agent, rate limits, redacted audit logs, Report/Block/Ban records.</li>
 <li>Optional admin auth: email + hashed password and HttpOnly cookie roomsound_session (7–30 days).</li>
-<li>Preferences: ad consent, volume — in localStorage. (Rewarded-access gate is currently disabled; no expiry is stored.)</li>
+<li>Preferences and identity: ad consent, volume, a public guest ID and a private reconnect secret in browser localStorage or Android private app storage. The reconnect secret authenticates room recovery; do not share it.</li>
 </ul>
 <h2>Cookies</h2>
 <table class="legal-table">
@@ -41,6 +41,7 @@
 <li>After approval, <a href="/ads.txt">/ads.txt</a> lists <code>google.com, pub-XXXXXXXXXX, DIRECT, f08c47fec0942fa0</code>.</li>
 </ul>
 <h2>Sharing &amp; rights</h2>
+<p>Connections use TLS on the public service. Live PCM audio passes through our server and is not end-to-end encrypted. The application does not record audio.</p>
 <p>We share only with providers to run the service (host, DB, optional TURN/Stripe, Google only after consent). Access/correction/deletion — email via Contact; 30-day reply. Not directed at under-13s.</p>
 <p class="legal-back"><a href="/">Back to SangeetPitara</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a> · <a href="/contact.html">Contact</a> · <a href="#" id="reopen-consent">Cookie preferences</a></p>
 </main>

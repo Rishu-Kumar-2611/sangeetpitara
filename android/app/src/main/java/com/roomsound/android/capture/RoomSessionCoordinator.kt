@@ -57,6 +57,18 @@ class RoomSessionCoordinator(
     )
 
     private val appContext = context.applicationContext
+    // Private app storage survives service/process recreation. The capability
+    // is separate from the public guest identifier and never enters room state.
+    private val reconnectSecret: String by lazy {
+        val preferences = appContext.getSharedPreferences("roomsound-room-identity", Context.MODE_PRIVATE)
+        preferences.getString("reconnect-secret", null)
+            ?.takeIf { Regex("[A-Za-z0-9_-]{32,80}").matches(it) }
+            ?: UUID.randomUUID().toString().also {
+                check(preferences.edit().putString("reconnect-secret", it).commit()) {
+                    "Could not save secure room identity. Please retry."
+                }
+            }
+    }
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArraySet<Listener>()
     private var endpoint: String? = null
@@ -113,7 +125,7 @@ class RoomSessionCoordinator(
             return false
         }
         disposeRoom(notifyStopped = false)
-        val nextClient = RoomSoundWebSocketClient(next)
+        val nextClient = RoomSoundWebSocketClient(next, reconnectSecret = reconnectSecret)
         client = nextClient
         endpoint = next
         val listener = object : RoomSoundWebSocketClient.Listener {

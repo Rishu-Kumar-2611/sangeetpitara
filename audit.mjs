@@ -8,6 +8,7 @@ export const AUDIT_EVENT_TYPES = Object.freeze([
   'auth.login.succeeded',
   'auth.login.failed',
   'auth.logout',
+  'admin.account.revoked',
   'room.created',
   'room.joined',
   'room.left',

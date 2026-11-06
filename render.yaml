@@ -12,7 +12,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: APP_VERSION
-        value: 1.1.2
+        value: 1.1.3
       - key: HOST
         value: 0.0.0.0
       - key: TRUST_PROXY

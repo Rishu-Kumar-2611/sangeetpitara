@@ -236,7 +236,7 @@ docker run --rm -p 4173:4173 --env-file .env roomsound:local
 ```
 
 The root `Dockerfile` also provides an isolated Android build target with JDK 17, Android
-SDK Platform 35, and pinned command-line/build-tools versions:
+SDK Platform 36, and pinned command-line/build-tools versions:
 
 ```powershell
 docker build --target android-build -t roomsound-android:local .
@@ -265,8 +265,8 @@ their placeholders and obtain legal review before launch.
 
 ## Android release build
 
-The Android wrapper is checked in and pins Gradle 8.9. Use JDK 17, Android SDK
-Platform 35, and Android SDK Build-Tools. The Android Gradle Plugin and Kotlin
+The Android wrapper is checked in and pins Gradle 8.11.1. Use JDK 17, Android SDK
+Platform 36, and Android SDK Build-Tools. The Android Gradle Plugin and Kotlin
 plugin versions are pinned in `android/build.gradle.kts`.
 
 From `android/`, a debug build is:

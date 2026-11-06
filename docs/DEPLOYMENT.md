@@ -191,8 +191,11 @@ template with a reviewed notice. Do not place ads over live audio controls or
 log ad identifiers/consent payloads.
 
 Replace the legal placeholders in `docs/PRIVACY.md`, `docs/TERMS.md`, and
-`docs/ABUSE.md`, publish the pages, and set `ADMIN_EMAILS` or database admin
-flags before accepting reports. Do not expose unrestricted ban operations to
+`docs/ABUSE.md`, publish the pages, and provision database `users.is_admin`
+roles through a trusted operator connection after verifying account ownership.
+`ADMIN_EMAILS` only reserves addresses from public registration; it never grants
+privileges. Existing allowlisted operators must be explicitly provisioned before
+upgrading. Do not expose unrestricted ban operations to
 the public internet; put them behind an internal admin console or network
 policy.
 

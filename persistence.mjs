@@ -434,7 +434,8 @@ export class PostgresRepository {
 
   async findSession(tokenHash) {
     const result = await this.pool.query(
-      `SELECT token_hash, user_id, expires_at, created_at, last_seen_at
+      `SELECT sessions.token_hash, sessions.user_id, sessions.expires_at,
+              sessions.created_at, sessions.last_seen_at
        FROM sessions
        JOIN users ON users.id = sessions.user_id
        WHERE token_hash = $1

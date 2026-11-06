@@ -13,6 +13,7 @@ internal class AndroidPcm16RelayAudioOutput(format: Pcm16AudioFormat) : Pcm16Rel
     // Only the writer touches this; legacy short-start capacity is restored
     // once playback has actually consumed data, never after a timed sleep.
     private var restoreBufferFrames: Int? = null
+    private var observedUnderruns = 0
 
     init {
         val minimum = AudioTrack.getMinBufferSize(
@@ -21,12 +22,10 @@ internal class AndroidPcm16RelayAudioOutput(format: Pcm16AudioFormat) : Pcm16Rel
             AudioFormat.ENCODING_PCM_16BIT,
         )
         require(minimum > 0) { "Android returned an invalid AudioTrack buffer size: $minimum" }
-        // ~400 ms absorbs WAN/TCP transport and CPU jitter without underrunning;
-        // this path has no packet-loss concealment. Blocking writes keep it full,
-        // so it is also fixed listener latency; Pcm16RelayPlayer's catch-up stops
-        // stall backlogs from adding to it.
-        // A device may require a larger minimum; query its actual writable size.
-        val targetFrames = (format.sampleRate * 3) / 5
+        // Reserve room for recovery, but operate at 40 ms on capable devices.
+        // Capacity is not the active buffer size. Respect the device minimum.
+        val targetFrames = maxOf((minimum + 1) / 2, format.sampleRate * 40 / 1_000)
+        val capacityFrames = maxOf(targetFrames, format.sampleRate * 120 / 1_000)
         val created = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -42,7 +41,8 @@ internal class AndroidPcm16RelayAudioOutput(format: Pcm16AudioFormat) : Pcm16Rel
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build(),
             )
-            .setBufferSizeInBytes(maxOf(minimum, targetFrames * 2))
+            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+            .setBufferSizeInBytes(capacityFrames * 2)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         try {
@@ -66,6 +66,16 @@ internal class AndroidPcm16RelayAudioOutput(format: Pcm16AudioFormat) : Pcm16Rel
             bytes, offset, boundedCount,
             if (blocking) AudioTrack.WRITE_BLOCKING else AudioTrack.WRITE_NON_BLOCKING,
         )
+        // A poor network/device can earn a little more cushion, rather than
+        // forcing every listener to carry 600 ms of latency from the start.
+        val underruns = track.underrunCount
+        if (underruns > observedUnderruns) {
+            observedUnderruns = underruns
+            val next = minOf(track.bufferCapacityInFrames,
+                track.bufferSizeInFrames + track.sampleRate * 20 / 1_000)
+            track.setBufferSizeInFrames(next)
+            restoreBufferFrames = restoreBufferFrames?.let { maxOf(it, next) }
+        }
         val restore = restoreBufferFrames
         if (blocking && written > 0 && restore != null && track.playbackHeadPosition != 0) {
             track.setBufferSizeInFrames(restore)

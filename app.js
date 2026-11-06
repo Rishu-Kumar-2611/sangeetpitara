@@ -1,19 +1,19 @@
-import { createGuestId } from './guest-id.js?v=20261026-mobile1';
-import { RelayPcmPacketizer } from './relay-pcm.js?v=20261026-mobile1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261106-lowlatency1';
+import { RelayPcmPacketizer } from './relay-pcm.js?v=20261106-lowlatency1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261026-mobile1';
+} from './capture-tracks.js?v=20261106-lowlatency1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261026-mobile1';
+} from './media-relay.mjs?v=20261106-lowlatency1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -25,19 +25,21 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261026-mobile1';
-import { roomPalette } from './room-palette.js?v=20261026-mobile1';
+} from './ads.mjs?v=20261106-lowlatency1';
+import { roomPalette } from './room-palette.js?v=20261106-lowlatency1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
+const browserStorage = createSafeStorage();
+
 const guestStorageKey = 'roomsound-guest-id';
-const guestId = localStorage.getItem(guestStorageKey) || createGuestId();
-localStorage.setItem(guestStorageKey, guestId);
+const guestId = browserStorage.getItem(guestStorageKey) || createGuestId();
+browserStorage.setItem(guestStorageKey, guestId);
 
 const reconnectSecretStorageKey = 'roomsound-reconnect-secret';
-const reconnectSecret = localStorage.getItem(reconnectSecretStorageKey) || createGuestId();
-localStorage.setItem(reconnectSecretStorageKey, reconnectSecret);
+let reconnectSecret = browserStorage.getItem(reconnectSecretStorageKey) || createGuestId();
+browserStorage.setItem(reconnectSecretStorageKey, reconnectSecret);
 
 const notificationServiceWorkerUrl = '/notifications-sw.js?v=20261018-1';
 const notificationActionMessageType = 'roomsound-notification-action';
@@ -50,11 +52,7 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
 };
 const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
 const SYNC_OFFSET_MAX_MS = 1000; // Matches the #sync-offset slider max and the worklet's target ceiling.
-// Fallback playahead cap: the largest initial cushion plus the worklet's 400 ms
-// excess headroom. It must stay above SYNC_OFFSET_MAX_MS, or the first frame
-// scheduled at the cushion would trip a reset on every following frame.
-const RELAY_MAX_PLAYAHEAD_SECONDS = SYNC_OFFSET_MAX_MS / 1000 + 0.4;
-const RELAY_CAPTURE_MAX_AGE_SECONDS = 2.5; // Allow up to 2.5 s of background-tab delivery jitter before dropping.
+const RELAY_CAPTURE_MAX_AGE_SECONDS = 0.12; // Never publish seconds-old background-tab audio.
 
 function clampVolume(v) {
   const n = Number(v);
@@ -64,8 +62,8 @@ function clampVolume(v) {
 
 function clampSyncOffsetMs(v) {
   const n = Number(v);
-  if (!Number.isFinite(n)) return 150;
-  return Math.min(SYNC_OFFSET_MAX_MS, Math.max(60, Math.round(n / 20) * 20));
+  if (!Number.isFinite(n)) return 40;
+  return Math.min(SYNC_OFFSET_MAX_MS, Math.max(20, Math.round(n / 20) * 20));
 }
 
 function enhanceOpusSdpForMusic(sdp) {
@@ -137,8 +135,8 @@ const state = {
   auraLevel: null,
   paletteCode: null,
   muted: false,
-  volume: clampVolume(localStorage.getItem('roomsound-volume') ?? 0.9),
-  syncOffsetMs: clampSyncOffsetMs(localStorage.getItem('roomsound-sync-offset-ms') ?? 150),
+  volume: clampVolume(browserStorage.getItem('roomsound-volume') ?? 0.9),
+  syncOffsetMs: clampSyncOffsetMs(browserStorage.getItem('roomsound-sync-offset-ms') ?? 40),
   peers: new Map(),
   pendingIntent: null,
   lastSourceId: null,
@@ -834,13 +832,13 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261026-mobile1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261106-lowlatency1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
           channelCount: 2, channelCountMode: 'max', channelInterpretation: 'speakers',
         });
-        processor.port.postMessage({ type: 'config', maxInFlight: 128 });
+        processor.port.postMessage({ type: 'config', maxInFlight: 8 });
         const node = processor;
         node.port.onmessage = ({ data }) => {
           if (!current() || state.relayProcessor !== node) return;
@@ -908,7 +906,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261026-mobile1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261106-lowlatency1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1099,6 +1097,7 @@ function handleRelayFrame(data) {
 
   // Compatibility Fallback Path (with initial prefill cushion & expanded 650 ms window)
   const now = context.currentTime;
+  const RELAY_MAX_PLAYAHEAD_SECONDS = Math.max(0.04, state.syncOffsetMs / 1000) + 0.08;
   if (state.relayPlaybackNextTime > now + RELAY_MAX_PLAYAHEAD_SECONDS) resetRelayPlaybackQueue(frame.sourceEpoch);
   const initialCushion = Math.max(0.04, state.syncOffsetMs / 1000);
   const targetNext = state.relayPlaybackNextTime || (now + initialCushion);
@@ -1219,6 +1218,7 @@ function selectEntryTab(entryType) {
     const selected = tab.dataset.entryTab === selectedType;
     tab.classList.toggle('active', selected);
     tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
   });
   $$('.entry-panel').forEach((panel) => {
     const selected = panel.id === `${selectedType}-panel`;
@@ -1411,6 +1411,10 @@ function connectAnd(action, isReconnect = false) {
 }
 
 function handleServerMessage(message) {
+  if (message.type === 'joined' && /^[A-Za-z0-9_-]{32,80}$/.test(message.reconnectSecret || '')) {
+    reconnectSecret = message.reconnectSecret;
+    try { browserStorage.setItem(reconnectSecretStorageKey, reconnectSecret); } catch {}
+  }
   if (message.type === 'error') {
     state.pendingRoomEnd = false;
     toast(message.message, 'error');
@@ -2554,6 +2558,37 @@ function openShare() {
   closeRoomMenu();
 }
 
+let openModalCount = 0;
+let appWasInert = false;
+function containModalFocus(modal) {
+  const previous = document.activeElement;
+  const app = $('#app');
+  if (openModalCount++ === 0) {
+    appWasInert = Boolean(app?.inert);
+    if (app) app.inert = true;
+  }
+  modal.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab') return;
+    const controls = [...modal.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]')]
+      .filter((element) => element.getClientRects().length);
+    if (!controls.length) { event.preventDefault(); return; }
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+      event.preventDefault(); first.focus();
+    }
+  });
+  const removed = new MutationObserver(() => {
+    if (modal.isConnected) return;
+    removed.disconnect();
+    if (--openModalCount === 0 && app) app.inert = appWasInert;
+    if (previous?.isConnected && !previous.closest('[inert]')) previous.focus();
+  });
+  removed.observe($('#modal-root'), { childList: true });
+}
+
 function openRoomConfirmation(action) {
   const ending = action === 'end';
   closeRoomMenu();
@@ -2562,6 +2597,7 @@ function openRoomConfirmation(action) {
   modal.setAttribute('role', 'presentation');
   modal.innerHTML = `<div class="source-modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="room-confirm-title" aria-describedby="room-confirm-copy"><div class="modal-eyebrow">${ending ? 'END ROOM' : 'LEAVE ROOM'}</div><h2 id="room-confirm-title">${ending ? 'End this room?' : 'Leave this room?'}</h2><p id="room-confirm-copy">${ending ? 'Everyone will be disconnected and this invite will stop working. Ending a room cannot be undone.' : 'You will stop listening on this device. The room stays open for everyone else.'}</p><div class="confirmation-actions"><button class="confirm-cancel" data-confirm-cancel="true" type="button">${ending ? 'Keep room' : 'Stay in room'}</button><button class="confirm-action" data-confirm-action="true" type="button">${ending ? 'End room' : 'Leave room'}</button></div></div>`;
   $('#modal-root').append(modal);
+  containModalFocus(modal);
 
   const dismiss = () => {
     document.removeEventListener('keydown', onKeyDown);
@@ -2603,6 +2639,7 @@ function openRoomSettings() {
   modal.className = 'modal-backdrop';
   modal.innerHTML = `<div class="source-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="room-settings-title"><div class="modal-eyebrow">ROOM SETTINGS</div><h2 id="room-settings-title">${escapeHtml(state.room.name)}</h2><p>Private room · up to 10 people · audio is not recorded. Share, leave, and end actions are in the Room menu.</p><div class="settings-summary"><div><span>Room code</span><strong>${escapeHtml(state.room.code)}</strong></div><div><span>Current source</span><strong>${escapeHtml(state.room.activeSourceId ? sourceLabel(state.room.activeSourceType) : 'None')}</strong></div></div>${notificationSettingsMarkup()}<button class="modal-close" type="button">Close</button></div>`;
   $('#modal-root').append(modal);
+  containModalFocus(modal);
   const dismiss = () => {
     document.removeEventListener('keydown', onKeyDown);
     modal.remove();
@@ -2644,6 +2681,17 @@ function sendRequest() {
 
 function wireEvents() {
   $$('.entry-tab').forEach((tab) => tab.addEventListener('click', () => selectEntryTab(tab.dataset.entryTab)));
+  $('.entry-tabs')?.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = $$('.entry-tab');
+    const current = tabs.indexOf(document.activeElement);
+    if (current === -1) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+      : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    selectEntryTab(tabs[next].dataset.entryTab);
+    tabs[next].focus();
+  });
   $$('.room-tab').forEach((tab) => tab.addEventListener('click', () => selectRoomTab(tab.dataset.roomTab)));
   $('#room-tabs')?.addEventListener('keydown', (event) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -2699,7 +2747,7 @@ function wireEvents() {
   $('#volume-label').textContent = `${Math.round(state.volume * 100)}%`;
   $('#local-volume').addEventListener('input', (event) => {
     state.volume = clampVolume(event.target.value);
-    localStorage.setItem('roomsound-volume', String(state.volume));
+    browserStorage.setItem('roomsound-volume', String(state.volume));
     $('#volume-label').textContent = `${Math.round(state.volume * 100)}%`;
     event.target.value = String(state.volume);
     applyOutputVolume();
@@ -2709,7 +2757,7 @@ function wireEvents() {
     if ($('#sync-offset-label')) $('#sync-offset-label').textContent = `${state.syncOffsetMs}ms`;
     $('#sync-offset').addEventListener('input', (event) => {
       state.syncOffsetMs = clampSyncOffsetMs(event.target.value);
-      localStorage.setItem('roomsound-sync-offset-ms', String(state.syncOffsetMs));
+      browserStorage.setItem('roomsound-sync-offset-ms', String(state.syncOffsetMs));
       if ($('#sync-offset-label')) $('#sync-offset-label').textContent = `${state.syncOffsetMs}ms`;
       state.relayPlaybackWorklet?.port?.postMessage({ type: 'config', targetDelayMs: state.syncOffsetMs });
       renderTelemetry();
@@ -2837,15 +2885,22 @@ function wireGlobalCookieBanner(){
     const allow = document.getElementById('cookie-allow');
     const deny  = document.getElementById('cookie-deny');
     const footerPrefs = document.getElementById('footer-cookie-prefs');
+    const adsConfigured = document.querySelector('meta[name="roomsound-ad-enabled"]')?.content === 'true';
+    if (!adsConfigured) {
+      if (banner) banner.hidden = true;
+      if (footerPrefs) footerPrefs.hidden = true;
+      return;
+    }
+    if (footerPrefs) footerPrefs.hidden = false;
     if (!banner || banner.dataset.wired) return;
     banner.dataset.wired = 'true';
     const KEY = 'roomsound-ad-consent';
-    const hasChoice = (()=>{ try{ const v=localStorage.getItem(KEY); return v==='granted'||v==='denied'; }catch{ return false; }})();
-    // Show once if no choice yet (even before AdSense is enabled — teaches consent UX for reviewer)
+    const hasChoice = (()=>{ try{ const v=browserStorage.getItem(KEY); return v==='granted'||v==='denied'; }catch{ return false; }})();
+    // Offer a choice only when this deployment actually enables advertising.
     if (!hasChoice) banner.hidden = false;
     // Also respect the provider-gated ad-consent-banner visibility managed by ads.mjs/initializeAdSlots
     const persist = (granted)=>{
-      try{ localStorage.setItem(KEY, granted?'granted':'denied'); }catch(e){}
+      try{ browserStorage.setItem(KEY, granted?'granted':'denied'); }catch(e){}
       const meta = document.querySelector('meta[name="roomsound-ad-consent"]');
       if (meta) meta.content = granted?'granted':'denied';
       banner.hidden = true;

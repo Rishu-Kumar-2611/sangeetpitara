@@ -32,7 +32,7 @@ class Pcm16RelayPlayer internal constructor(
     private val maxQueuedFrames: Int = DEFAULT_MAX_QUEUED_FRAMES,
     private val maxQueuedBytes: Int = MAX_QUEUED_BYTES,
     private val onStatus: (String) -> Unit = {},
-    private val startupTimeoutNanos: Long = TimeUnit.MILLISECONDS.toNanos(120),
+    private val startupTimeoutNanos: Long = TimeUnit.MILLISECONDS.toNanos(40),
     private val nanoTime: () -> Long = System::nanoTime,
     private val catchUpQueuedBytes: Int = Int.MAX_VALUE,
     private val catchUpLandingBytes: Int = 0,
@@ -378,11 +378,11 @@ class Pcm16RelayPlayer internal constructor(
 
     companion object {
         const val DEFAULT_MAX_QUEUED_FRAMES = 12
-        const val PRODUCTION_MAX_QUEUED_FRAMES = 120
-        const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 2_400 / 1_000
-        // Allow up to 900 ms of software burst cushion on weak mobile networks before skipping ahead, landing at 250 ms.
-        const val PRODUCTION_CATCH_UP_QUEUED_BYTES = 48_000 * 2 * 900 / 1_000
-        const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 250 / 1_000
+        const val PRODUCTION_MAX_QUEUED_FRAMES = 24
+        const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 240 / 1_000
+        // Favor current audio over playing a post-stall TCP backlog late.
+        const val PRODUCTION_CATCH_UP_QUEUED_BYTES = 48_000 * 2 * 160 / 1_000
+        const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 40 / 1_000
         private const val CATCH_UP_CROSSFADE_SAMPLES = 240 // 5 ms at 48 kHz
         val FORMAT = Pcm16AudioFormat(48_000, 1)
         private const val UINT32_MAX = Pcm16RelayPacketCodec.UINT32_MAX

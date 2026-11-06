@@ -611,6 +611,7 @@ class MainActivity : Activity() {
         renderAccessState()
         renderPlaybackHandoffControl()
         return ScrollView(this).apply {
+            applySystemInsets()
             isFillViewport = true
             isVerticalScrollBarEnabled = false
             setBackgroundResource(R.drawable.bg_roomsound_background)

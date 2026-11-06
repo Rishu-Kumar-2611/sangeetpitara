@@ -9,6 +9,7 @@ import okio.ByteString
 import org.json.JSONObject
 import java.io.Closeable
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -34,6 +35,7 @@ class RoomSoundWebSocketClient(
     endpoint: String,
     private val okHttpClient: OkHttpClient = defaultOkHttpClient(),
     private val autoReconnect: Boolean = true,
+    private val reconnectSecret: String = UUID.randomUUID().toString(),
 ) : Closeable {
     interface Listener {
         fun onConnectionStateChanged(state: RoomConnectionState)
@@ -581,6 +583,7 @@ class RoomSoundWebSocketClient(
                 .put("displayName", intent.displayName)
                 .put("guestId", intent.guestId)
         }
+        message.put("reconnectSecret", reconnectSecret)
         if (!socket.send(message.toString())) {
             emit(RoomSoundEvent.Error("SangeetPitara could not send the room selection request."))
         }
@@ -698,7 +701,7 @@ class RoomSoundWebSocketClient(
         // Keep sender backlog near 1 s of PCM16 (matching the web sender) so
         // Wi-Fi bursts do not drop frames prematurely while avoiding
         // multi-second stale queues.
-        private const val MAX_RELAY_QUEUED_BYTES = 192_000L
+        private const val MAX_RELAY_QUEUED_BYTES = 12_288L // ~125 ms, including frame headers
 
         private fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
             .pingInterval(15, TimeUnit.SECONDS)

@@ -4,6 +4,9 @@
 .git/
 # Keep .gitignore: the release packaging regression reads it during npm test.
 node_modules/
+test-results/
+playwright-report/
+e2e/
 *.log
 *.apk
 android/.gradle/

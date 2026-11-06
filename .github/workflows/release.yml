@@ -59,7 +59,7 @@ jobs:
 
       - name: Install and test web release
         working-directory: .
-        run: npm ci && npm test && npm run check
+        run: npm ci && npm test && npm run check && node checks/latency-benchmark.mjs --check --current-only
 
       - name: Verify repository release identity
         working-directory: .
@@ -100,7 +100,7 @@ jobs:
           ROOMSOUND_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ROOMSOUND_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ROOMSOUND_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease :app:lintRelease --no-daemon --console=plain
+        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease :app:bundleRelease :app:lintRelease --no-daemon --console=plain
 
       - name: Verify signature and stage assets
         env:
@@ -114,6 +114,7 @@ jobs:
           # points at the newest release (the website and in-app update use it).
           cp "$apk" "$RUNNER_TEMP/release/SangeetPitara.apk"
           cp "$apk" "$RUNNER_TEMP/release/SangeetPitara-$TAG.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/release/SangeetPitara-$TAG.aab"
 
       - name: Publish GitHub Release
         working-directory: .
@@ -126,7 +127,8 @@ jobs:
             --title "SangeetPitara $NAME" \
             --generate-notes \
             "$RUNNER_TEMP/release/SangeetPitara.apk" \
-            "$RUNNER_TEMP/release/SangeetPitara-$TAG.apk"
+            "$RUNNER_TEMP/release/SangeetPitara-$TAG.apk" \
+            "$RUNNER_TEMP/release/SangeetPitara-$TAG.aab"
 
       - name: Remove keystore
         if: always()

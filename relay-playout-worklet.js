@@ -2,11 +2,11 @@
 // Proportional-Integral (PI) hardware clock-drift compensation, 4-point Hermite
 // cubic interpolation, raised-cosine crossfading, and short loop-based Packet
 // Loss Concealment (PLC) for long-distance (500–10,000+ km) streaming.
-const DEFAULT_TARGET_FILL = 7_200; // 150 ms base cushion; the jitter estimate and underrun cushion add to it
+const DEFAULT_TARGET_FILL = 1_920; // 40 ms base on a healthy path
 const MAX_TARGET_FILL = 48_000; // 1,000 ms ceiling on the automatic target
-const MIN_PREFILL_SAMPLES = 9_600; // 200 ms initial prefill before starting playout
-const EXCESS_HEADROOM_SAMPLES = 19_200; // Skip ahead once a backlog sits 400 ms above target...
-const CATCH_UP_LANDING_SAMPLES = 7_200; // ...landing 150 ms above target, so a stall never leaves lasting delay or immediate underrun
+const MIN_PREFILL_SAMPLES = 1_920; // 40 ms initial prefill
+const EXCESS_HEADROOM_SAMPLES = 3_840; // Catch up once 80 ms above target
+const CATCH_UP_LANDING_SAMPLES = 960; // Land 20 ms above target
 // 2.0 s ring: holds the 1.4 s ceiling plus one maximum-size (64 KiB, ~680 ms) frame.
 const CAPACITY_SAMPLES = 96_000;
 const FADE_SAMPLES = 960; // 20 ms cosine fade-in / crossfade for inaudible transitions
@@ -34,7 +34,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.framesPlayed = 0;
     this.reportCountdown = 0;
     this.lastEnqueueTime = null;
-    this.jitterSeconds = 0.015; // EWMA inter-arrival jitter estimate
+    this.jitterSeconds = 0.002; // Do not invent network jitter before measuring it.
     this._smoothedRate = 1.0;
 
     this.port.onmessage = ({ data }) => {
@@ -45,7 +45,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       }
       if (data.type === 'config') {
         if (Number.isFinite(data.targetDelayMs)) {
-          const clampedMs = Math.max(60, Math.min(MAX_TARGET_FILL / 48, Number(data.targetDelayMs)));
+          const clampedMs = Math.max(20, Math.min(MAX_TARGET_FILL / 48, Number(data.targetDelayMs)));
           this.baseTargetFill = Math.round((clampedMs / 1000) * 48_000);
           this.updateTargetFill();
         }
@@ -59,9 +59,9 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
 
   updateTargetFill() {
     // Combine user slider base delay + RFC 3550 jitter margin (3.5x jitter) + underrun auto-cushion
-    const jitterSamples = Math.round(Math.min(0.60, this.jitterSeconds * 3.5) * 48_000);
+    const jitterSamples = Math.round(Math.min(0.06, this.jitterSeconds * 2.5) * 48_000);
     const desired = this.baseTargetFill + jitterSamples + this.adaptiveExtraFill;
-    this.targetFill = Math.max(2_880, Math.min(MAX_TARGET_FILL, desired)); // Clamp between 60 ms and 1,000 ms
+    this.targetFill = Math.max(960, Math.min(MAX_TARGET_FILL, this.baseTargetFill + 5_760, desired));
   }
 
   resetBuffer() {
@@ -73,7 +73,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.concealedSamples = 0;
     this.adaptiveExtraFill = 0;
     this.lastEnqueueTime = null;
-    this.jitterSeconds = 0.015;
+    this.jitterSeconds = 0.002;
     this.updateTargetFill();
     this.avgFill = this.targetFill;
   }
@@ -134,7 +134,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
 
     // Resume playout as soon as 200-280 ms is buffered so rebuffering never mutes for 800+ ms;
     // the PI controller then gently builds the remaining cushion while music plays.
-    const requiredPrefill = Math.max(MIN_PREFILL_SAMPLES, Math.min(this.targetFill, 13_440));
+    const requiredPrefill = Math.max(MIN_PREFILL_SAMPLES, this.baseTargetFill, Math.min(this.targetFill, 3_840));
     if (!this.playing && this.available >= requiredPrefill) {
       this.playing = true;
       this.fadeProgress = 0;
@@ -201,7 +201,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
         // cosine attenuation envelope for up to 100 ms before entering rebuffering.
         if (this.concealedSamples === 0) {
           // Step up adaptive cushion by +80 ms (3,840 samples) so the next cycle won't underrun
-          this.adaptiveExtraFill = Math.min(38_400, this.adaptiveExtraFill + 3_840);
+          this.adaptiveExtraFill = Math.min(3_840, this.adaptiveExtraFill + 960);
           this.updateTargetFill();
         }
         if (this.concealedSamples < PLC_HOLD_SAMPLES) {

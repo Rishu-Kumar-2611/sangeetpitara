@@ -1,3 +1,6 @@
+import { createSafeStorage } from './guest-id.js?v=20261106-lowlatency1';
+const browserStorage = createSafeStorage();
+
 /**
  * Provider-neutral advertising boundary.
  *
@@ -27,7 +30,7 @@ function metaValue(documentRef, name) {
   return documentRef.querySelector(`meta[name="${name}"]`)?.content?.trim() || '';
 }
 
-function storedConsent(storage = globalThis.localStorage) {
+function storedConsent(storage = browserStorage) {
   try {
     return storage?.getItem(AD_CONSENT_STORAGE_KEY) === 'granted';
   } catch {
@@ -46,7 +49,7 @@ export function readAdConfig(documentRef = globalThis.document) {
   return { enabled: Boolean(provider) && enabled && consent, consent, provider, client };
 }
 
-export function setAdConsent(granted, documentRef = globalThis.document, storage = globalThis.localStorage) {
+export function setAdConsent(granted, documentRef = globalThis.document, storage = browserStorage) {
   const value = granted ? 'granted' : 'denied';
   try { storage?.setItem(AD_CONSENT_STORAGE_KEY, value); } catch {}
   const meta = documentRef?.querySelector?.('meta[name="roomsound-ad-consent"]');
@@ -94,7 +97,7 @@ export function normalizeRewardedAccessConfig(config = {}) {
   };
 }
 
-export function readRewardedAccessExpiry(storage = globalThis.localStorage) {
+export function readRewardedAccessExpiry(storage = browserStorage) {
   try {
     const expiry = Number(storage?.getItem(REWARDED_ACCESS_STORAGE_KEY));
     return Number.isFinite(expiry) && expiry > 0 ? expiry : null;
@@ -103,14 +106,14 @@ export function readRewardedAccessExpiry(storage = globalThis.localStorage) {
   }
 }
 
-export function hasRewardedAccess({ storage = globalThis.localStorage, now = Date.now() } = {}) {
+export function hasRewardedAccess({ storage = browserStorage, now = Date.now() } = {}) {
   const expiry = readRewardedAccessExpiry(storage);
   const nowMs = Number(now);
   return expiry !== null && Number.isFinite(nowMs) && expiry > nowMs;
 }
 
 export function grantRewardedAccess({
-  storage = globalThis.localStorage,
+  storage = browserStorage,
   now = Date.now(),
   config = DEFAULT_REWARDED_ACCESS_CONFIG,
   durationMs,
@@ -128,7 +131,7 @@ export function grantRewardedAccess({
   }
 }
 
-export function clearRewardedAccess(storage = globalThis.localStorage) {
+export function clearRewardedAccess(storage = browserStorage) {
   try { storage?.removeItem(REWARDED_ACCESS_STORAGE_KEY); } catch {}
 }
 

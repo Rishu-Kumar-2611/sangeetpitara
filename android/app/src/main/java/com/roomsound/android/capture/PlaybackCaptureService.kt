@@ -73,6 +73,9 @@ class PlaybackCaptureService : Service() {
     private var hasAudioFocus = false
     private var focusSuppressed = false
     private var destroyed = false
+    private val networkLockRenewal = Runnable {
+        if (!destroyed) setNetworkLocks(lifecycle.needsLocks)
+    }
     private val protectionTimeout = Runnable {
         if (lifecycle.isExpired(SystemClock.elapsedRealtime())) {
             roomSession.leaveRoom()
@@ -408,6 +411,7 @@ class PlaybackCaptureService : Service() {
 
     @Suppress("DEPRECATION")
     private fun setNetworkLocks(required: Boolean) {
+        main.removeCallbacks(networkLockRenewal)
         if (!required) {
             releaseResource("sleep keep-alive track") {
                 sleepKeepAliveTrack?.let { track ->
@@ -436,9 +440,17 @@ class PlaybackCaptureService : Service() {
                 setReferenceCounted(false)
                 wifiLock = this
             }
-        if (!cpu.isHeld) cpu.acquire()
-        if (!wifi.isHeld) wifi.acquire()
-        ensureSleepKeepAliveTrack()
+        try {
+            // Renew a bounded lease only while the service lifecycle needs it.
+            // A stalled main thread cannot hold the CPU awake indefinitely.
+            cpu.acquire(10 * 60_000L)
+            if (!wifi.isHeld) wifi.acquire()
+            main.postDelayed(networkLockRenewal, 5 * 60_000L)
+            ensureSleepKeepAliveTrack()
+        } catch (error: RuntimeException) {
+            setNetworkLocks(false)
+            android.util.Log.w("RoomSound", "Network protection unavailable", error)
+        }
     }
 
     private fun ensureSleepKeepAliveTrack() {

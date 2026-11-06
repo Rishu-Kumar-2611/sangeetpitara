@@ -48,7 +48,7 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 const rootPath = resolve(root);
 const releaseProperties = await readFile(new URL('./release.properties', import.meta.url), 'utf8').catch(() => '');
 const releaseProperty = (name) => releaseProperties.match(new RegExp(`^${name}=(.+)$`, 'm'))?.[1]?.trim() || '';
-const appVersion = String(process.env.APP_VERSION || releaseProperty('VERSION_NAME') || '0.0.0').trim();
+const appVersion = String(releaseProperty('VERSION_NAME') || process.env.APP_VERSION || '0.0.0').trim();
 assertProductionConfig(process.env, { appVersion });
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || '0.0.0.0';
@@ -64,6 +64,11 @@ const legacyPublicHosts = new Set(
 );
 const rooms = new Map();
 const reservedRoomCodes = new Set();
+const MAX_ACTIVE_ROOMS = 50;
+const MAX_CONNECTIONS = 200;
+const MAX_CONNECTIONS_PER_IP = 40;
+const MAX_PENDING_COMMANDS = 16;
+const OFFLINE_MEMBER_TTL_MS = 5 * 60_000;
 const requestTtlMs = 45_000;
 
 const requestJitterMs = 5_000;
@@ -125,6 +130,7 @@ const repository = await createRepositoryFromEnv(process.env);
 const auth = createAuthService({
   repository,
   sessionTtlMs: process.env.SESSION_TTL_MS,
+  reservedEmails: configuredAdminEmails(),
 });
 const secureSessionCookie = sessionCookieSecure(process.env);
 const roomAuthRequired = false;
@@ -184,14 +190,33 @@ const securityHeaders = {
   'Origin-Agent-Cluster': '?1',
 };
 
+// Only client assets belong to the public HTTP surface. Backend modules,
+// audit evidence, tests and future repository files are private by default.
+const publicFiles = new Set([
+  'index.html', 'about.html', 'contact.html', 'privacy.html', 'terms.html',
+  'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css',
+  'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
+  'room-palette.js', 'media-relay.mjs', 'relay-pcm.js',
+  'relay-capture-worklet.js', 'relay-playout-worklet.js', 'notifications-sw.js',
+  'manifest.webmanifest',
+]);
+
+function isPublicFile(name) {
+  return publicFiles.has(name)
+    || /^fonts\/[a-zA-Z0-9-]+\.(woff2|txt)$/.test(name)
+    || /^branding\/sangeetpitara\/\d{2}-[a-z-]+\.svg$/.test(name);
+}
+
 const rateLimit = new Map();
 const staticRateLimit = new Map();
 const authRateLimit = new Map();
+const roomCreationRateLimit = new Map();
 setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of rateLimit) if (now > entry.resetAt) rateLimit.delete(ip);
   for (const [ip, entry] of staticRateLimit) if (now > entry.resetAt) staticRateLimit.delete(ip);
   for (const [ip, entry] of authRateLimit) if (now > entry.resetAt) authRateLimit.delete(ip);
+  for (const [ip, entry] of roomCreationRateLimit) if (now > entry.resetAt) roomCreationRateLimit.delete(ip);
 }, 60_000).unref();
 
 function checkRateLimit(ip, { isStaticAsset = false } = {}) {
@@ -231,7 +256,6 @@ function isAllowedOrigin(origin, allowedList) {
       const allowedUrl = new URL(candidate);
       if (originUrl.protocol !== allowedUrl.protocol) return false;
       if (originUrl.host === allowedUrl.host) return true;
-      if (originUrl.host.endsWith(`.${allowedUrl.host}`)) return true;
     } catch {
       return false;
     }
@@ -405,7 +429,9 @@ function configuredAdminEmails() {
 }
 
 function isAdminUser(user) {
-  return Boolean(user?.isAdmin || configuredAdminEmails().has(String(user?.email || '').toLowerCase()));
+  // Email strings are not proof of ownership. Only an operator-provisioned
+  // database role grants administrative authority.
+  return Boolean(user?.isAdmin);
 }
 
 async function handleProductApiRequest(req, res, requestPath) {
@@ -701,6 +727,12 @@ async function restorePersistedRooms() {
   if (typeof repository.listActiveRooms !== 'function') return;
   const records = await repository.listActiveRooms();
   for (const record of records) {
+    // Anonymous ownership is deliberately ephemeral. Never resurrect a room
+    // whose host capability was lost with the previous process.
+    if (!record.hostUserId) {
+      await repository.endRoom(record.id);
+      continue;
+    }
     const createdAt = Date.parse(record.createdAt);
     const room = {
       id: record.id,
@@ -728,15 +760,20 @@ async function restorePersistedRooms() {
       persistenceTail: Promise.resolve(),
     };
     rooms.set(room.id, room);
+    scheduleCleanup(room);
   }
   if (records.length) logger.info('Restored durable room directory', { rooms: records.length });
+}
+
+function normalizeReconnectSecret(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{32,80}$/.test(value) ? value : null;
 }
 
 function makeMember({ guestId, reconnectSecret = null, name, ws, role = 'PARTICIPANT' }) {
   return {
     id: randomId(),
     guestId: safeText(guestId, 80) || randomId(),
-    reconnectSecret: safeText(reconnectSecret, 80) || null,
+    reconnectSecret: normalizeReconnectSecret(reconnectSecret) || crypto.randomBytes(32).toString('base64url'),
     accountId: ws?.authenticatedUser?.id || null,
     name: safeText(name, 40) || 'Guest',
     role,
@@ -777,19 +814,31 @@ function attachRoom(ws, room, member) {
   }
   ws.roomId = room.id;
   ws.memberId = member.id;
+  member.disconnectedAt = null;
   room.members.set(member.id, member);
-  send(ws, { type: 'joined', state: clientState(room, member) });
+  // This capability is delivered only to its owner, never in a public roster.
+  send(ws, { type: 'joined', reconnectSecret: member.reconnectSecret, state: clientState(room, member) });
   // Avoid sending a duplicate full state payload to the member who just received 'joined'.
   broadcastState(room, member.id);
 }
 
 async function createRoom(ws, message) {
   if (ws.roomId || ws.memberId) return sendError(ws, 'You are already in a room. Leave it before creating another room.');
+  if (rooms.size + reservedRoomCodes.size >= MAX_ACTIVE_ROOMS) return sendError(ws, 'The service is at room capacity. Please try again later.');
   if (await moderationBlocksEntry(ws)) return;
   const roomName = safeText(message.name, 60);
   const displayName = safeText(message.displayName, 40);
   if (!roomName) return sendError(ws, 'Enter a room name before creating a room.');
   if (!displayName) return sendError(ws, 'Enter your name before creating or joining a room.');
+  const now = Date.now();
+  let creationBudget = roomCreationRateLimit.get(ws._ip);
+  if (!creationBudget || now > creationBudget.resetAt) {
+    creationBudget = { count: 0, resetAt: now + 10 * 60_000 };
+    roomCreationRateLimit.set(ws._ip, creationBudget);
+  }
+  if (++creationBudget.count > 10) return sendError(ws, 'Too many room creations. Please try again later.');
+  // The moderation lookup above yields; reserve capacity only after rechecking.
+  if (rooms.size + reservedRoomCodes.size >= MAX_ACTIVE_ROOMS) return sendError(ws, 'The service is at room capacity. Please try again later.');
   let code = randomCode();
   while (roomCodeIsUnavailable(code)) code = randomCode();
   reservedRoomCodes.add(code);
@@ -812,6 +861,8 @@ async function createRoom(ws, message) {
     members: new Map(),
     requests: new Map(),
     messages: [],
+    bannedGuestIds: new Set(),
+    bannedReconnectSecrets: new Set(),
     createdAt: Date.now(),
     updatedAt: Date.now(),
     endedAt: null,
@@ -851,7 +902,10 @@ async function joinRoom(ws, message) {
   if (rooms.get(room.id) !== room || room.status !== 'ACTIVE') return sendError(ws, 'That room is unavailable or has ended.');
 
   const guestIdClean = safeText(message.guestId, 80);
-  const reconnectSecretClean = safeText(message.reconnectSecret, 80) || null;
+  const reconnectSecretClean = normalizeReconnectSecret(message.reconnectSecret);
+  if (room.bannedGuestIds?.has(guestIdClean) || room.bannedReconnectSecrets?.has(reconnectSecretClean)) {
+    return sendError(ws, 'You were removed from this room.');
+  }
   const existing = [...room.members.values()].find((member) => (
     (ws.authenticatedUser && member.accountId === ws.authenticatedUser.id)
       || (!ws.authenticatedUser && member.guestId === guestIdClean)
@@ -859,7 +913,7 @@ async function joinRoom(ws, message) {
   if (existing) {
     // Prevent another room participant from spoofing a member's guestId
     // when a client-side reconnectSecret was bound to the member slot.
-    if (existing.reconnectSecret && reconnectSecretClean !== existing.reconnectSecret) {
+    if (!reconnectSecretClean || !constantTimeEqual(reconnectSecretClean, existing.reconnectSecret)) {
       return sendError(ws, 'This account is already connected to the room.');
     }
     if (existing.ws && existing.ws !== ws) {
@@ -870,7 +924,6 @@ async function joinRoom(ws, message) {
     }
     existing.ws = ws;
     existing.name = displayName;
-    if (reconnectSecretClean) existing.reconnectSecret = reconnectSecretClean;
     attachRoom(ws, room, existing);
     return;
   }
@@ -990,6 +1043,7 @@ function handleDisconnect(ws) {
     return;
   }
   member.ws = null;
+  member.disconnectedAt = Date.now();
 
   if (room.activeSourceId === member.id) {
     room.lastDisconnectedSourceId = member.id;
@@ -1290,6 +1344,8 @@ async function handleMessage(ws, message) {
     if (!isModerator(room, member)) return sendError(ws, 'Only the host or co-host can remove participants.');
     const target = findMember(room, message.memberId);
     if (!target || target.id === room.hostId) return sendError(ws, 'That participant cannot be removed.');
+    (room.bannedGuestIds ??= new Set()).add(target.guestId);
+    (room.bannedReconnectSecrets ??= new Set()).add(target.reconnectSecret);
     if (room.activeSourceId === target.id) stopSource(room, 'The active source was removed.', true, false);
     if (target.ws) {
       send(target.ws, { type: 'removed', message: 'You were removed from the room.' });
@@ -1397,8 +1453,13 @@ function streamStaticFile(req, res, filePath, size, headers) {
 }
 
 const server = http.createServer(async (req, res) => {
+  try {
   for (const [k, v] of Object.entries(securityHeaders)) res.setHeader(k, v);
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  let url;
+  try { url = new URL(req.url, `http://${req.headers.host}`); } catch {
+    sendJson(res, 400, { error: 'Invalid request URL.' });
+    return;
+  }
   const requestPath = url.pathname;
 
   const redirectLocation = canonicalPublicRedirect(req, url);
@@ -1506,6 +1567,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   const fileName = requestPath === '/' ? 'index.html' : requestPath.replace(/^\//, '');
+  if (!isPublicFile(fileName)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
+    return;
+  }
   let decodedPath = requestPath;
   try { decodedPath = decodeURIComponent(requestPath); } catch {}
   if (decodedPath.includes('\0') || decodedPath.split('/').includes('..') || fileName.includes('\0')) {
@@ -1566,6 +1632,11 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not found');
   }
+  } catch (error) {
+    logger.error('HTTP request failed', { error });
+    if (!res.headersSent) sendJson(res, 500, { error: 'Service unavailable.' });
+    else res.destroy();
+  }
 });
 
 const wss = new WebSocketServer({
@@ -1582,6 +1653,11 @@ const wss = new WebSocketServer({
       }
     }
     const ip = getClientIp(info.req);
+    if (wss.clients.size >= MAX_CONNECTIONS
+      || [...wss.clients].filter((socket) => socket._ip === ip).length >= MAX_CONNECTIONS_PER_IP) {
+      cb(false, 503, 'Connection capacity reached');
+      return;
+    }
     if (!checkRateLimit(ip)) {
       cb(false, 429, 'Too Many Requests');
       return;
@@ -1591,7 +1667,14 @@ const wss = new WebSocketServer({
 });
 
 function dispatchMessage(ws, data) {
-  const next = (ws._dispatchTail || Promise.resolve()).then(() => handleMessage(ws, data));
+  if ((ws._pendingCommandCount || 0) >= MAX_PENDING_COMMANDS) {
+    ws.close(1008, 'Too many pending room commands');
+    return;
+  }
+  ws._pendingCommandCount = (ws._pendingCommandCount || 0) + 1;
+  const next = (ws._dispatchTail || Promise.resolve()).then(() => {
+    if (ws.readyState === WebSocket.OPEN) return handleMessage(ws, data);
+  }).finally(() => { ws._pendingCommandCount -= 1; });
   ws._dispatchTail = next.catch((error) => {
     logger.error('WebSocket message handling failed', { error });
     sendError(ws, 'The server could not process that action.');
@@ -1637,6 +1720,8 @@ function checkBinaryFrameRate(ws, byteLength) {
 wss.on('connection', (ws, req) => {
   try { req.socket?.setNoDelay?.(true); } catch {}
   ws._ip = getClientIp(req);
+  ws._alive = true;
+  ws.on('pong', () => { ws._alive = true; });
   ws.authenticatedUser = null;
   ws.authReady = false;
   ws.pendingMessages = [];
@@ -1689,7 +1774,37 @@ wss.on('connection', (ws, req) => {
   ws.on('error', () => { websocketConnections.set(Math.max(0, wss.clients.size)); handleDisconnect(ws); });
 });
 
+const maintenance = setInterval(() => {
+  const now = Date.now();
+  for (const ws of wss.clients) {
+    if (!ws._alive) { ws.terminate(); continue; }
+    ws._alive = false;
+    try { ws.ping(); } catch { ws.terminate(); }
+  }
+  for (const room of rooms.values()) {
+    let changed = false;
+    for (const [id, member] of room.members) {
+      if (!member.ws && id !== room.hostId && id !== room.cohostId
+        && member.disconnectedAt && now - member.disconnectedAt > OFFLINE_MEMBER_TTL_MS) {
+        room.members.delete(id);
+        changed = true;
+      }
+    }
+    for (const [id, request] of room.requests) {
+      if (request.status !== 'PENDING' && now > request.expiresAt + 10_000) room.requests.delete(id);
+    }
+    if (changed) broadcastState(room);
+  }
+}, 30_000);
+maintenance.unref();
+const sessionCleanup = setInterval(() => {
+  void repository.deleteExpiredSessions().catch((error) => logger.error('Session cleanup failed', { error }));
+}, 60 * 60_000);
+sessionCleanup.unref();
+
 function shutdown(signal) {
+  clearInterval(maintenance);
+  clearInterval(sessionCleanup);
   health.setReady(false);
   audit.record({ type: 'server.shutdown', severity: 'info', metadata: { signal, rooms: rooms.size } });
   logger.info('Shutting down RoomSound', { signal, rooms: rooms.size });
@@ -1697,6 +1812,7 @@ function shutdown(signal) {
     if (room.hostFailoverTimer) clearTimeout(room.hostFailoverTimer);
     if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
   }
+  for (const ws of wss.clients) ws.close(1012, 'Service restarting');
   wss.close(() => server.close(async () => {
     await repository.close().catch((error) => console.error('Repository shutdown failed:', error.message));
     process.exit(0);

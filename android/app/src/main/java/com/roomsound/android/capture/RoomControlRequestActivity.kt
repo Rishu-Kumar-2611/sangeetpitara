@@ -1,5 +1,7 @@
 package com.roomsound.android.capture
 
+import com.roomsound.android.applySystemInsets
+
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
@@ -277,6 +279,7 @@ class RoomControlRequestActivity : Activity() {
     private fun promptRoot(): FrameLayout = FrameLayout(this).apply {
         setBackgroundColor(Color.argb(224, 18, 9, 6))
         setPadding(dp(18), dp(18), dp(18), dp(18))
+        applySystemInsets()
         isClickable = true
         isFocusable = true
     }

@@ -8,6 +8,16 @@ permissions:
   contents: read
 
 jobs:
+  production-container:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: docker build -f Dockerfile.runtime -t sangeetpitara:production-check .
+      - run: node checks/container-smoke.mjs
   node-checks:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
@@ -23,3 +33,39 @@ jobs:
         run: npm ci
       - name: Run offline regression suite
         run: npm test
+      - name: Check bounded browser playout latency
+        run: node checks/latency-benchmark.mjs --check --current-only
+      - name: Install Chromium for browser regressions
+        run: npx playwright install --with-deps chromium
+      - name: Run desktop and phone browser flows
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-evidence
+          path: test-results/
+  postgres-integration:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: integration-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: node checks/postgres-integration.mjs
+        env:
+          TEST_DATABASE_URL: postgres://postgres:integration-only-password@127.0.0.1:5432/postgres

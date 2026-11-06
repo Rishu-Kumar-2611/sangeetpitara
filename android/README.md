@@ -151,9 +151,9 @@ the existing probe continues to capture only in memory and publishes no media.
 ## Build and run
 
 The Android SDK and JDK 17 are external prerequisites; they are not bundled
-with this workspace. The Gradle wrapper is checked in and pins Gradle 8.9 with
+with this workspace. The Gradle wrapper is checked in and pins Gradle 8.11.1 with
 a SHA-256 distribution check, so do not install a second global Gradle version.
-Android SDK Platform 35 and Build-Tools are required. App dependency versions
+Android SDK Platform 36 and Build-Tools are required. App dependency versions
 are locked in `app/gradle.lockfile`.
 
 Once the toolchain and dependency access are available, run from this folder:
@@ -283,17 +283,17 @@ Android Studio can be launched with:
 & "C:\Program Files\Android\Android Studio\bin\studio64.exe"
 ```
 
-In SDK Manager, install Android SDK Platform 35, Android SDK Build-Tools,
+In SDK Manager, install Android SDK Platform 36, Android SDK Build-Tools,
 Android SDK Platform-Tools, and Android SDK Command-line Tools (latest). With
 the default SDK location, create the machine-local Gradle pointer from the
 `android/` directory with:
 
 ```powershell
 $sdk = Join-Path $env:LOCALAPPDATA "Android\Sdk"
-if (-not (Test-Path -LiteralPath (Join-Path $sdk "platforms\android-35\android.jar"))) {
-    throw "Android SDK Platform 35 is not installed at $sdk"
+if (-not (Test-Path -LiteralPath (Join-Path $sdk "platforms\android-36\android.jar"))) {
+    throw "Android SDK Platform 36 is not installed at $sdk"
 }
-"sdk.dir=$($sdk.Replace('\', '/'))" | Set-Content -Encoding ascii "local.properties"
+"sdk.dir=$($sdk.Replace('\', '/').Replace(':', '\:'))" | Set-Content -Encoding ascii "local.properties"
 ```
 
 Do not commit `local.properties`; it contains a machine-specific SDK path.

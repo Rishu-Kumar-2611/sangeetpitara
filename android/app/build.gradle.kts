@@ -40,9 +40,9 @@ val configuredDefaultEndpoint = configuredValue("ROOMSOUND_DEFAULT_ENDPOINT")
     ?: "wss://sangeet-pitaraa.onrender.com"
 // The release workflow derives both from the pushed v<major>.<minor>.<patch> tag.
 val configuredVersionName = configuredValue("ROOMSOUND_VERSION_NAME")
-    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.2")
+    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.3")
 val configuredVersionCode = configuredValue("ROOMSOUND_VERSION_CODE")?.toInt()
-    ?: releaseProperties.getProperty("VERSION_CODE", "10102").toInt()
+    ?: releaseProperties.getProperty("VERSION_CODE", "10103").toInt()
 // GitHub repository whose latest release the app checks for an update notice.
 val configuredReleasesRepository = configuredValue("ROOMSOUND_RELEASES_REPOSITORY")
     ?: "Rishu-Kumar-2611/sangeetpitara"
@@ -60,12 +60,13 @@ val resolvedReleaseKeystore = releaseKeystorePath?.let(::file)
 
 android {
     namespace = "com.roomsound.android"
-    compileSdk = 35
+    compileSdk = 36
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "com.roomsound.android"
         minSdk = 29
-        targetSdk = 35
+        targetSdk = 36
         versionCode = configuredVersionCode
         versionName = configuredVersionName
         buildConfigField(

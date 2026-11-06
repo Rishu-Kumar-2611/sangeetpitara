@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261026-mobile1';
+const assetVersion = '20261106-lowlatency1';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
@@ -163,7 +163,7 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(app, /syncRelayCaptureLease/);
   assert.match(app, /bufferedAmount\) \|\| 0\) \+ frameBytes > MEDIA_RELAY_MAX_BACKLOG_BYTES/);
   // The fallback reset cap must stay above the largest Sync cushion.
-  assert.match(app, /RELAY_MAX_PLAYAHEAD_SECONDS = SYNC_OFFSET_MAX_MS \/ 1000 \+ 0\.4/);
+  assert.match(app, /RELAY_MAX_PLAYAHEAD_SECONDS = Math\.max\(0\.04, state\.syncOffsetMs \/ 1000\) \+ 0\.08/);
   assert.match(html, /id="sync-offset"[^>]*max="1000"/);
   assert.match(app, /SYNC_OFFSET_MAX_MS = 1000/);
   assert.match(app, /state\.relayPlaybackNextTime > now \+ RELAY_MAX_PLAYAHEAD_SECONDS/);
@@ -198,18 +198,18 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(relay, /MEDIA_RELAY_SAMPLE_RATE = 48_000/);
   assert.match(relay, /MEDIA_RELAY_CHANNELS = 1/);
   assert.match(relay, /sampleCount <= 0/);
-  assert.match(relay, /payloadBytes !== sampleCount \* 2/);
+  // Exact mono/stereo lengths are exercised by relay-capture.test.mjs.
 });
 
-test('landing page presents the browser room as the primary path and clarifies the room code', async () => {
+test('landing page explains Android sharing and companion browser entry', async () => {
   const [html, css] = await Promise.all([
     readFile(new URL('index.html', root), 'utf8'),
     readFile(new URL('styles.css', root), 'utf8'),
   ]);
 
   assert.match(html, /class="browser-first-panel"/);
-  assert.match(html, /listen live, chat with the room, request audio, and approve or reject requests without downloading anything/);
-  assert.match(html, /Prefer the Android app\?/);
+  assert.match(html, /Friends can join from the app or their browser/);
+  assert.match(html, /Get SangeetPitara for Android/);
   assert.match(html, /<small>Share this code with listeners<\/small>/);
   assert.match(css, /\.room-code-display strong \{[^}]*letter-spacing: 0\.2em/s);
   assert.match(css, /\.request-actions \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);

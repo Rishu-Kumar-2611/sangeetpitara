@@ -2,7 +2,7 @@ FROM eclipse-temurin:17-jdk-jammy AS android-build
 
 ARG ANDROID_SDK_ROOT=/opt/android-sdk
 ARG ANDROID_CMDLINE_TOOLS_VERSION=11076708
-ARG ANDROID_BUILD_TOOLS_VERSION=35.0.0
+ARG ANDROID_BUILD_TOOLS_VERSION=36.0.0
 
 ENV ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}
 ENV ANDROID_HOME=${ANDROID_SDK_ROOT}
@@ -22,7 +22,7 @@ RUN mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools" \
 RUN yes | sdkmanager --licenses >/dev/null \
     && sdkmanager \
         "platform-tools" \
-        "platforms;android-35" \
+        "platforms;android-36" \
         "build-tools;${ANDROID_BUILD_TOOLS_VERSION}"
 
 WORKDIR /app/android

@@ -19,6 +19,21 @@ import java.util.concurrent.atomic.AtomicInteger
 /** These tests run the production writer, queue and codec, not a startup policy. */
 class Pcm16RelayPlayerTest {
     @Test
+    fun lowLatencyOutputStartsAfterFortyMillisecondsForBothPacketSizes() {
+        for (samples in listOf(480, 960)) {
+            val output = Output(capacity = 3_840)
+            player(output).use { player ->
+                assertTrue(player.start(Pcm16RelayPlayer.FORMAT, EPOCH))
+                val packets = (0 until 1_920 / samples).map { packet(it.toLong(), samples) }
+                packets.forEach { assertTrue(player.play(it)) }
+                output.await { playCount == 1 }
+                assertEquals(3_840, output.bytesAtPlay)
+                assertArrayEquals(concat(packets), output.bytes())
+            }
+        }
+    }
+
+    @Test
     fun fillsActualHundredMillisecondOutputBeforePlayForBothPacketSizes() {
         for (samples in listOf(480, 960)) {
             val prioritySet = AtomicBoolean()

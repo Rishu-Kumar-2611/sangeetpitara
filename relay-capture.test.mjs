@@ -3,7 +3,15 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { RelayPcmClarityFilter, RelayPcmPacketizer } from './relay-pcm.js';
-import { decodePcm16Frame, encodePcm16Frame } from './media-relay.mjs';
+import { decodePcm16Frame, encodePcm16Frame, validatePcm16FrameHeader } from './media-relay.mjs';
+
+test('stereo headers cannot claim more samples than the packet contains', () => {
+  const mono = encodePcm16Frame({ sourceEpoch: 1, sequence: 1, samples: new Int16Array(960) });
+  mono[5] = 2;
+  assert.throws(() => validatePcm16FrameHeader(mono), /payload length/);
+  const stereo = encodePcm16Frame({ sourceEpoch: 1, sequence: 1, samples: new Int16Array(1920), channels: 2 });
+  assert.equal(decodePcm16Frame(stereo).samples.length, 1920);
+});
 
 function packetize(input, rate, blockSize) {
   const packetizer = new RelayPcmPacketizer();

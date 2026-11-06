@@ -30,5 +30,6 @@ test('production configuration fails closed for missing persistence, origin, met
 
 test('local and explicit test environments remain usable without production secrets', () => {
   assert.deepEqual(productionConfigErrors({ NODE_ENV: 'development' }), []);
-  assert.deepEqual(productionConfigErrors({ NODE_ENV: 'production', ROOMSOUND_TEST_MODE: '1' }), []);
+  assert.deepEqual(productionConfigErrors({ NODE_ENV: 'production', ROOMSOUND_TEST_MODE: '1', HOST: '127.0.0.1' }), []);
+  assert.match(productionConfigErrors({ NODE_ENV: 'production', ROOMSOUND_TEST_MODE: '1', HOST: '0.0.0.0' }).join('\n'), /loopback/);
 });

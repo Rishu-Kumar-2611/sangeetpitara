@@ -16,7 +16,7 @@ export const MEDIA_RELAY_MAX_FRAME_BYTES = MEDIA_RELAY_HEADER_BYTES + MEDIA_RELA
 // Socket backlog bound shared by the browser sender and the server's per-listener
 // fan-out: ~1 s of 48 kHz mono PCM16. Later audio is skipped by the listener's
 // playout buffer anyway. The Android sender mirrors this in RoomSoundWebSocketClient.
-export const MEDIA_RELAY_MAX_BACKLOG_BYTES = 96 * 1024;
+export const MEDIA_RELAY_MAX_BACKLOG_BYTES = 12 * 1024;
 
 function asBytes(value) {
   if (value instanceof Uint8Array) return value;
@@ -118,7 +118,7 @@ export function validatePcm16FrameHeader(input, { maxPayloadBytes = MEDIA_RELAY_
 
   const payloadBytes = bytes.byteLength - MEDIA_RELAY_HEADER_BYTES;
   const expectedPayloadBytes = channels === 1 ? sampleCount * 2 : sampleCount * channels * 2;
-  if (payloadBytes !== sampleCount * 2 && payloadBytes !== expectedPayloadBytes) {
+  if (payloadBytes !== expectedPayloadBytes) {
     throw invalidFrame('Media relay PCM16 payload length does not match sampleCount.', 'MEDIA_FRAME_BAD_LENGTH');
   }
   if (payloadBytes > maxPayloadBytes) {

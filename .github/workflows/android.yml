@@ -6,10 +6,12 @@ on:
   push:
     paths:
       - 'android/**'
+      - 'release.properties'
       - '.github/workflows/android.yml'
   pull_request:
     paths:
       - 'android/**'
+      - 'release.properties'
       - '.github/workflows/android.yml'
 
 permissions:

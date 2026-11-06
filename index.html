@@ -22,27 +22,27 @@
     <meta name="roomsound-media-relay" content="server-configured-pcm16" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob: data:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'" />
     <title>SangeetPitara — listen together</title>
-    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261026-mobile1" />
+    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261106-lowlatency1" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=20261026-mobile1" />
+    <link rel="stylesheet" href="/styles.css?v=20261106-lowlatency1" />
   </head>
   <body>
     <div class="aura" id="aura" aria-hidden="true"><span class="aura-blob aura-blob-one"></span><span class="aura-blob aura-blob-two"></span><span class="aura-blob aura-blob-three"></span></div>
     <main id="app" class="shell">
       <section id="landing-view" class="landing-view">
         <div class="landing-copy">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261026-mobile1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261106-lowlatency1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="eyebrow">PRIVATE LIVE AUDIO ROOMS</div>
           <h1>Listen together.</h1>
           <p class="landing-hint">Create a room or join with an invite code.</p>
           <section class="browser-first-panel" aria-labelledby="browser-first-title">
-            <div class="browser-first-heading"><span class="browser-first-icon" aria-hidden="true">↗</span><div><h2 id="browser-first-title">Everything you need, right here.</h2></div></div>
-            <p>Create or join a room in your browser—then listen live, chat with the room, request audio, and approve or reject requests without downloading anything.</p>
+            <div class="browser-first-heading"><span class="browser-first-icon" aria-hidden="true">↗</span><div><h2 id="browser-first-title">Share playback with the Android app.</h2></div></div>
+            <p>Use SangeetPitara for eligible Android playback sharing and background listening. Friends can join from the app or their browser, listen live, chat, and request a turn to play.</p>
             <div class="browser-first-points" aria-label="Browser room features"><span>Create or join</span><span>Listen live</span><span>Chat</span><span>Request audio</span><span>Approve / reject</span></div>
           </section>
           <a class="apk-download-card" href="/downloads/SangeetPitara.apk" target="_blank" rel="noopener">
             <span class="apk-download-icon" aria-hidden="true">↓</span>
-            <span class="apk-download-copy"><strong>Prefer the Android app?</strong><small>Download the latest SangeetPitara for playback sharing on Android.</small></span>
+            <span class="apk-download-copy"><strong>Get SangeetPitara for Android</strong><small>Download the latest SangeetPitara for playback sharing on Android. Android 10 or newer.</small></span>
             <span class="apk-download-arrow" aria-hidden="true">→</span>
           </a>
         </div>
@@ -82,7 +82,7 @@
             <span id="rewarded-access-progress-label" class="rewarded-access-progress-label" aria-live="polite"></span>
             <small class="rewarded-access-note">Demo/local provider · offline development only · no real ad network is loaded.</small>
           </section>
-          <div id="entry-error" class="inline-error hidden"></div>
+          <div id="entry-error" class="inline-error hidden" role="alert"></div>
           <div id="landing-ad-slot" class="ad-slot" data-ad-slot="" data-ad-placement="landing" hidden aria-hidden="true"></div>
           <div id="ad-consent-banner" class="ad-consent" hidden role="dialog" aria-labelledby="ad-consent-title" aria-describedby="ad-consent-copy">
             <strong id="ad-consent-title">Support SangeetPitara</strong>
@@ -97,7 +97,7 @@
 
       <section id="room-view" class="room-view hidden" data-room-tab="chat">
         <header class="topbar">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261026-mobile1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261106-lowlatency1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="room-crumb"><span class="crumb-room-name" id="top-room-name">Listening room</span><span class="crumb-separator">/</span><span class="room-code-small" id="top-room-code">------</span></div>
           <div class="topbar-actions">
             <span class="connection-chip" id="connection-chip"><span class="connection-dot"></span><span id="connection-label">Connecting</span></span>
@@ -129,7 +129,7 @@
 
             <section class="now-playing" aria-label="Now playing">
             <div class="source-card" id="source-card">
-              <div class="source-orb source-cover" id="source-orb" aria-hidden="true"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261026-mobile1" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span></div>
+              <div class="source-orb source-cover" id="source-orb" aria-hidden="true"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261106-lowlatency1" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span></div>
               <div class="source-card-copy">
                 <div class="source-kicker" id="source-kicker">Nothing playing</div>
                 <h2 id="source-title">The room is quiet</h2>
@@ -170,8 +170,8 @@
               <span id="volume-label" class="volume-label">90%</span>
               <label class="sync-offset-control" for="sync-offset" title="Adjust buffer cushion for Bluetooth earbuds or wireless speakers">
                 <span class="sync-prefix">Sync</span>
-                <input id="sync-offset" class="sync-slider" type="range" min="60" max="1000" step="20" value="150" aria-label="Bluetooth sync buffer cushion in milliseconds" />
-                <span id="sync-offset-label" class="sync-label">150ms</span>
+                <input id="sync-offset" class="sync-slider" type="range" min="20" max="1000" step="20" value="40" aria-label="Audio buffer cushion in milliseconds" />
+                <span id="sync-offset-label" class="sync-label">40ms</span>
               </label>
             </div>
             </section>
@@ -189,7 +189,7 @@
                 <div id="emoji-bar" class="emoji-bar" role="group" aria-label="Insert emoji"></div>
                 <form id="chat-form" class="chat-form">
                   <button id="emoji-toggle" class="emoji-toggle" type="button" aria-controls="emoji-bar" aria-expanded="false" aria-label="Emoji">😊</button>
-                  <input id="chat-input" class="chat-input" maxlength="280" placeholder="Message the room…" autocomplete="off" />
+                  <input id="chat-input" class="chat-input" maxlength="280" placeholder="Message the room…" aria-label="Message the room" autocomplete="off" />
                   <button class="send-button" type="submit" aria-label="Send message">↑</button>
                 </form>
               </section>
@@ -240,6 +240,6 @@
     </div>
     <div id="toast-stack" class="toast-stack"></div>
     <div id="modal-root"></div>
-    <script type="module" src="/app.js?v=20261026-mobile1"></script>
+    <script type="module" src="/app.js?v=20261106-lowlatency1"></script>
   </body>
 </html>
