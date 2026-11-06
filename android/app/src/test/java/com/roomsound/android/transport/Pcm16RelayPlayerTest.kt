@@ -548,6 +548,30 @@ class Pcm16RelayPlayerTest {
         }
     }
 
+    @Test
+    fun weakNetworkEarnsCushionAndPreservesBufferedPacketOrder() {
+        val clock = java.util.concurrent.atomic.AtomicLong(0)
+        val output = Output(capacity = 1_920)
+        Pcm16RelayPlayer(
+            outputFactory = { output }, audioThreadPriority = {},
+            maxQueuedFrames = 400, maxQueuedBytes = 384_000,
+            nanoTime = clock::get, adaptiveBuffering = true,
+        ).use { player ->
+            player.start(Pcm16RelayPlayer.FORMAT, EPOCH)
+            val packets = (0L..30L).map { packet(it, 960) }
+            player.play(packets.first())
+            output.await { byteCount == 1_920 && playCount == 1 }
+            clock.set(TimeUnit.MILLISECONDS.toNanos(500))
+            packets.drop(1).forEach { player.play(it) }
+            output.await { byteCount == 3_840 }
+            assertEquals(0L, player.droppedFrames())
+            assertArrayEquals(concat(packets.take(2)), output.bytes())
+            // Stop must wake the adaptive wait and revoke every buffered packet.
+            player.stop()
+            output.await { closeCount == 1 }
+        }
+    }
+
     private fun player(
         output: Output,
         timeoutMillis: Long = 1_000,

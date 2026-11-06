@@ -36,6 +36,7 @@ class Pcm16RelayPlayer internal constructor(
     private val nanoTime: () -> Long = System::nanoTime,
     private val catchUpQueuedBytes: Int = Int.MAX_VALUE,
     private val catchUpLandingBytes: Int = 0,
+    private val adaptiveBuffering: Boolean = false,
 ) : Pcm16RelayPlayerSink {
     constructor(
         maxQueuedFrames: Int = DEFAULT_MAX_QUEUED_FRAMES,
@@ -51,6 +52,7 @@ class Pcm16RelayPlayer internal constructor(
         onStatus = onStatus,
         catchUpQueuedBytes = catchUpQueuedBytes,
         catchUpLandingBytes = catchUpLandingBytes,
+        adaptiveBuffering = true,
     )
 
     private class Session(val epoch: Long, val output: Pcm16RelayAudioOutput) {
@@ -59,6 +61,8 @@ class Pcm16RelayPlayer internal constructor(
         var queuedBytes = 0
         var lastSequence: Long? = null
         var firstPacketAt: Long? = null
+        var lastPacketAt: Long? = null
+        var cushionBytes = 0
         var playbackStarted = false
         var crossfadeNext = false
         @Volatile var cancelled = false
@@ -171,7 +175,14 @@ class Pcm16RelayPlayer internal constructor(
             missingSequences += distance - 1
         }
         session.lastSequence = packet.sequence
-        if (session.firstPacketAt == null) session.firstPacketAt = nanoTime()
+        val now = nanoTime()
+        if (adaptiveBuffering) session.lastPacketAt?.let { previous ->
+            val gapMs = TimeUnit.NANOSECONDS.toMillis((now - previous).coerceAtLeast(0))
+            if (gapMs > 80) session.cushionBytes = maxOf(session.cushionBytes,
+                (minOf(3_000L, gapMs + 80) * 96).toInt().coerceAtMost(maxQueuedBytes - 1_920).coerceAtLeast(0))
+        }
+        session.lastPacketAt = now
+        if (session.firstPacketAt == null) session.firstPacketAt = now
         // Bound duration as well as packet count: 10 ms and 20 ms publishers
         // receive the same configured maximum software backlog.
         while (session.queue.size >= maxQueuedFrames ||
@@ -292,20 +303,26 @@ class Pcm16RelayPlayer internal constructor(
             if (payload == null) {
                 synchronized(lock) {
                     if (session.cancelled) return
-                    payload = session.queue.pollFirst()
-                    if (payload != null) {
-                        session.queuedBytes -= payload!!.size
-                        if (session.crossfadeNext) {
-                            session.crossfadeNext = false
-                            crossfadeFrom(lastSample, payload!!)
-                        }
+                    // Retain the earned cushion after a stall instead of draining
+                    // every TCP burst and underrunning again before the next one.
+                    if (session.cushionBytes > 0 && session.queuedBytes < session.cushionBytes + 1_920) {
+                        waitLocked(TimeUnit.MILLISECONDS.toNanos(20))
                     } else {
-                        // Only startup has a timed prefill wait. After play(),
-                        // the next single frame is written immediately.
-                        val remaining = if (!playing && firstPacketAt != null) {
-                            (startupTimeoutNanos - (nanoTime() - firstPacketAt)).coerceAtLeast(1)
-                        } else 0L
-                        waitLocked(remaining)
+                        payload = session.queue.pollFirst()
+                        if (payload != null) {
+                            session.queuedBytes -= payload!!.size
+                            if (session.crossfadeNext) {
+                                session.crossfadeNext = false
+                                crossfadeFrom(lastSample, payload!!)
+                            }
+                        } else {
+                            // Only startup has a timed prefill wait. After play(),
+                            // the next single frame is written immediately.
+                            val remaining = if (!playing && firstPacketAt != null) {
+                                (startupTimeoutNanos - (nanoTime() - firstPacketAt)).coerceAtLeast(1)
+                            } else 0L
+                            waitLocked(remaining)
+                        }
                     }
                 }
                 if (payload == null) continue
@@ -378,11 +395,11 @@ class Pcm16RelayPlayer internal constructor(
 
     companion object {
         const val DEFAULT_MAX_QUEUED_FRAMES = 12
-        const val PRODUCTION_MAX_QUEUED_FRAMES = 24
-        const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 240 / 1_000
-        // Favor current audio over playing a post-stall TCP backlog late.
-        const val PRODUCTION_CATCH_UP_QUEUED_BYTES = 48_000 * 2 * 160 / 1_000
-        const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 40 / 1_000
+        const val PRODUCTION_MAX_QUEUED_FRAMES = 400
+        const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 4_000 / 1_000
+        // Preserve recoverable bursts; skip only at the hard four-second bound.
+        const val PRODUCTION_CATCH_UP_QUEUED_BYTES = 48_000 * 2 * 3_800 / 1_000
+        const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 3_000 / 1_000
         private const val CATCH_UP_CROSSFADE_SAMPLES = 240 // 5 ms at 48 kHz
         val FORMAT = Pcm16AudioFormat(48_000, 1)
         private const val UINT32_MAX = Pcm16RelayPacketCodec.UINT32_MAX

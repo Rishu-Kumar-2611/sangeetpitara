@@ -3,12 +3,12 @@
 // cubic interpolation, raised-cosine crossfading, and short loop-based Packet
 // Loss Concealment (PLC) for long-distance (500–10,000+ km) streaming.
 const DEFAULT_TARGET_FILL = 1_920; // 40 ms base on a healthy path
-const MAX_TARGET_FILL = 48_000; // 1,000 ms ceiling on the automatic target
+const MAX_TARGET_FILL = 144_000; // 3,000 ms adaptive ceiling on weak networks
 const MIN_PREFILL_SAMPLES = 1_920; // 40 ms initial prefill
 const EXCESS_HEADROOM_SAMPLES = 3_840; // Catch up once 80 ms above target
 const CATCH_UP_LANDING_SAMPLES = 960; // Land 20 ms above target
-// 2.0 s ring: holds the 1.4 s ceiling plus one maximum-size (64 KiB, ~680 ms) frame.
-const CAPACITY_SAMPLES = 96_000;
+// Six-second bounded ring: adaptive cushion plus in-flight network bursts.
+const CAPACITY_SAMPLES = 288_000;
 const FADE_SAMPLES = 960; // 20 ms cosine fade-in / crossfade for inaudible transitions
 const PLC_HOLD_SAMPLES = 8_640; // Up to 180 ms of looped waveform continuation before silence decay
 const PLC_PERIOD_SAMPLES = 960; // Smooth 20 ms loop of the most recent audio
@@ -36,6 +36,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.lastEnqueueTime = null;
     this.jitterSeconds = 0.002; // Do not invent network jitter before measuring it.
     this._smoothedRate = 1.0;
+    this.lastUnstableTime = -Infinity;
 
     this.port.onmessage = ({ data }) => {
       if (!data) return;
@@ -59,9 +60,9 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
 
   updateTargetFill() {
     // Combine user slider base delay + RFC 3550 jitter margin (3.5x jitter) + underrun auto-cushion
-    const jitterSamples = Math.round(Math.min(0.06, this.jitterSeconds * 2.5) * 48_000);
+    const jitterSamples = Math.round(Math.min(1.5, this.jitterSeconds * 3.5) * 48_000);
     const desired = this.baseTargetFill + jitterSamples + this.adaptiveExtraFill;
-    this.targetFill = Math.max(960, Math.min(MAX_TARGET_FILL, this.baseTargetFill + 5_760, desired));
+    this.targetFill = Math.max(960, Math.min(MAX_TARGET_FILL, desired));
   }
 
   resetBuffer() {
@@ -74,6 +75,8 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.adaptiveExtraFill = 0;
     this.lastEnqueueTime = null;
     this.jitterSeconds = 0.002;
+    this.lastUnstableTime = -Infinity;
+    this._smoothedRate = 1;
     this.updateTargetFill();
     this.avgFill = this.targetFill;
   }
@@ -91,6 +94,10 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       // Only update jitter when packets arrive in distinct audio blocks (not same-tick TCP burst tail)
       if (actualInterval >= expectedInterval * 0.25) {
         const deviation = Math.abs(actualInterval - expectedInterval);
+        if (actualInterval > 0.08) {
+          this.adaptiveExtraFill = Math.max(this.adaptiveExtraFill, Math.min(MAX_TARGET_FILL - this.baseTargetFill, Math.ceil((actualInterval + 0.08) * 48_000) - this.baseTargetFill));
+          this.lastUnstableTime = now;
+        }
         // Ignore multi-second pauses (e.g., track change), track WAN burst jitter up to 1.5s
         if (deviation < 1.5) {
           this.jitterSeconds += (deviation - this.jitterSeconds) * 0.0625;
@@ -102,10 +109,16 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     }
     this.updateTargetFill();
 
-    // Excess-latency ceiling. Normal jitter stays inside targetFill, so a backlog
-    // more than 400 ms above it is audio that a stall already made late. The PI
-    // controller below can only remove ~5 ms/s, so skip it with a crossfade instead
-    // of playing seconds-old audio for minutes.
+    // A TCP burst can reveal jitter before the smoothed estimator catches up.
+    // Preserve it and earn enough cushion for the next similar burst.
+    if (this.available + frameCount > this.targetFill + EXCESS_HEADROOM_SAMPLES) {
+      this.adaptiveExtraFill = Math.max(this.adaptiveExtraFill,
+        Math.min(MAX_TARGET_FILL - this.baseTargetFill, this.available + frameCount + 1_920 - this.baseTargetFill));
+      this.lastUnstableTime = now;
+      this.updateTargetFill();
+    }
+
+    // Only overflow beyond the maximum earned cushion skips old samples.
     const maxAllowedSamples = Math.min(CAPACITY_SAMPLES - 16, this.targetFill + EXCESS_HEADROOM_SAMPLES);
     if (this.available + frameCount > maxAllowedSamples) {
       // Never skip past buffered audio: an oversized frame would otherwise move
@@ -132,9 +145,8 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.writePos = (this.writePos + frameCount) % CAPACITY_SAMPLES;
     this.available += frameCount;
 
-    // Resume playout as soon as 200-280 ms is buffered so rebuffering never mutes for 800+ ms;
-    // the PI controller then gently builds the remaining cushion while music plays.
-    const requiredPrefill = Math.max(MIN_PREFILL_SAMPLES, this.baseTargetFill, Math.min(this.targetFill, 3_840));
+    // Refill the earned target fully so the next similar burst is covered.
+    const requiredPrefill = Math.max(MIN_PREFILL_SAMPLES, this.targetFill);
     if (!this.playing && this.available >= requiredPrefill) {
       this.playing = true;
       this.fadeProgress = 0;
@@ -167,9 +179,9 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Slowly decay adaptive extra cushion during stable playback (~4 ms/sec)
-    if (this.adaptiveExtraFill > 0 && this.available >= MIN_PREFILL_SAMPLES) {
-      this.adaptiveExtraFill = Math.max(0, this.adaptiveExtraFill - 0.5);
+    // Retain the cushion through repeated stalls; decay gently after 30 stable seconds.
+    if (this.adaptiveExtraFill > 0 && currentTime - this.lastUnstableTime > 30 && this.available >= MIN_PREFILL_SAMPLES) {
+      this.adaptiveExtraFill = Math.max(0, this.adaptiveExtraFill - 0.05);
       this.updateTargetFill();
     }
 
@@ -200,8 +212,9 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
         // brief WAN stall, smoothly replay the last 10 ms of audio with a gentle
         // cosine attenuation envelope for up to 100 ms before entering rebuffering.
         if (this.concealedSamples === 0) {
-          // Step up adaptive cushion by +80 ms (3,840 samples) so the next cycle won't underrun
-          this.adaptiveExtraFill = Math.min(3_840, this.adaptiveExtraFill + 960);
+          // Grow the cushion after an underrun; measured gaps can grow it further.
+          this.adaptiveExtraFill = Math.min(MAX_TARGET_FILL - this.baseTargetFill, Math.max(4_800, this.adaptiveExtraFill * 1.5));
+          this.lastUnstableTime = currentTime;
           this.updateTargetFill();
         }
         if (this.concealedSamples < PLC_HOLD_SAMPLES) {

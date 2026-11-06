@@ -488,6 +488,10 @@ class RoomSessionCoordinator(
             abortAttempt(snapshot.message ?: "Android playback capture stopped.", true)
             return true
         }
+        // Capture status updates continue while Wi-Fi/mobile is reconnecting.
+        // Keep the Android consent session, but mediaBinding stays revoked until
+        // a fresh authorized room state arrives. Stop/error above still wins.
+        if (joinedState() == null && !closed && !endPending && client != null) return true
         if (!canContinue(pending)) {
             abortAttempt("Room source authorization changed during capture.", false)
             return false
@@ -501,16 +505,22 @@ class RoomSessionCoordinator(
                 abortAttempt("AudioRecord is ready, but start-source could not be sent.", true)
                 return false
             }
-            main.postDelayed({
-                if (attempt === pending && pending.phase == ConsentPhase.AWAITING_LIVE) {
-                    // Handles an accepted start whose state arrived at the timeout boundary.
-                    adoptExpectedLiveSlot(pending)
-                    if (pending.phase == ConsentPhase.AWAITING_LIVE) abortAttempt("Source activation was not confirmed.", true)
-                }
-            }, ACK_TIMEOUT_MS)
+            awaitLiveConfirmation(pending)
             changed()
         }
         return true
+    }
+
+    private fun awaitLiveConfirmation(pending: Attempt) {
+        main.postDelayed({
+            if (attempt === pending && pending.phase == ConsentPhase.AWAITING_LIVE) {
+                if (joinedState() == null) awaitLiveConfirmation(pending)
+                else {
+                    adoptExpectedLiveSlot(pending)
+                    if (pending.phase == ConsentPhase.AWAITING_LIVE) abortAttempt("Source activation was not confirmed.", true)
+                }
+            }
+        }, ACK_TIMEOUT_MS)
     }
 
     private fun handleConnection(state: RoomConnectionState) {
@@ -586,7 +596,7 @@ class RoomSessionCoordinator(
         }
         val pending = attempt
         if (pending != null) {
-            if (pending.phase == ConsentPhase.LIVE && state.room.id == pending.roomId && state.self?.id == pending.memberId) {
+            if (pending.phase in setOf(ConsentPhase.LIVE, ConsentPhase.AWAITING_LIVE) && state.room.id == pending.roomId && state.self?.id == pending.memberId) {
                 val active = client
                 val audio = transport
                 if (state.room.activeSourceId == pending.memberId && state.room.sourceStatus == "LIVE") {
@@ -596,7 +606,7 @@ class RoomSessionCoordinator(
                 } else if (state.room.activeSourceId == null && state.room.sourceStatus == "NONE" && active != null) {
                     pending.expectedLiveEpoch = state.room.sourceEpoch + 1
                     pending.phase = ConsentPhase.AWAITING_LIVE
-                    active.startSource(DEVICE_AUDIO, "Android device audio")
+                    if (active.startSource(DEVICE_AUDIO, "Android device audio")) awaitLiveConfirmation(pending)
                 }
             }
             adoptExpectedLiveSlot(pending)
@@ -627,6 +637,9 @@ class RoomSessionCoordinator(
             state.room.sourceEpoch == pending.expectedLiveEpoch && state.room.activeSourceId == pending.memberId &&
             state.room.activeSourceType == DEVICE_AUDIO && state.room.sourceStatus == "LIVE"
         ) return true
+        if (pending.phase == ConsentPhase.AWAITING_LIVE && state.room.activeSourceId == null &&
+            state.room.sourceStatus == "NONE" && pending.expectedLiveEpoch == state.room.sourceEpoch + 1
+        ) return true // Await server authorization; media remains disabled until LIVE.
         val slot = pending.slot
         return if (slot != null) matches(slot, state) && state.room.sourceStatus in setOf("STARTING", "LIVE")
         else isModerator(state) && (state.room.activeSourceId == null || state.room.sourceEpoch == pending.baselineEpoch)

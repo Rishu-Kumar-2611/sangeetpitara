@@ -22,6 +22,7 @@ class Pcm16RelayPublisher(
     private var started = false
     private var activeEpoch: Long? = null
     private var nextSequence = 0L
+    private var sequenceEpoch: Long? = null
     private val clarityConditioner = Pcm16ClarityConditioner()
 
     override fun isAvailable(): Boolean = synchronized(lock) { !closed }
@@ -39,7 +40,8 @@ class Pcm16RelayPublisher(
             if (started && activeEpoch == sourceEpoch) return true
             started = true
             activeEpoch = sourceEpoch
-            nextSequence = 0L
+            if (sequenceEpoch != sourceEpoch) nextSequence = 0L
+            sequenceEpoch = sourceEpoch
             clarityConditioner.reset()
         }
         return true

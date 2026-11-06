@@ -239,10 +239,45 @@ test('PCM16 relay bounds binary bytes per window, not only frame count', async (
   });
 
   await source.open();
-  // Twenty maximum-size frames are far below the frame-count cap but carry
-  // ~13 s of PCM16 audio, more than twice real time for the 5 s window.
+  // Forty maximum-size frames exceed the real-time plus recovery byte budget
+  // while remaining far below the independent frame-count cap.
   const maxSizeFrame = new Uint8Array(20 + 64 * 1024);
   const tooFast = source.waitJson((message) => message.type === 'error' && /too quickly/i.test(message.message));
-  for (let i = 0; i < 20; i += 1) source.socket.send(maxSizeFrame);
+  for (let i = 0; i < 40; i += 1) source.socket.send(maxSizeFrame);
   assert.match((await tooFast).message, /too quickly/i);
+});
+
+
+test('active source reconnects with the same epoch and resumes exact relay bytes', async (t) => {
+  const running = await startServer();
+  const source = client(running.url), listener = client(running.url);
+  let recovered;
+  t.after(() => { source.socket.terminate(); listener.socket.terminate(); recovered?.socket.terminate(); running.server.kill(); });
+  const { created, epoch } = await createRoom(source, listener);
+  source.socket.terminate();
+  await new Promise(resolve => setTimeout(resolve, 300));
+  recovered = client(running.url);
+  await recovered.open();
+  recovered.socket.send(JSON.stringify({ type: 'join-room', code: created.state.room.code,
+    guestId: 'relay-laptop', displayName: 'Recovered source', reconnectSecret: created.reconnectSecret }));
+  const joined = await recovered.waitJson(m => m.type === 'joined');
+  assert.equal(joined.state.self.id, created.state.self.id);
+  assert.equal(joined.state.room.sourceEpoch, epoch);
+  assert.equal(joined.state.room.sourceStatus, 'LIVE');
+  const frame = pcmFrame(epoch, 50);
+  const received = listener.waitBinary();
+  recovered.socket.send(frame);
+  assert.deepEqual(await received, Buffer.from(frame));
+});
+test('source recovery grace expires instead of leaving a dead source LIVE', async (t) => {
+  const running = await startServer();
+  const source = client(running.url), listener = client(running.url);
+  t.after(() => { source.socket.terminate(); listener.socket.terminate(); running.server.kill(); });
+  const { created, epoch } = await createRoom(source, listener);
+  source.socket.terminate();
+  await new Promise(resolve => setTimeout(resolve, 15_300));
+  const stopped = await listener.waitJson(m => m.type === 'source-disconnected');
+  assert.equal(stopped.memberId, created.state.self.id);
+  const state = await listener.waitJson(m => m.type === 'state' && m.state.room.sourceEpoch > epoch);
+  assert.equal(state.state.room.sourceStatus, 'NONE');
 });

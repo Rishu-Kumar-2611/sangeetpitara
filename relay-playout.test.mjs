@@ -53,19 +53,16 @@ async function playout(targetDelayMs = 40) {
   };
 }
 
-test('playout skips a post-stall backlog instead of playing it late', async () => {
+
+test('playout preserves a recoverable 1.5 second TCP backlog', async () => {
   const p = await playout();
   p.run(2_000);
-  assert.equal(p.skips, 0);
-  // The listener's network stalls for 1.5 s; TCP then delivers the backlog at once.
   p.run(1_500, { connected: false });
   p.flush(75);
-  assert.ok(p.skips > 0);
-  p.run(1_000);
-  const bufferedMs = p.node.available / 48;
-  const targetMs = p.node.targetFill / 48;
-  assert.ok(bufferedMs <= targetMs + 80, `buffered ${bufferedMs} ms vs target ${targetMs} ms`);
-  assert.ok(bufferedMs < 300, `stall left ${bufferedMs} ms of lasting delay`);
+  assert.equal(p.skips, 0);
+  assert.ok(p.node.targetFill / 48 >= 1_500);
+  p.run(3_000);
+  assert.equal(p.skips, 0);
 });
 
 test('playout raises the underrun cushion once per rebuffer', async () => {
@@ -74,28 +71,31 @@ test('playout raises the underrun cushion once per rebuffer', async () => {
   assert.equal(p.node.adaptiveExtraFill, 0);
   p.run(400, { connected: false });
   assert.equal(p.node.underruns, 1);
-  assert.equal(p.node.adaptiveExtraFill, 960);
+  assert.equal(p.node.adaptiveExtraFill, 4_800);
 });
 
-for (const bunchMs of [100, 500]) {
-  test(`playout preserves ${bunchMs} ms bursts with an appropriate chosen cushion`, async () => {
-    // Half-second delivery bursts inherently need a half-second buffer to
-    // preserve every sample. Keep that available as an explicit user choice.
-    const p = await playout(bunchMs === 500 ? 600 : 40);
-    p.run(1_000);
-    // Frames arrive in bursts: bunched, but each burst only carries audio
-    // produced since the last one, so nothing is stale enough to skip.
-    p.run(20_000, { bunch: bunchMs / 20 });
-    assert.equal(p.skips, 0);
-    assert.ok(p.node.targetFill <= 48_000);
+for (const bunchMs of [100, 500, 1_000]) {
+  test(`automatic buffering stabilizes repeated ${bunchMs} ms network bursts`, async () => {
+    const p = await playout();
+    p.run(2_000);
+    p.run(8_000, { bunch: bunchMs / 20 });
+    const underrunsAfterLearning = p.node.underruns;
+    const skipsAfterLearning = p.skips;
+    p.run(15_000, { bunch: bunchMs / 20 });
+    assert.equal(p.node.underruns, underrunsAfterLearning, 'must stop repeatedly rebuffering after learning the network');
+    assert.equal(p.skips, skipsAfterLearning, 'must preserve delayed music after adaptation');
+    assert.ok(p.node.targetFill <= 144_000);
   });
 }
 
-test('default latency stays bounded instead of growing to hide half-second network stalls', async () => {
+test('very long outages retain bounded memory and recover with fresh audio', async () => {
   const p = await playout();
-  p.run(1_000);
-  p.run(10_000, { bunch: 25 });
-  assert.ok(p.node.targetFill / 48 <= 160);
-  assert.ok(p.node.available / 48 < 260);
-  assert.ok(p.skips > 0, 'severely delayed audio should be skipped to return to live');
+  p.run(2_000);
+  p.run(8_000, { connected: false });
+  p.flush(400);
+  assert.ok(p.skips > 0);
+  assert.ok(p.node.available < 288_000);
+  assert.ok(p.node.targetFill <= 144_000);
+  p.run(5_000);
+  assert.equal(p.node.playing, true);
 });

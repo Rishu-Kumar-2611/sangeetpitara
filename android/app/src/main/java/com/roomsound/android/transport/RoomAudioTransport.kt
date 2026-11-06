@@ -90,7 +90,9 @@ class RoomAudioTransport(
             // socket is unavailable. Reconnect must deliver a fresh state
             // before media can be published again.
             stopPublisherLocked()
-            relayPlayer?.stop()
+            // A transient socket failure may be shorter than the earned buffer.
+            // Explicit closing and room revocation still stop playback immediately.
+            if (state == RoomConnectionState.CLOSING || state == RoomConnectionState.IDLE) relayPlayer?.stop()
             authorization = null
             roomId = null
         }

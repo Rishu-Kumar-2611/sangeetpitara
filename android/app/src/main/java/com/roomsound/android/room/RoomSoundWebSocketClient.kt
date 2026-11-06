@@ -103,6 +103,7 @@ class RoomSoundWebSocketClient(
             if (serverConfigLoaded) return serverConfig
         }
 
+        var fetchSucceeded = false
         val fetched = runCatching {
             val configUrl = RoomEndpointValidator.configUrl(endpoint) ?: return@runCatching RoomServerConfig.DEFAULT
             val request = Request.Builder()
@@ -113,14 +114,14 @@ class RoomSoundWebSocketClient(
             call.timeout().timeout(CONFIG_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             call.execute().use { response ->
                 if (!response.isSuccessful) return@use RoomServerConfig.DEFAULT
-                parseRoomServerConfig(JSONObject(response.body?.string().orEmpty()))
+                parseRoomServerConfig(JSONObject(response.body?.string().orEmpty())).also { fetchSucceeded = true }
             }
         }.getOrDefault(RoomServerConfig.DEFAULT)
 
         synchronized(lock) {
             if (!serverConfigLoaded) {
                 serverConfig = fetched
-                serverConfigLoaded = true
+                serverConfigLoaded = fetchSucceeded
             }
             return serverConfig
         }
@@ -396,7 +397,6 @@ class RoomSoundWebSocketClient(
                     return
                 }
                 this@RoomSoundWebSocketClient.webSocket = webSocket
-                reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS
                 reconnectFuture?.cancel(false)
                 reconnectFuture = null
             }
@@ -419,6 +419,7 @@ class RoomSoundWebSocketClient(
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
             if (!isCurrentSocket(webSocket)) return
             setConnectionState(RoomConnectionState.CLOSING)
+            webSocket.close(code, reason) // Complete the close handshake so retry is not delayed.
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -429,7 +430,7 @@ class RoomSoundWebSocketClient(
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             if (!clearCurrentSocket(webSocket)) return
-            emit(
+            if (!autoReconnect) emit(
                 RoomSoundEvent.Error(
                     "SangeetPitara WebSocket connection failed (${t.javaClass.simpleName}). " +
                         "Check the configured server, port, Wi-Fi, and firewall.",
@@ -546,6 +547,7 @@ class RoomSoundWebSocketClient(
                 nextState.room.sourceEpoch >= previous.room.sourceEpoch
             if (accepted) {
                 roomState = nextState
+                if (joined) reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS
                 if (joined || roomIntent != null) {
                     val intent = roomIntent
                     if (intent != null) roomIntent = intent.copy(roomCode = nextState.room.code)
@@ -698,13 +700,13 @@ class RoomSoundWebSocketClient(
         private const val INITIAL_RECONNECT_DELAY_MS = 1_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
         private const val CONFIG_TIMEOUT_SECONDS = 20L
-        // Keep sender backlog near 1 s of PCM16 (matching the web sender) so
-        // Wi-Fi bursts do not drop frames prematurely while avoiding
-        // multi-second stale queues.
-        private const val MAX_RELAY_QUEUED_BYTES = 12_288L // ~125 ms, including frame headers
+        // Bound congestion memory while allowing several seconds of recoverable
+        // Wi-Fi/mobile bursts. This does not delay healthy socket sends.
+        private const val MAX_RELAY_QUEUED_BYTES = 393_216L // ~4 s mono; healthy sends remain immediate
 
         private fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
-            .pingInterval(15, TimeUnit.SECONDS)
+            .pingInterval(0, TimeUnit.SECONDS) // Server pings own liveness; avoid a second 15 s failure timer.
+            .writeTimeout(30, TimeUnit.SECONDS)
             .build()
     }
 }

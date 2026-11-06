@@ -1,4 +1,4 @@
-import { createSafeStorage } from './guest-id.js?v=20261106-lowlatency1';
+import { createSafeStorage } from './guest-id.js?v=20261106-resilience1';
 const browserStorage = createSafeStorage();
 
 /**

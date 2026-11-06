@@ -85,8 +85,9 @@ const BINARY_FRAME_WINDOW_MS = 5_000;
 const BINARY_FRAME_RATE_MAX = 1200;
 // Bound bytes as well as frames: a frame may carry up to 64 KiB, so the frame
 // cap alone would admit ~15 MB/s before fan-out. Real-time 48 kHz mono PCM16
-// is 96,000 B/s; allow 2x real time plus per-frame headers.
-const BINARY_BYTES_PER_WINDOW_MAX = 2 * 96_000 * (BINARY_FRAME_WINDOW_MS / 1_000) + BINARY_FRAME_RATE_MAX * 20;
+// is 96,000 B/s; allow stereo real time plus a bounded four-second
+// recovery burst and per-frame headers.
+const BINARY_BYTES_PER_WINDOW_MAX = 2 * 96_000 * (BINARY_FRAME_WINDOW_MS / 1_000 + 4) + BINARY_FRAME_RATE_MAX * 20;
 const STREAMING_STATIC_THRESHOLD_BYTES = 256 * 1024;
 // The Android app ships through GitHub Releases (.github/workflows/release.yml).
 // Every /downloads/*.apk link, including legacy names already shared in the
@@ -815,6 +816,7 @@ function attachRoom(ws, room, member) {
   ws.roomId = room.id;
   ws.memberId = member.id;
   member.disconnectedAt = null;
+  if (room.activeSourceId === member.id) { clearTimeout(room.sourceReconnectTimer); room.sourceReconnectTimer = null; }
   room.members.set(member.id, member);
   // This capability is delivered only to its owner, never in a public roster.
   send(ws, { type: 'joined', reconnectSecret: member.reconnectSecret, state: clientState(room, member) });
@@ -974,6 +976,8 @@ function setSource(room, member, sourceType, status = 'STARTING') {
 }
 
 function stopSource(room, reason, resume = true, notify = true) {
+  clearTimeout(room.sourceReconnectTimer);
+  room.sourceReconnectTimer = null;
   const previousId = room.activeSourceId;
   const previousMember = previousId ? findMember(room, previousId) : null;
   const shouldResume = resume && previousMember?.role === 'PARTICIPANT' && room.resumeSourceId;
@@ -1031,7 +1035,7 @@ function promoteCohost(room) {
   return true;
 }
 
-function handleDisconnect(ws) {
+function handleDisconnect(ws, allowSourceRecovery = true) {
   const room = ws.roomId ? rooms.get(ws.roomId) : null;
   if (!room) {
     clearSocketRoom(ws);
@@ -1048,8 +1052,23 @@ function handleDisconnect(ws) {
   if (room.activeSourceId === member.id) {
     room.lastDisconnectedSourceId = member.id;
     room.lastDisconnectedSourceType = room.activeSourceType;
-    stopSource(room, 'The active audio source has disconnected.', true);
-    broadcast(room, { type: 'source-disconnected', memberId: member.id });
+    // Keep the same source lease briefly so authenticated reconnect can resume
+    // capture without throwing away listener buffers or changing the epoch.
+    const epoch = room.sourceEpoch;
+    clearTimeout(room.sourceReconnectTimer);
+    if (!allowSourceRecovery) {
+      stopSource(room, 'The active audio source left the room.', true);
+      broadcast(room, { type: 'source-disconnected', memberId: member.id });
+    } else {
+      room.sourceReconnectTimer = setTimeout(() => {
+        if (rooms.get(room.id) === room && room.activeSourceId === member.id &&
+            room.sourceEpoch === epoch && !member.ws) {
+          stopSource(room, 'The active audio source has disconnected.', true);
+          broadcast(room, { type: 'source-disconnected', memberId: member.id });
+        }
+      }, 15_000);
+      room.sourceReconnectTimer.unref();
+    }
   }
 
   if (member.id === room.hostId) {
@@ -1391,7 +1410,7 @@ async function handleMessage(ws, message) {
         broadcastState(room);
       }
     }
-    handleDisconnect(ws);
+    handleDisconnect(ws, false);
     if (!leavingHost) {
       room.members.delete(member.id);
       if (room.cohostId === member.id) {
@@ -1720,8 +1739,8 @@ function checkBinaryFrameRate(ws, byteLength) {
 wss.on('connection', (ws, req) => {
   try { req.socket?.setNoDelay?.(true); } catch {}
   ws._ip = getClientIp(req);
-  ws._alive = true;
-  ws.on('pong', () => { ws._alive = true; });
+  ws._lastActivityAt = Date.now();
+  ws.on('pong', () => { ws._lastActivityAt = Date.now(); });
   ws.authenticatedUser = null;
   ws.authReady = false;
   ws.pendingMessages = [];
@@ -1743,6 +1762,7 @@ wss.on('connection', (ws, req) => {
     for (const data of pending) dispatchPending(ws, data);
   });
   ws.on('message', (raw, isBinary) => {
+    ws._lastActivityAt = Date.now();
     const byteLength = Buffer.byteLength(raw);
     const maxBytes = isBinary ? MEDIA_RELAY_MAX_FRAME_BYTES : MAX_PAYLOAD_BYTES;
     if (byteLength > maxBytes) return sendError(ws, isBinary ? 'Media relay frame too large.' : 'Message too large.');
@@ -1777,8 +1797,7 @@ wss.on('connection', (ws, req) => {
 const maintenance = setInterval(() => {
   const now = Date.now();
   for (const ws of wss.clients) {
-    if (!ws._alive) { ws.terminate(); continue; }
-    ws._alive = false;
+    if (now - ws._lastActivityAt > 90_000) { ws.terminate(); continue; }
     try { ws.ping(); } catch { ws.terminate(); }
   }
   for (const room of rooms.values()) {
