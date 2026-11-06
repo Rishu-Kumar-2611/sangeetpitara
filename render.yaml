@@ -1,3 +1,5 @@
+# Adopts the existing Singapore resources; secrets stay inside Render.
+# This Blueprint becomes the source of truth for the settings listed here.
 services:
   - type: web
     name: sangeet-pitaraa
@@ -6,13 +8,13 @@ services:
     region: singapore
     dockerfilePath: ./Dockerfile.runtime
     dockerContext: .
-    healthCheckPath: /health
+    healthCheckPath: /ready
     autoDeployTrigger: commit
     envVars:
       - key: NODE_ENV
         value: production
-      - key: APP_VERSION
-        value: 1.1.3
+      - key: ROOMSOUND_TEST_MODE
+        value: "0"
       - key: HOST
         value: 0.0.0.0
       - key: TRUST_PROXY
@@ -21,29 +23,21 @@ services:
         value: sangeet-pitaraa.onrender.com
       - key: SESSION_COOKIE_SECURE
         value: "1"
-      - key: TURN_ENABLED
-        value: "0"
       - key: MEDIA_RELAY_ENABLED
         value: "1"
-      - key: REWARDED_AD_PROVIDER
-        value: demo-local
-      - key: REWARDED_AD_MODE
-        value: offline
-      - key: REWARDED_AD_DURATION_SECONDS
-        value: "30"
-      - key: REWARDED_ACCESS_DURATION_HOURS
-        value: "6"
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: Sangeet Pitara
+          property: connectionString
       - key: ALLOWED_ORIGINS
         value: https://sangeet-pitaraa.onrender.com
-      - key: ADSENSE_ENABLED
-        sync: false
-      - key: ADSENSE_CLIENT
-        sync: false
-      - key: ADSENSE_LANDING_SLOT
-        sync: false
-      - key: ADSENSE_ROOM_SLOT
-        sync: false
       - key: METRICS_BEARER_TOKEN
-        sync: false
+        generateValue: true
+# Existing credentials, database contents, and omitted settings are preserved.
+databases:
+  - name: Sangeet Pitara
+    plan: free
+    region: singapore
+    databaseName: sangeet_pitara
+    user: sangeet_pitara_user
+    postgresMajorVersion: "18"
