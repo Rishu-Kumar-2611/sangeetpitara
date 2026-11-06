@@ -1,6 +1,9 @@
-# Production hardening — version 1.1.3 candidate
+# Production hardening — version 1.1.3
 
-Updated 6 November 2026. This is a local release candidate, not a published or production-certified release.
+Updated 6 November 2026. The signed APK and AAB are published in
+[GitHub Releases](https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/tag/v1.1.3).
+The downloaded APK's signing certificate matches v1.1.2. This is not a
+production certification; the remaining device/deployment gates still apply.
 
 ## Completed implementation
 
@@ -8,7 +11,7 @@ Updated 6 November 2026. This is a local release candidate, not a published or p
 - F02: email allowlists no longer grant administrator authority. ADMIN_EMAILS reserves signup addresses only; trusted operators must explicitly provision database `users.is_admin` roles after verifying ownership.
 - F04: anonymous rooms end on server restart instead of reappearing without a host. Account-owned restored rooms receive an expiry timer.
 - F05, partial: removed guest IDs and reconnect capabilities cannot immediately rejoin the same running room. A fresh anonymous installation can evade this identity boundary; durable guest reporting, review tooling and stronger admission controls remain work.
-- F06: prepared version 1.1.3/code 10103 and new browser asset cache identifiers. No release/tag was published.
+- F06: published version 1.1.3/code 10103 and new browser asset cache identifiers. See LATENCY-1.1.3.md for the reduced playout/queue budgets.
 - F07: upgraded compile/target API to 36, AGP 8.10.1 and Gradle 8.11.1 with verified distribution checksum. Added system/keyboard inset handling, removed full-screen notification permission, excluded private identity from cloud/device transfer, and added AAB to the signed release workflow.
 - F08: Compose now passes/requires the metrics token; production template documents it.
 - Production test-mode bypass is restricted to explicitly loopback-bound servers.
