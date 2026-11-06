@@ -54,7 +54,7 @@ try {
   for (const file of [
     'privacy.html', 'terms.html', 'styles.css', 'app.js', 'guest-id.js', 'room-palette.js',
     'capture-tracks.js', 'media-relay.mjs', 'relay-pcm.js',
-    'relay-capture-worklet.js', 'ads.mjs', 'notifications-sw.js',
+    'relay-capture-worklet.js', 'relay-playout-worklet.js', 'ads.mjs', 'notifications-sw.js',
     'branding/sangeetpitara/05-diya-eighth-note.svg',
   ]) {
     const expected = normalize(await readFile(new URL(file, root), 'utf8'));

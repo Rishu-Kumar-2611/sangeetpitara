@@ -63,7 +63,7 @@ Set ROOMSOUND_BUILD_DIR to a temporary directory outside OneDrive. Production si
 
 ## Required next gates
 
-1. **Live PostgreSQL deployment (F03):** confirm actual Render environment/build; production mode on, test mode absent, database/TLS configured, metrics secret configured. Readiness must report postgres. Rehearse backup restore. Public service settings were not changed.
+1. **Live PostgreSQL deployment (F03):** verified public version 1.1.3, production mode, private database connection and PostgreSQL readiness after the approved Render Blueprint adoption. Rehearse backup restore. The current free database expires on 25 November 2026; arrange continued database hosting before then.
 2. **Signing and store:** validate with the original signing identity; install over public v1.1.2; submit AAB through Play internal testing; complete Data Safety, foreground-service declarations, store listing and review. No Play Console changes were made.
 3. **Physical audio/device matrix:** Android 10 and current Android, restrictive OEM, 16 KiB device, Wi-Fi/mobile/Bluetooth, capture allowed/blocked, source handoff, notification denial, calls, lock/background/process death, 60-minute listening and longer soak.
 4. **Operational capacity:** staging load/reconnect storm, proxy trust, uptime/error/audio-egress monitoring, budgets/alerts and rollback drill. Caps are protective defaults, not demonstrated capacity: 50 rooms, 200 sockets, 40 sockets/IP, 10 room creations/IP/10 minutes, 16 queued commands/socket.
@@ -71,3 +71,18 @@ Set ROOMSOUND_BUILD_DIR to a temporary directory outside OneDrive. Production si
 6. **Optional payments/ads (F10):** keep disabled. Atomic/order-safe billing webhook handling and real provider/consent validation remain outstanding before enabling monetization.
 
 The app remains deliberately single-process for room authority; a Redis environment variable does not enable horizontal scaling. Audio is transient server-relayed PCM, not end-to-end encrypted. Do not increase room limits or promise tight multi-speaker synchronization without measurements.
+
+## Public website rollout verified (6 November 2026)
+
+The approved Blueprint adopted the existing Singapore web service and database;
+no resources were created and no paid plans were changed. Render now supplies
+DATABASE_URL through fromDatabase without copying credentials into source or chat.
+The Blueprint manages its listed settings; omitted service variables are preserved.
+The service uses /ready for deployment health checks.
+
+Render deployment dep-dbn07rgn74is73fh5vn0 reached live. The public site
+https://sangeet-pitaraa.onrender.com reports version 1.1.3 and PostgreSQL readiness.
+The release checker verified landing HTML, JavaScript, styles and both audio
+worklets against the shipped files; APK redirects resolve to the public signed
+1.1.3 release. Anonymous backend-source requests returned 404 and metrics 401.
+These checks verify publication and readiness, not paired-device acoustic latency.
