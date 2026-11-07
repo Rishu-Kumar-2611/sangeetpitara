@@ -36,7 +36,8 @@ class SourcePlaybackController(context: Context) {
             .filter { controller ->
                 val state = controller.playbackState
                 val actions = state?.actions ?: 0L
-                state?.state == PlaybackState.STATE_PLAYING &&
+                state?.state in setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_BUFFERING, PlaybackState.STATE_CONNECTING,
+                    PlaybackState.STATE_FAST_FORWARDING, PlaybackState.STATE_REWINDING) &&
                     (actions and (PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE)) != 0L
             }
             .forEach { controller ->

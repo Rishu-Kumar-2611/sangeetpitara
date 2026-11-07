@@ -494,7 +494,9 @@ class PlaybackCaptureService : Service() {
         if (capture) return
         mediaSession = MediaSession(this, "RoomSound listening").apply {
             setCallback(object : MediaSession.Callback() {
-                override fun onStop() { if (lifecycle.acceptsAction(token)) roomSession.leaveRoom() }
+                // Media apps/headsets may send STOP while switching playback.
+                // Only an explicit Leave action is allowed to close the room.
+                override fun onStop() { onPause() }
                 override fun onPause() {
                     if (!lifecycle.acceptsAction(token)) return
                     // Pause/mute local playback without disconnecting from the room.
@@ -533,7 +535,7 @@ class PlaybackCaptureService : Service() {
         } else if (remoteAudio && focusRequest == null && !focusSuppressed) {
             val roomId = lifecycle.sessionId
             lateinit var request: AudioFocusRequest
-            request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(mediaAudioAttributes())
                 .setWillPauseWhenDucked(false)
                 .setOnAudioFocusChangeListener({ change ->

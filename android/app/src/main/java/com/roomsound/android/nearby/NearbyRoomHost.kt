@@ -29,6 +29,7 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
     private var sourceId: String? = null
     private var cohostId: String? = null
     private var sourceStatus = "NONE"
+    private var sourceType = "ANDROID_DEVICE_AUDIO"
     private var sourceDeadline = 0L
     private val controlRequests = linkedMapOf<String, JSONObject>()
     private var secureServer: NearbyWSD? = null
@@ -96,8 +97,9 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
     }
     override fun openWebSocket(handshake: IHTTPSession): WebSocket = Peer(handshake)
     private fun moderator(m: Member) = m.id == hostId || m.id == cohostId
-    private fun setSource(id: String?, status: String = "STARTING") {
+    private fun setSource(id: String?, status: String = "STARTING", type: String = "ANDROID_DEVICE_AUDIO") {
         sourceId = id; sourceStatus = if (id == null) "NONE" else status; epoch++
+        sourceType = type
         sourceDeadline = System.currentTimeMillis() + 60_000
         peers.forEach { it.audio.clear() }
     }
@@ -111,12 +113,14 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
         m.peer?.text(JSONObject().put("type","request-result").put("status",status).put("request",request))
     }
     private fun memberJson(m: Member) = JSONObject().put("id",m.id).put("guestId",m.guest).put("name",m.name).put("role",if(m.id==hostId)"HOST" else if(m.id==cohostId)"CO_HOST" else "PARTICIPANT").put("online",m.peer!=null).put("isSource",m.id==sourceId)
-    private fun state(m: Member) = JSONObject().put("room",JSONObject().put("id",roomId).put("code",code).put("name",title).put("status",if(ended)"ENDED" else "ACTIVE").put("hostId",hostId).put("cohostId",cohostId ?: JSONObject.NULL).put("activeSourceId",sourceId ?: JSONObject.NULL).put("activeSourceType",if(sourceId==null)JSONObject.NULL else "DEVICE_AUDIO").put("sourceStatus",sourceStatus).put("sourceEpoch",epoch)).put("self",memberJson(m)).put("members",JSONArray(members.values.map(::memberJson))).put("requests",JSONArray(controlRequests.values.toList())).put("messages",JSONArray(history.toList()))
+    private fun state(m: Member) = JSONObject().put("room",JSONObject().put("id",roomId).put("code",code).put("name",title).put("status",if(ended)"ENDED" else "ACTIVE").put("hostId",hostId).put("cohostId",cohostId ?: JSONObject.NULL).put("activeSourceId",sourceId ?: JSONObject.NULL).put("activeSourceType",if(sourceId==null)JSONObject.NULL else sourceType).put("sourceStatus",sourceStatus).put("sourceEpoch",epoch)).put("self",memberJson(m)).put("members",JSONArray(members.values.map(::memberJson))).put("requests",JSONArray(controlRequests.values.toList())).put("messages",JSONArray(history.toList()))
     private fun broadcast() { members.values.forEach { m -> m.peer?.text(JSONObject().put("type","state").put("state",state(m))) } }
     private fun error(p: Peer, message: String) = p.text(JSONObject().put("type","error").put("message",message))
     private fun command(p: Peer, json: JSONObject) = synchronized(lock) {
         if (ended) { error(p,"This nearby room has ended."); return@synchronized }
         val type = json.optString("type")
+        val requestedSourceType = json.optString("sourceType","ANDROID_DEVICE_AUDIO")
+        if(type in setOf("request-control","start-source","takeover","grant-source") && requestedSourceType !in setOf("ANDROID_DEVICE_AUDIO","DEVICE_AUDIO")) { error(p,"Only playback audio is supported."); return@synchronized }
         if (type == "create-room" || type == "join-room") {
             if (p.member != null) { error(p,"Already in a room."); return@synchronized }
             val owner = p.owner
@@ -146,8 +150,9 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
             "request-control" -> {
                 if (m.id == sourceId || controlRequests.values.any { it.optString("requesterId") == m.id && it.optString("status") == "PENDING" }) { error(p,"Already sharing or waiting for approval."); return@synchronized }
                 controlRequests.values.removeAll { it.optString("requesterId") == m.id }
-                val request = JSONObject().put("id",UUID.randomUUID().toString()).put("requesterId",m.id).put("requesterName",m.name).put("sourceType","DEVICE_AUDIO").put("note",json.optString("note").take(160)).put("status","PENDING").put("createdAt",System.currentTimeMillis()).put("expiresAt",System.currentTimeMillis()+120_000)
-                controlRequests[request.getString("id")] = request; broadcast()
+                val request = JSONObject().put("id",UUID.randomUUID().toString()).put("requesterId",m.id).put("requesterName",m.name).put("sourceType",requestedSourceType).put("note",json.optString("note").take(160)).put("status","PENDING").put("createdAt",System.currentTimeMillis()).put("expiresAt",System.currentTimeMillis()+120_000)
+                controlRequests[request.getString("id")] = request
+                members.values.forEach { it.peer?.text(JSONObject().put("type","control-requested").put("request",request)) }; broadcast()
             }
             "cancel-request" -> {
                 val request = controlRequests[json.optString("requestId")]
@@ -161,7 +166,7 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
                 if(target?.peer == null) { error(p,"That participant is no longer connected."); return@synchronized }
                 val decision = if(type == "reject-request") "REJECTED" else "APPROVED"
                 controlRequests.values.filter { it.optString("requesterId") == target.id && it.optString("status") == "PENDING" }.forEach { result(target,it,decision) }
-                if(decision == "APPROVED") setSource(target.id)
+                if(decision == "APPROVED") setSource(target.id,type=request?.optString("sourceType") ?: requestedSourceType)
                 broadcast()
             }
             "assign-cohost" -> {
@@ -178,11 +183,11 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
             "start-source", "takeover", "stop-source" -> {
                 val allowed = if(type == "takeover") moderator(m) else moderator(m) || m.id == sourceId
                 if(!allowed) error(p,"Ask the host for audio control first.")
-                else { setSource(if(type=="stop-source") null else m.id,if(type=="start-source") "LIVE" else "STARTING"); broadcast() }
+                else { setSource(if(type=="stop-source") null else m.id,if(type=="start-source") "LIVE" else "STARTING",requestedSourceType); broadcast() }
             }
             "leave-room" -> {p.member=null;m.peer=null;m.disconnectedAt=System.currentTimeMillis();if(m.id!=hostId)remove(m.id);if(m.id==sourceId)setSource(null);broadcast();p.disconnect()}
             "end-room" -> if(m.id==hostId && p.owner) {ended=true;members.values.forEach{it.peer?.text(JSONObject().put("type","room-ended").put("message","The host ended Nearby Vibe."))};setSource(null);broadcast()}
-            else -> error(p,"Nearby Vibe currently supports host audio, listening and chat.")
+            else -> error(p,"Unsupported nearby command.")
         }
     }
     private fun audio(p: Peer, bytes: ByteArray) = synchronized(lock) {
@@ -203,6 +208,7 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
         @Volatile var running=true
         private var writer: Thread?=null
         private var count=0;private var window=0L
+        private val audioBudget = NearbyAudioBudget()
         override fun onOpen() {
             synchronized(lock){if(!admitted || peers.size>=12){disconnect();return};peers.add(this)}
             writer=Thread({try {while(running){val out=controls.poll() ?: audio.poll(100,TimeUnit.MILLISECONDS) ?: continue;when(out){is Out.Text->send(out.value);is Out.Audio->send(out.value);Out.Ping->ping(byteArrayOf(1))}}}catch(_:Exception){disconnect()}},"Nearby-Vibe-writer").apply{isDaemon=true;start()}
@@ -211,10 +217,13 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
         fun disconnect(){if(!running)return;running=false;writer?.interrupt();Thread({runCatching{close(WebSocketFrame.CloseCode.NormalClosure,"Nearby connection closed",false)}},"Nearby-Vibe-close").apply{isDaemon=true;start()}}
         override fun onMessage(message:WebSocketFrame) {
             lastSeen=System.currentTimeMillis()
-            if(lastSeen-window>1000){window=lastSeen;count=0};if(++count>150){disconnect();return}
-            if(message.opCode==WebSocketFrame.OpCode.Binary) audio(this,message.binaryPayload)
-            else if(message.textPayload.length<=8192)runCatching{command(this,JSONObject(message.textPayload))}.onFailure{error(this,"Invalid nearby command.")}
-            else disconnect()
+            if(message.opCode==WebSocketFrame.OpCode.Binary) {
+                if(audioBudget.allow(message.binaryPayload.size,System.nanoTime()/1_000_000)) audio(this,message.binaryPayload)
+            } else {
+                if(lastSeen-window>1000){window=lastSeen;count=0};if(++count>150){disconnect();return}
+                if(message.textPayload.length<=8192)runCatching{command(this,JSONObject(message.textPayload))}.onFailure{error(this,"Invalid nearby command.")}
+                else disconnect()
+            }
         }
         override fun onPong(pong:WebSocketFrame){lastSeen=System.currentTimeMillis()}
         override fun onException(exception:IOException){disconnect()}

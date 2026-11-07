@@ -83,6 +83,8 @@ class NearbyRoomHostTest {
             owner.send("""{"type":"start-source"}""")
             val initial=source.stateWhere{it.getJSONObject("room").getString("sourceStatus")=="LIVE"}.getJSONObject("room").getLong("sourceEpoch")
             source.send("""{"type":"request-control","note":"My turn"}""")
+            val alert=owner.event("control-requested").getJSONObject("request")
+            assertEquals(com.roomsound.android.capture.RoomSessionCoordinator.DEVICE_AUDIO,alert.getString("sourceType"))
             val pending=owner.stateWhere{it.getJSONArray("requests").length()>0}.getJSONArray("requests").getJSONObject(0);val id=pending.getString("id")
             source.send("""{"type":"request-control"}""");source.event("error")
             listener.send("""{"type":"approve-request","requestId":"$id"}""");listener.event("error")
@@ -142,5 +144,37 @@ class NearbyRoomHostTest {
         val fragment="#invite=12345678-1234-1234-1234-123456789abc&code=ABC234&tls=8766&pin="+"a".repeat(64)
         assertEquals("192.168.43.1",NearbyPairing.parse("http://192.168.43.1:8765/$fragment").host)
         listOf("http://8.8.8.8:8765/$fragment","http://host.example:8765/$fragment","http://192.168.999.1/$fragment","http://user@192.168.43.1/$fragment","http://192.168.43.1/#code=ABC234").forEach{raw->assertThrows(IllegalArgumentException::class.java){NearbyPairing.parse(raw)}}
+    }
+
+    @Test fun recorderBacklogAndRepeatedPauseResumeKeepTheLocalRoomJoined() {
+        val http=OkHttpClient();val host=NearbyRoomHost({"offline".byteInputStream()},0);val clients=mutableListOf<Client>()
+        try {
+            host.startHosting();val owner=Client(host.ownerEndpoint,http).also{clients+=it}
+            owner.send("""{"type":"create-room","displayName":"Host","guestId":"host"}""")
+            val code=owner.event("joined").getJSONObject("state").getJSONObject("room").getString("code")
+            val listener=Client("ws://127.0.0.1:${host.listeningPort}/?invite=${host.invite}",http).also{clients+=it}
+            listener.send("""{"type":"join-room","code":"$code","displayName":"Laptop","guestId":"laptop"}""");listener.event("joined")
+            owner.send("""{"type":"start-source","sourceType":"ANDROID_DEVICE_AUDIO"}""")
+            val room=listener.stateWhere{it.getJSONObject("room").getString("sourceStatus")=="LIVE"}.getJSONObject("room")
+            assertEquals(com.roomsound.android.capture.RoomSessionCoordinator.DEVICE_AUDIO,room.getString("activeSourceType"))
+            val epoch=room.getLong("sourceEpoch")
+            repeat(160){owner.ws.send(ByteString.of(*Pcm16RelayPacketCodec.encode(ShortArray(960),sourceEpoch=epoch,sequence=it.toLong())))}
+            repeat(160){assertNotNull("Recorder backlog disconnected the source",listener.binary.poll(5,TimeUnit.SECONDS))}
+            repeat(6){cycle->
+                val silence=Pcm16RelayPacketCodec.encode(ShortArray(960),sourceEpoch=epoch,sequence=(200+cycle*2).toLong())
+                val resumed=Pcm16RelayPacketCodec.encode(ShortArray(960){2345},sourceEpoch=epoch,sequence=(201+cycle*2).toLong())
+                owner.ws.send(ByteString.of(*silence));assertArrayEquals(silence,listener.binary.poll(3,TimeUnit.SECONDS)?.toByteArray())
+                owner.ws.send(ByteString.of(*resumed));assertArrayEquals(resumed,listener.binary.poll(3,TimeUnit.SECONDS)?.toByteArray())
+            }
+            owner.send("""{"type":"chat","text":"Still hosting after six pause/play cycles"}""")
+            assertTrue(listener.event("chat").getJSONObject("message").getString("text").startsWith("Still hosting"))
+        } finally {clients.forEach{it.ws.cancel()};host.close();http.dispatcher.executorService.shutdownNow();http.connectionPool.evictAll()}
+    }
+
+    @Test fun excessiveAudioIsDroppedWithinABoundedBudgetAndCanRecover() {
+        val budget=NearbyAudioBudget();var accepted=0
+        repeat(400){if(budget.allow(1940,0))accepted++}
+        assertTrue(accepted in 160..203)
+        assertFalse(budget.allow(1940,0));assertTrue(budget.allow(1940,1000))
     }
 }

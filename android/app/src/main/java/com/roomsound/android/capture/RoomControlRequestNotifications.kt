@@ -55,6 +55,11 @@ internal class RoomControlRequestNotifications(context: Context) {
             return
         }
 
+        // State/capture refreshes must not continually repost the same alert.
+        if (requestId in activeRequestIds) return
+        if (!notificationManager.areNotificationsEnabled() ||
+            notificationManager.getNotificationChannel(CHANNEL_ID)?.importance == NotificationManager.IMPORTANCE_NONE) return
+
         cancelExpiry(requestId)
         activeRequestIds += requestId
 
@@ -89,6 +94,7 @@ internal class RoomControlRequestNotifications(context: Context) {
         runCatching {
             notificationManager.notify(notificationTag(requestId), NOTIFICATION_ID, builder.build())
         }.onFailure { error ->
+            activeRequestIds -= requestId
             // Android 13+ may reject the post until the Activity obtains the
             // runtime notification permission. The room controls remain usable.
             android.util.Log.w("RoomSound", "Control request notification unavailable", error)

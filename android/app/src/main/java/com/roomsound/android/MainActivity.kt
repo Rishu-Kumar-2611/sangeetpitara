@@ -236,6 +236,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         activityResumed = false
+        audioRequestDialog?.dismiss()
         super.onPause()
     }
 
@@ -380,6 +381,10 @@ class MainActivity : Activity() {
 
     private var nativePage = "home"
     private var nearbyStarting = false
+    private var renderedRoomId: String? = null
+    private val announcedAudioRequests = linkedSetOf<String>()
+    private var audioRequestDialog: android.app.AlertDialog? = null
+    private var displayedAudioRequestId: String? = null
     private val nativePanels = mutableMapOf<String, View>()
     private var nativeScroll: ScrollView? = null
     private lateinit var nativeBack: Button
@@ -1083,15 +1088,24 @@ class MainActivity : Activity() {
 
     private fun renderRoomState(state: RoomState?) {
         try {
-        val previousRoomId = latestRoomState?.room?.id
+        val previousRoomId = renderedRoomId
         latestRoomState = state
         if (state != null && state.room.id != previousRoomId && nativePage in setOf("home", "create", "join", "nearby")) navigateNative("room")
-        if (state == null && previousRoomId != null) navigateNative("home")
+        if (state != null) {
+            if (renderedRoomId != state.room.id) announcedAudioRequests.clear()
+            renderedRoomId = state.room.id
+        } else if (roomSession?.currentEndpoint() == null && previousRoomId != null) {
+            renderedRoomId = null
+            announcedAudioRequests.clear()
+            audioRequestDialog?.dismiss()
+            navigateNative("home")
+        }
+        renderNativePage()
         refreshNearbyInvite()
         updateRoomEntryControls()
         renderCaptureControls(state)
         if (state == null) {
-            roomStateText.text = "No room state. Create or join a room to continue."
+            roomStateText.text = if (renderedRoomId != null) "Connection interrupted. Reconnecting to your room…" else "No room state. Create or join a room to continue."
             takeoverButton.isEnabled = false
             requestAudioButton.text = "Request to share device audio"
             requestAudioButton.isEnabled = false
@@ -1140,6 +1154,7 @@ class MainActivity : Activity() {
         endRoomButton.isEnabled = isHost
         runCatching { renderApprovalControls(state, isModerator) }
         runCatching { renderModerationControls(state, isHost, isModerator) }
+        showAudioRequestAlert(state)
         renderPeople(state)
         renderChat(state)
         renderHealth()
@@ -1250,12 +1265,51 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showAudioRequestAlert(state: RoomState) {
+        val pending = state.requests.filter { it.status == "PENDING" && it.expiresAt > System.currentTimeMillis() }
+        if (audioRequestDialog?.isShowing == true) {
+            if (pending.none { it.id == displayedAudioRequestId } || !isCurrentModerator(state)) audioRequestDialog?.dismiss()
+            return
+        }
+        if (!activityResumed || isFinishing || isDestroyed || projectionConsentInFlight || notificationPermissionRequestInFlight || !isCurrentModerator(state)) return
+        val request = pending.firstOrNull { it.id !in announcedAudioRequests && it.requesterId != state.self?.id } ?: return
+        announcedAudioRequests.add(request.id)
+        while (announcedAudioRequests.size > 128) announcedAudioRequests.remove(announcedAudioRequests.first())
+        displayedAudioRequestId = request.id
+        val canPause = SourcePlaybackController.isNotificationAccessEnabled(this)
+        val text = "${request.requesterName} wants to play music. Approving gives them audio control." +
+            if (canPause) " Your current media app will receive a pause command when this phone loses control."
+            else " Enable automatic music pausing to pause other apps on this phone when control changes."
+        audioRequestDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Request to play music").setMessage(text)
+            .setPositiveButton("Approve") { _, _ -> approveRequest(request.id) }
+            .setNegativeButton("Reject") { _, _ -> rejectRequest(request.id) }
+            .setNeutralButton(if (canPause) "Review in People" else "Enable automatic pause") { _, _ ->
+                navigateNative("people")
+                if (!canPause) openPlaybackHandoffSettings()
+            }.create().also { dialog ->
+                dialog.setOnDismissListener {
+                    audioRequestDialog = null; displayedAudioRequestId = null
+                    window.decorView.post {
+                        roomSession?.currentRoomState()?.let(::showAudioRequestAlert)
+                        requestNotificationPermissionIfNeeded()
+                    }
+                }
+                dialog.show()
+                window.decorView.postDelayed({ if (displayedAudioRequestId == request.id) audioRequestDialog?.dismiss() }, (request.expiresAt-System.currentTimeMillis()).coerceAtLeast(1L))
+            }
+    }
+
     private fun renderModerationControls(state: RoomState, isHost: Boolean, isModerator: Boolean) {
         moderationContainer.removeAllViews()
         moderationContainer.visibility = View.GONE
         if (!isModerator) return
         moderationContainer.visibility = View.VISIBLE
         moderationContainer.addView(sectionLabel(if (isHost) "Host controls" else "Co-host controls"))
+        if (!SourcePlaybackController.isNotificationAccessEnabled(this)) {
+            moderationContainer.addView(sectionLabel("To pause YouTube Music or another media app automatically when control changes, enable Android Notification Access. Room audio always switches to the approved player."), matchWrap())
+            moderationContainer.addView(button("Enable automatic music pausing", ButtonTone.SECONDARY) { openPlaybackHandoffSettings() }, matchWrap())
+        }
         if (isHost) {
             val currentCohost = state.members.firstOrNull { it.id == state.room.cohostId }
             if (currentCohost != null) {
@@ -1623,7 +1677,10 @@ class MainActivity : Activity() {
         pendingCaptureStart = false
         projectionConsentInFlight = true
         renderSnapshot(CaptureSnapshot(CaptureStatus.PROJECTION_REQUIRED, message = "Approve Android's system playback-capture dialog. No microphone source is selected."))
-        startActivityForResult(manager.createScreenCaptureIntent(), REQUEST_MEDIA_PROJECTION)
+        val captureIntent = if (Build.VERSION.SDK_INT >= 34) {
+            manager.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay())
+        } else manager.createScreenCaptureIntent()
+        startActivityForResult(captureIntent, REQUEST_MEDIA_PROJECTION)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -1687,6 +1744,7 @@ class MainActivity : Activity() {
             isFinishing ||
             (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed) ||
             notificationPermissionRequestInFlight ||
+            audioRequestDialog?.isShowing == true ||
             pendingCaptureStart ||
             projectionConsentInFlight
         ) return
