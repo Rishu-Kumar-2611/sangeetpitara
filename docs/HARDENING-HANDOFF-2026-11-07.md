@@ -73,10 +73,10 @@ were made. Existing unrelated audit artifacts were left unstaged.
   with no baseline missing sequences or unexpected closes. At 200 connections,
   50 listeners rejoined successfully; measured server RSS peaked at 83 MB and
   loopback relay p95 was 6 ms on this computer. These are not WAN/speaker timings.
-- A ten-minute baseline run on Node 22.14.0 passed with 100 connections, zero
-  baseline sequence gaps/unexpected closes, 25 reconnects, peak RSS 88 MB and
-  loopback relay p95 9 ms. The repeated current-runtime result is recorded in
-  `ops/soak-results.json` when final validation completes.
+- The final ten-minute run on Node 22.23.4 passed with 100 connections, zero
+  baseline sequence gaps/unexpected closes, 25 successful reconnects, peak RSS
+  89 MB and loopback relay p95 9 ms. Full results are in `ops/soak-results.json`.
+  The earlier Node 22.14.0 baseline also passed before the runtime upgrade.
 
 ## Remaining owner/deployment gates
 

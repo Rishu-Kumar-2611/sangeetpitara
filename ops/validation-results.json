@@ -1,0 +1,45 @@
+{
+  "recordedAt": "2026-11-07T15:47:52.909300+00:00",
+  "testedSourceCommit": "e7137ee",
+  "branch": "codex/production-hardening",
+  "publicMainUnchanged": "61bc495",
+  "published": false,
+  "runtime": "Node 22.23.4",
+  "nodeTests": 139,
+  "browserChecks": 20,
+  "androidJvmTests": 96,
+  "androidAssemblyAndLint": "passed",
+  "productionContainer": "passed",
+  "postgresIntegrationAndOutage": "passed",
+  "isolatedNeonHistoryRestore": "passed; test branches removed",
+  "encryptedBackupArchiveVerification": "passed; ephemeral test archive removed",
+  "credentialHistoryScan": "passed; 153 commits and three exact public-fixture exceptions",
+  "knownProductionDependencyVulnerabilities": 0,
+  "windowsCompanionStandalone": "passed",
+  "capacityConnectionsTested": [
+    10,
+    25,
+    50,
+    100,
+    200
+  ],
+  "endurance": {
+    "connections": 100,
+    "minutes": 10,
+    "baselineSequenceGaps": 0,
+    "unexpectedDisconnects": 0,
+    "successfulReconnects": 25
+  },
+  "notCertified": [
+    "physical Android/OEM/background listening",
+    "WAN acoustic latency and synchronization",
+    "production free-host capacity",
+    "independent penetration test"
+  ],
+  "activationPending": [
+    "backup destination and separately retained key",
+    "private alert host and notification recipient",
+    "provider proxy-hop verification at final deployment",
+    "final UI, signed release, Play Console acceptance"
+  ]
+}

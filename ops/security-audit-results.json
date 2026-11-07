@@ -8,12 +8,13 @@
     "critical": 0,
     "total": 0
   },
-  "gitHistoryCommitsScanned": 148,
+  "gitHistoryCommitsScanned": 153,
   "credentialFindingsAfterReviewedExceptions": 0,
   "reviewedExceptions": [
     "Public TLS test fixture private key; excluded from app/runtime packages",
     "Exact RFC6455 WebSocket handshake magic constant",
     "Exact public RFC6455 sample nonce in malformed-handshake regression"
   ],
-  "limits": "Automated scans and targeted adversarial tests; not an independent penetration test."
+  "limits": "Automated scans and targeted adversarial tests; not an independent penetration test.",
+  "runtime": "Node 22.23.4 LTS"
 }
