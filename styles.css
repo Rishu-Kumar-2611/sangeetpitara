@@ -1114,3 +1114,20 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
   .landing-copy .apk-download-card { margin-top: 20px; width: 100%; }
   .nearby-card { display: block; }
 }
+/* Focused entry screens. Existing room/audio components remain mounted. */
+.landing-view[data-entry-screen] { display: flex; flex-direction: column; align-items: stretch; max-width: 720px; margin-inline: auto; min-height: calc(100vh - 140px); gap: 24px; }
+.landing-view[data-entry-screen="home"] .landing-copy h1 { font-size: clamp(36px,6vw,64px); }
+.landing-view[data-entry-screen="home"] .browser-first-panel { display: none; }
+.landing-view[data-entry-screen="home"] .landing-copy .brand-mark { margin-bottom: 30px; }
+.welcome-actions { display: grid; gap: 14px; }
+.welcome-choice { position: relative; text-align: left; padding: 22px 56px 22px 24px; border: 1px solid var(--line-strong); border-radius: 20px; color: var(--text); background: var(--glass); cursor: pointer; }
+.welcome-choice strong { display: block; font-family: var(--font-display); font-size: 20px; }
+.welcome-choice span { display: block; color: var(--muted); margin-top: 6px; font-size: 15px; }
+.welcome-choice b { position: absolute; right: 24px; top: 26px; color: var(--accent); font-size: 24px; }
+.welcome-choice:hover { border-color: var(--accent); background: var(--accent-soft); }
+.entry-back { align-self: flex-start; }
+.landing-view[data-entry-screen] .entry-card { width: 100%; display: block; }
+.landing-view[data-entry-screen] .entry-card[hidden] { display: none; }
+.landing-view[data-entry-screen] .entry-tabs { display: none; }
+.landing-view[data-entry-screen] .nearby-card > form { padding: 0; margin-top: 24px; background: transparent; border: 0; }
+@media(max-width:600px) { .welcome-choice { padding: 19px 48px 19px 20px; } .welcome-choice strong { font-size: 18px; } }

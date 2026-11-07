@@ -211,6 +211,11 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installUncaughtExceptionHandler()
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(0) {
+                if (nativePage != "home") navigateNative("home") else finish()
+            }
+        }
         pendingCaptureId = savedInstanceState?.getString(STATE_PENDING_CAPTURE_ID)
         projectionConsentInFlight = savedInstanceState?.getBoolean(STATE_PROJECTION_IN_FLIGHT, false) == true
         setContentView(buildContentView())
@@ -373,6 +378,52 @@ class MainActivity : Activity() {
         requestNotificationPermissionIfNeeded()
     }
 
+    private var nativePage = "home"
+    private val nativePanels = mutableMapOf<String, View>()
+    private var nativeScroll: ScrollView? = null
+    private lateinit var nativeBack: Button
+    private lateinit var nativeTabs: LinearLayout
+    private lateinit var nativeLocalInviteButton: Button
+    private lateinit var nativeReturnButton: Button
+    private lateinit var nativeEntry: LinearLayout
+    private lateinit var nativeSessionControls: LinearLayout
+    private fun navigateNative(page: String) {
+        if (page in setOf("create", "join")) {
+            if (roomSession?.currentRoomState() != null) {
+                android.widget.Toast.makeText(this, "Leave your current room before starting another", android.widget.Toast.LENGTH_SHORT).show()
+                nativePage = "room"
+                renderNativePage()
+                return
+            }
+            nearbyEndpointOverride = null
+            roomSession?.let(::configureRoomSession)
+        }
+        nativePage = page
+        renderNativePage()
+        nativeScroll?.post { nativeScroll?.smoothScrollTo(0, 0) }
+    }
+    private fun renderNativePage() {
+        if (!::nativeBack.isInitialized) return
+        nativePanels.forEach { (name, panel) ->
+            panel.visibility = if (name == nativePage || (name == "entry" && nativePage in setOf("create", "join", "room")) || (name == "capture" && nativePage == "sound")) View.VISIBLE else View.GONE
+        }
+        nativeBack.visibility = if (nativePage == "home") View.GONE else View.VISIBLE
+        nativeReturnButton.visibility = if (roomSession?.currentRoomState() != null) View.VISIBLE else View.GONE
+        nativeLocalInviteButton.visibility = if (roomSession?.currentEndpoint()?.startsWith("ws://127.0.0.1:") == true) View.VISIBLE else View.GONE
+        nativeTabs.visibility = if (roomSession?.currentRoomState() != null && nativePage != "home") View.VISIBLE else View.GONE
+        nativeEntry.visibility = if (nativePage in setOf("create", "join")) View.VISIBLE else View.GONE
+        nativeSessionControls.visibility = if (nativePage == "room") View.VISIBLE else View.GONE
+        roomNameInput.visibility = if (nativePage == "create") View.VISIBLE else View.GONE
+        createRoomButton.visibility = if (nativePage == "create") View.VISIBLE else View.GONE
+        roomCodeInput.visibility = if (nativePage == "join") View.VISIBLE else View.GONE
+        joinRoomButton.visibility = if (nativePage == "join") View.VISIBLE else View.GONE
+        updatePanel.visibility = if (nativePage == "status" && updateApkUrl != null) View.VISIBLE else View.GONE
+    }
+    @Deprecated("Legacy back dispatcher")
+    override fun onBackPressed() {
+        if (nativePage != "home") navigateNative("home") else super.onBackPressed()
+    }
+
     private fun buildContentView(): View {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -407,6 +458,25 @@ class MainActivity : Activity() {
         brandRow.addView(brandCopy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(brandRow, matchWrap())
         content.addView(header, panelLayout())
+        nativeBack = button("← Welcome", ButtonTone.SECONDARY) { navigateNative("home") }
+        content.addView(nativeBack, panelLayout())
+        val welcome = panelContainer()
+        welcome.addView(sectionTitle("Listen together."), matchWrap())
+        welcome.addView(sectionLabel("Choose how you want to connect."), marginLayout())
+        welcome.addView(button("Create a room · Online") { navigateNative("create") }, marginLayout())
+        welcome.addView(button("Join a room · Online", ButtonTone.SECONDARY) { navigateNative("join") }, marginLayout())
+        welcome.addView(button("Play Close · Hotspot / Wi-Fi", ButtonTone.SECONDARY) { navigateNative("nearby") }, marginLayout())
+        nativeReturnButton = button("Return to your room", ButtonTone.SECONDARY) {
+            if (roomSession?.currentRoomState() != null) navigateNative("room") else android.widget.Toast.makeText(this,"Create or join a room first",android.widget.Toast.LENGTH_SHORT).show()
+        }
+        welcome.addView(nativeReturnButton, marginLayout())
+        nativePanels["home"] = welcome
+        content.addView(welcome, panelLayout())
+        nativeTabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf("room" to "Room", "chat" to "Chat", "people" to "People", "sound" to "Audio", "status" to "Status").forEach { (page, title) ->
+            nativeTabs.addView(button(title, ButtonTone.SECONDARY) { navigateNative(page) }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        content.addView(nativeTabs, panelLayout())
 
         updatePanel = panelContainer().apply { visibility = View.GONE }
         updateText = labelText().apply {
@@ -433,7 +503,7 @@ class MainActivity : Activity() {
         content.addView(accessPanel, panelLayout())
 
         val nearbyPanel = panelContainer()
-        nearbyPanel.addView(sectionTitle("Nearby Vibe"), matchWrap())
+        nearbyPanel.addView(sectionTitle("Play Close"), matchWrap())
         nearbyPanel.addView(sectionLabel("Offline music on the same hotspot or Wi-Fi. This Android phone shares audio; friends listen in their browser."), matchWrap())
         val nearbyName = inputText("Your name for Nearby Vibe", null)
         nearbyPanel.addView(nearbyName, marginLayout())
@@ -493,25 +563,32 @@ class MainActivity : Activity() {
             if (roomSession?.canSelectRoom() != true) appendRoomEvent("Leave your current room first.")
             else { nearbyEndpointOverride = null; roomSession?.let(::configureRoomSession) }
         }, marginLayout())
+        nativePanels["nearby"] = nearbyPanel
         content.addView(nearbyPanel, panelLayout())
 
         val roomPanel = panelContainer()
         roomPanel.addView(sectionTitle("Room control"), matchWrap())
         roomPanel.addView(sectionLabel("Create or join a listening room"), matchWrap())
 
+        nativeEntry = verticalContainer()
+        roomPanel.addView(nativeEntry, matchWrap())
         displayNameInput = inputText("Your name", null)
-        roomPanel.addView(displayNameInput, marginLayout())
+        nativeEntry.addView(displayNameInput, marginLayout())
         roomNameInput = inputText("Room name", null)
-        roomPanel.addView(roomNameInput, marginLayout())
+        nativeEntry.addView(roomNameInput, marginLayout())
         createRoomButton = button("Create room") { createRoom() }
-        roomPanel.addView(createRoomButton, marginLayout())
+        nativeEntry.addView(createRoomButton, marginLayout())
         roomCodeInput = inputText("Room code to join", null).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         }
-        roomPanel.addView(roomCodeInput, marginLayout())
+        nativeEntry.addView(roomCodeInput, marginLayout())
         joinRoomButton = button("Join room") { joinRoom() }
-        roomPanel.addView(joinRoomButton, marginLayout())
+        nativeEntry.addView(joinRoomButton, marginLayout())
 
+        nativeSessionControls = verticalContainer()
+        roomPanel.addView(nativeSessionControls, matchWrap())
+        nativeLocalInviteButton = button("View local invite", ButtonTone.SECONDARY) { navigateNative("nearby") }
+        nativeSessionControls.addView(nativeLocalInviteButton, marginLayout())
         val roomStatusPanel = statusPanel()
         roomConnectionText = labelText().apply {
             text = "Connection: not connected"
@@ -531,7 +608,7 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(9), dp(12), dp(9))
         }
         roomStatusPanel.addView(roomEventsText, marginLayout())
-        roomPanel.addView(roomStatusPanel, marginLayout())
+        nativeSessionControls.addView(roomStatusPanel, marginLayout())
 
         roomCodePanel = statusPanel().apply {
             visibility = View.GONE
@@ -554,19 +631,20 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(0, dp(6), 0, 0)
         }, matchWrap())
-        roomPanel.addView(roomCodePanel, marginLayout())
+        nativeSessionControls.addView(roomCodePanel, marginLayout())
 
         sourceButton = button("Share device audio") { handleSourceAction() }
-        roomPanel.addView(sourceButton, marginLayout())
+        nativeSessionControls.addView(sourceButton, marginLayout())
         takeoverButton = button("Take back control", ButtonTone.SECONDARY) { takeoverSource() }
-        roomPanel.addView(takeoverButton, marginLayout())
+        nativeSessionControls.addView(takeoverButton, marginLayout())
         requestAudioButton = button("Request to share device audio", ButtonTone.SECONDARY) { requestAudioControl() }
-        roomPanel.addView(requestAudioButton, marginLayout())
+        nativeSessionControls.addView(requestAudioButton, marginLayout())
         leaveRoomButton = button("Leave room", ButtonTone.SECONDARY) { leaveRoom() }
-        roomPanel.addView(leaveRoomButton, marginLayout())
+        nativeSessionControls.addView(leaveRoomButton, marginLayout())
         endRoomButton = button("End room", ButtonTone.DANGER) { endRoom() }
-        roomPanel.addView(endRoomButton, marginLayout())
+        nativeSessionControls.addView(endRoomButton, marginLayout())
 
+        nativePanels["entry"] = roomPanel
         content.addView(roomPanel, panelLayout())
 
         // The browser exposes People as a first-class room surface. Keep the
@@ -589,6 +667,7 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(11), dp(12), dp(11))
         }
         peoplePanel.addView(activityText, matchWrap())
+        nativePanels["people"] = peoplePanel
         content.addView(peoplePanel, panelLayout())
 
         val chatPanel = panelContainer()
@@ -613,6 +692,7 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(dp(88), LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) },
         )
         chatPanel.addView(chatRow, marginLayout())
+        nativePanels["chat"] = chatPanel
         content.addView(chatPanel, panelLayout())
 
         val listeningPanel = panelContainer()
@@ -642,6 +722,7 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(11), dp(12), dp(11))
         }
         listeningPanel.addView(transportText, marginLayout())
+        nativePanels["sound"] = listeningPanel
         content.addView(listeningPanel, panelLayout())
 
         val healthPanel = panelContainer()
@@ -652,6 +733,7 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(11), dp(12), dp(11))
         }
         healthPanel.addView(healthText, matchWrap())
+        nativePanels["status"] = healthPanel
         content.addView(healthPanel, panelLayout())
 
         val capturePanel = panelContainer()
@@ -666,6 +748,7 @@ class MainActivity : Activity() {
             openPlaybackHandoffSettings()
         }
         capturePanel.addView(handoffControlButton, marginLayout())
+        nativePanels["capture"] = capturePanel
         content.addView(capturePanel, panelLayout())
 
         renderRoomState(null)
@@ -673,7 +756,9 @@ class MainActivity : Activity() {
         updateMuteButton()
         renderAccessState()
         renderPlaybackHandoffControl()
+        renderNativePage()
         return ScrollView(this).apply {
+            nativeScroll = this
             applySystemInsets()
             isFillViewport = true
             isVerticalScrollBarEnabled = false
@@ -970,7 +1055,10 @@ class MainActivity : Activity() {
 
     private fun renderRoomState(state: RoomState?) {
         try {
+        val previousRoomId = latestRoomState?.room?.id
         latestRoomState = state
+        if (state != null && state.room.id != previousRoomId && nativePage in setOf("home", "create", "join", "nearby")) navigateNative("room")
+        if (state == null && previousRoomId != null) navigateNative("home")
         refreshNearbyInvite()
         updateRoomEntryControls()
         renderCaptureControls(state)
@@ -1858,7 +1946,7 @@ class MainActivity : Activity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 updateApkUrl = update.apkUrl
                 updateText.text = getString(R.string.update_available, update.tag.removePrefix("v"))
-                updatePanel.visibility = View.VISIBLE
+                if (nativePage == "status") updatePanel.visibility = View.VISIBLE
             }
         }, "SangeetPitara-update-check").apply { isDaemon = true }.start()
     }

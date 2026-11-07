@@ -1,19 +1,19 @@
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261107-ui1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261107-ui1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261107-screens1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261107-screens1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261107-ui1';
+} from './capture-tracks.js?v=20261107-screens1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261107-ui1';
+} from './media-relay.mjs?v=20261107-screens1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -25,8 +25,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261107-ui1';
-import { roomPalette } from './room-palette.js?v=20261107-ui1';
+} from './ads.mjs?v=20261107-screens1';
+import { roomPalette } from './room-palette.js?v=20261107-screens1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -833,7 +833,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261107-ui1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261107-screens1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -907,7 +907,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261107-ui1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261107-screens1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1265,6 +1265,7 @@ function resetToLanding(reason = '') {
   $('#room-banner').classList.add('hidden');
   applyRoomPalette(null);
   selectRoomTab('chat');
+  showWelcomeScreen('home');
   showLanding(reason);
 }
 
@@ -2935,3 +2936,34 @@ $('#nearby-invite-form')?.addEventListener('submit', event => {
     location.assign(url.href);
   } catch { $('#nearby-invite-error').textContent = 'Paste the complete private Wi-Fi/hotspot invite from the host app.'; }
 });
+
+// Entry navigation changes only the visible screen; it never tears down audio.
+function showWelcomeScreen(screen, push = false) {
+  const selected = ['create', 'join', 'nearby'].includes(screen) ? screen : 'home';
+  if (state.room && ['create', 'join'].includes(selected)) {
+    $('#landing-view').classList.add('hidden'); $('#room-view').classList.remove('hidden'); return;
+  }
+  $('#welcome-return-room').hidden = !state.room;
+  if (state.room && selected === 'home') { $('#room-view').classList.add('hidden'); $('#landing-view').classList.remove('hidden'); }
+  $('#landing-view').dataset.entryScreen = selected;
+  $('.landing-copy').hidden = selected !== 'home';
+  $('#welcome-actions').hidden = selected !== 'home';
+  $('.online-entry').hidden = !['create', 'join'].includes(selected);
+  $('.nearby-card').hidden = selected !== 'nearby';
+  $('#entry-back').hidden = selected === 'home';
+  if (selected === 'create' || selected === 'join') {
+    selectEntryTab(selected);
+    $('#online-entry-title').textContent = selected === 'create' ? 'Create a room' : 'Join a room';
+    $('.entry-intro').textContent = selected === 'create' ? 'Give your room a name, then invite your friends.' : 'Enter your name and the online room code from your host.';
+  }
+  if (push) history.pushState({ ...history.state, entryScreen: selected }, '', location.href);
+  if (push) { window.scrollTo(0, 0); (selected === 'home' ? $('#welcome-actions button') : selected === 'nearby' ? $('#nearby-invite') : $('#display-name'))?.focus(); }
+}
+$$('[data-open-screen]').forEach(button => button.addEventListener('click', () => showWelcomeScreen(button.dataset.openScreen, true)));
+$('#entry-back').addEventListener('click', () => showWelcomeScreen('home', true));
+addEventListener('popstate', event => showWelcomeScreen(event.state?.entryScreen || 'home'));
+const initialEntryScreen = new URLSearchParams(location.search).get('room') ? 'join' : 'home';
+showWelcomeScreen(initialEntryScreen);
+history.replaceState({ ...history.state, entryScreen: initialEntryScreen }, '', location.href);
+
+$('#welcome-return-room').addEventListener('click', () => { $('#landing-view').classList.add('hidden'); $('#room-view').classList.remove('hidden'); });

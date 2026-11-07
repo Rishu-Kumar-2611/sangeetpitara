@@ -8,9 +8,9 @@ external scripts, fonts, account login or internet audio relay is required.
 ## Use
 
 1. Connect the host to Wi-Fi or enable its hotspot in Android Settings.
-2. In the app's Nearby Vibe card, enter your name and tap Host & create nearby
+2. From the app's welcome screen, open Play Close, enter your name and tap Host & create nearby
    room. This creates the local room automatically.
-3. The offline invite appears directly in the card. Use Copy local invite or
+3. Open View local invite from the Room screen. Use Copy local invite or
    Share invite. If no address is shown, enable hotspot/Wi-Fi and Refresh invite.
 4. Friends connect to that same network and open the link in their browser.
    Android guests can use Join nearby invite in browser inside the app.
@@ -18,7 +18,7 @@ external scripts, fonts, account login or internet audio relay is required.
    audio and grants Android capture consent. Play an app that permits capture.
 6. Leave/end using room controls; keep the host phone and hotspot running.
 
-The website's Nearby Vibe section explains the flow and opens a private local
+The website's separate Play Close screen explains the flow and opens a private local
 invite. The website cannot itself enable a hotspot or host Android device audio.
 Guests use the locally served page, not the public site's online room.
 
@@ -57,8 +57,8 @@ desktop/phone sizes and verifies active WebAudio playback plus chat with all
 external requests blocked. Physical Android hotspot/device tests are still needed;
 these software checks do not prove acoustic synchronization or flawless RF.
 
-The database migration is intentionally separate. Render remains the public
-service's database until its existing data is securely migrated to Neon.
+The public service now uses Neon after the verified migration described in
+DATABASE-MIGRATION-2026-11-07.md. Local rooms remain independent of the database.
 
 Verified software checks for this release: 81 Android JVM tests, debug APK
 assembly and lint passed; 116 Node tests passed on Node 22.14.0; six Playwright
