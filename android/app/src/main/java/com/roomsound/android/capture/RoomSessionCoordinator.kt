@@ -82,7 +82,10 @@ class RoomSessionCoordinator(
         val host = nearbyHost ?: return emptyList()
         if (endpoint != RoomEndpointValidator.normalize(host.ownerEndpoint)) return emptyList()
         val code = currentRoomState()?.room?.code ?: return emptyList()
-        return java.net.NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
+        return java.net.NetworkInterface.getNetworkInterfaces().toList()
+            .filter { com.roomsound.android.nearby.NearbyInviteAddressPolicy.usable(it.name) }
+            .sortedBy { com.roomsound.android.nearby.NearbyInviteAddressPolicy.priority(it.name) }
+            .flatMap { it.inetAddresses.toList() }
             .filter { it is java.net.Inet4Address && it.isSiteLocalAddress && !it.isLoopbackAddress }
             .map { "http://${it.hostAddress}:${host.listeningPort}/#invite=${host.invite}&code=$code" }
     }

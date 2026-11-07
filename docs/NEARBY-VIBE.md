@@ -80,3 +80,12 @@ and uses a compact phone layout. Offline guest pages share the warm brass theme.
 Validation: 117 Node tests, 81 Android JVM tests, debug assembly/lint, and six
 browser checks passed. Desktop and phone landing screenshots were visually
 reviewed. Physical Android UI/hotspot testing still requires a connected device.
+
+### Local address correction (1.1.7)
+
+Local invite selection now excludes cellular and VPN interfaces and prioritizes
+hotspot interfaces ahead of ordinary Wi-Fi/Ethernet. This prevents Copy invite
+from selecting an unrelated private mobile-data address. Two JVM policy tests
+cover exclusion and ordering. Both the website and the offline listener retain
+the existing warm brass/teal theme; responsive previews were reviewed at 390px
+and 1440px. Hosting and sharing still require a real local network address.
