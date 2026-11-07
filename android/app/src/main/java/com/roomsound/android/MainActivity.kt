@@ -1448,7 +1448,7 @@ class MainActivity : Activity() {
                     else -> "preparing"
                 },
             )
-            append("\nPublished: ").append(transport.acceptedFrames)
+            append("\nAccepted capture buffers: ").append(transport.acceptedFrames)
             append(" · dropped: ").append(
                 transport.droppedUnauthorizedFrames +
                     transport.droppedNotLiveFrames +

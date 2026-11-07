@@ -20,3 +20,10 @@ test('diagnostics preserve incident events while sampling at one second with bou
   assert.notEqual(d.samples[0].underruns,-1);
   assert.ok(d.events.some(e=>e.type==='underrun'));
 });
+
+test('publisher loss provenance remains numeric and produces bounded incident events',()=>{
+ let now=0;const d=new AudioDiagnostics({clock:()=>now});d.record({direction:'sender',captureDrops:0,socketDrops:0,staleCaptureDrops:0});now=1000;
+ d.record({direction:'sender',captureDrops:2,socketDrops:3,staleCaptureDrops:1});
+ const report=d.export();assert.equal(report.samples.at(-1).socketDrops,3);
+ assert.deepEqual(report.events.filter(e=>e.type==='publisher_drop').map(e=>e.count),[2,3,1]);
+});

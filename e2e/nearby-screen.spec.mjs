@@ -13,11 +13,11 @@ test('companion pairs locally, shares captured audio after approval and stops on
   const certificateServer=http.createServer((req,res)=>res.end(cert)),secureServer=https.createServer({key,cert}),wss=new WebSocketServer({server:secureServer});
   await new Promise(r=>certificateServer.listen(0,'127.0.0.1',r));await new Promise(r=>secureServer.listen(0,'127.0.0.1',r));
   const companion=await createDesktopCompanion({port:0,allowLoopbackTargets:true});
-  let socket,frames=0,nonSilent=false;
+  let socket,frames=0,nonSilent=false,lastSequence=null,sawSequenceGap=false;
   const state={room:{id:'local-room',hostId:'host',activeSourceId:'host',sourceEpoch:1,sourceStatus:'LIVE'},self:{id:'guest'},members:[{id:'host',name:'Host',online:true},{id:'guest',name:'Laptop',online:true}],requests:[]};
   const update=()=>socket.send(JSON.stringify({type:'state',state}));
   wss.on('connection',ws=>{socket=ws;ws.on('message',(raw,binary)=>{
-    if(binary){const frame=decodePcm16Frame(raw);expect(frame.sourceEpoch).toBe(3);frames++;nonSilent ||= frame.samples.some(n=>n!==0);return}
+    if(binary){const frame=decodePcm16Frame(raw);expect(frame.sourceEpoch).toBe(3);if(lastSequence!==null && ((frame.sequence-lastSequence)>>>0)>1)sawSequenceGap=true;lastSequence=frame.sequence;frames++;nonSilent ||= frame.samples.some(n=>n!==0);return}
     const m=JSON.parse(raw.toString());
     if(m.type==='join-room')ws.send(JSON.stringify({type:'joined',reconnectSecret:invite,state}));
     if(m.type==='request-control'){state.requests=[{id:'request',requesterId:'guest',requesterName:'Laptop',status:'PENDING'}];update()}
@@ -47,6 +47,10 @@ test('companion pairs locally, shares captured audio after approval and stops on
     await page.locator('#request').click();await expect(page.locator('#cancel-request')).toBeVisible();
     state.room.activeSourceId='guest';state.room.sourceStatus='STARTING';state.room.sourceEpoch=2;state.requests=[];update();
     await expect(page.locator('#share-screen')).toBeVisible();await page.locator('#share-screen').click();await expect.poll(()=>frames).toBeGreaterThan(5);await expect.poll(()=>nonSilent).toBe(true);
+    await page.evaluate(()=>Object.defineProperty(ws,'bufferedAmount',{configurable:true,get:()=>400000}));
+    await expect.poll(()=>page.evaluate(()=>localSocketDrops)).toBeGreaterThan(2);
+    await page.evaluate(()=>delete ws.bufferedAmount);
+    await expect.poll(()=>sawSequenceGap).toBe(true);
     expect(await page.evaluate(()=>window.__displayOptions.systemAudio)).toBe('include');expect(await page.evaluate(()=>window.__displayOptions.video.displaySurface)).toBe('monitor');
     state.room.activeSourceId='host';state.room.sourceStatus='STARTING';state.room.sourceEpoch=4;update();
     await expect.poll(()=>page.evaluate(()=>publishNode===null&&window.__testStream.getTracks().every(t=>t.readyState==='ended'))).toBe(true);

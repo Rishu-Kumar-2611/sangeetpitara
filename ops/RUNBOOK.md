@@ -8,8 +8,8 @@ These changes are prepared on `codex/production-hardening`. Public release remai
 Save audio diagnostics on both the sending and receiving devices immediately
 after a glitch. Exports contain bounded local numeric history and fixed event
 types; no sound, display capture, names, chat, room codes, IPs, URLs or credentials.
-Match approximate time, source epoch, packet gaps, buffer target/fill, output state,
-underruns and reconnects. Device clocks may differ. Packet age is a transport
+Match approximate time, source epoch, capture/stale/socket drop counters, packet gaps, buffer target/fill, output state,
+underruns and reconnects. Android accepted capture buffers are not transmitted packet counts. Device clocks may differ. Packet age is a transport
 measurement, not an acoustic end-to-end delay. Android samples in the service;
 browser telemetry can be delayed when the browser suspends its page.
 

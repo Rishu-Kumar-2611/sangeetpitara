@@ -1,0 +1,20 @@
+{
+  "recordedAt": "2026-11-07T15:28:16.395Z",
+  "scope": "Bounded latency sample reservoir; isolated loopback synthetic PCM relay; no speaker, browser playout, WAN, production host or acoustic measurements.",
+  "results": [
+    {
+      "connections": 100,
+      "rooms": 10,
+      "durationMs": 600000,
+      "minListenerPackets": 29999,
+      "baselineMissingPackets": 0,
+      "unexpectedCloses": 0,
+      "reconnectedListeners": 25,
+      "reconnectMs": 109,
+      "loopbackRelayP95Ms": 9,
+      "maxEventLoopDelayMs": 18,
+      "maxRssMB": 88,
+      "averageOneCoreCpuPercent": 42
+    }
+  ]
+}

@@ -764,7 +764,7 @@ function sendRelayPcmFrame(samples, sourceEpoch, capturedSequence = null) {
   const sequence = capturedSequence ?? state.relaySequence;
   state.relaySequence = (sequence + 1) >>> 0;
   const frameBytes = 20 + samples.byteLength;
-  if ((Number(state.ws.bufferedAmount) || 0) + frameBytes > MEDIA_RELAY_MAX_BACKLOG_BYTES) return;
+  if ((Number(state.ws.bufferedAmount) || 0) + frameBytes > MEDIA_RELAY_MAX_BACKLOG_BYTES) { state.relaySocketDrops = (state.relaySocketDrops || 0) + 1; return; }
   try {
     const frame = encodePcm16Frame({
       sourceEpoch,
@@ -775,6 +775,7 @@ function sendRelayPcmFrame(samples, sourceEpoch, capturedSequence = null) {
     state.relaySentFrames += 1;
     state.relayPacketProgress = { at: Date.now(), epoch: sourceEpoch, sender: true };
   } catch (error) {
+    state.relaySocketDrops = (state.relaySocketDrops || 0) + 1;
     console.warn('[SangeetPitara] PCM16 relay frame was not sent', error);
   }
 }
@@ -845,12 +846,16 @@ async function ensureRelayPublisher() {
         });
         processor.port.postMessage({ type: 'config', maxInFlight: 128 });
         const node = processor;
+        let observedCaptureDrops = 0;
         node.port.onmessage = ({ data }) => {
           if (!current() || state.relayProcessor !== node) return;
           node.port.postMessage({ type: 'ack' });
           if (!(data?.samples instanceof Int16Array)) return;
-          // Allow up to 1 s for background-tab message delivery before dropping.
-          if (context.currentTime - data.capturedAt > RELAY_CAPTURE_MAX_AGE_SECONDS) return;
+          const dropped = Number(data.droppedPackets) || 0;
+          state.relayCaptureDrops = (state.relayCaptureDrops || 0) + Math.max(0, dropped - observedCaptureDrops);
+          observedCaptureDrops = dropped;
+          // Preserve bounded delayed capture; report losses rather than hiding them.
+          if (context.currentTime - data.capturedAt > RELAY_CAPTURE_MAX_AGE_SECONDS) { state.relayStaleCaptureDrops = (state.relayStaleCaptureDrops || 0) + 1; return; }
           sendRelayPcmFrame(data.samples, data.sourceEpoch, data.sequence);
         };
       } catch (error) {
@@ -1253,6 +1258,8 @@ function resetToLanding(reason = '') {
   state.relayPacketProgress = null;
   recentUnderruns.reset();
   recentMissing.reset();
+  recentPublisherDrops.reset();
+  state.relayCaptureDrops = state.relayStaleCaptureDrops = state.relaySocketDrops = 0;
   recentReconnects.reset();
   reconnectTotal = 0;
   if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
@@ -1926,6 +1933,7 @@ function removePeerTelemetry(peerId, entry) {
 
 const recentUnderruns = new RecentCounter();
 const recentMissing = new RecentCounter();
+const recentPublisherDrops = new RecentCounter();
 const recentReconnects = new RecentCounter();
 let reconnectTotal = 0;
 function recordUnderruns(total) { if (recentUnderruns.previous === null) recentUnderruns.update(0); recentUnderruns.update(total); }
@@ -1946,6 +1954,7 @@ function diagnosticSnapshot() {
   }
   return {
     rms, peak,
+    captureDrops: sender ? (state.relayCaptureDrops || 0) : undefined, staleCaptureDrops: sender ? (state.relayStaleCaptureDrops || 0) : undefined, socketDrops: sender ? (state.relaySocketDrops || 0) : undefined,
     mode: 'internet', direction: state.room?.activeSourceId ? (sender ? 'sender' : 'listener') : 'idle',
     connection: state.ws?.readyState === WebSocket.OPEN ? 'connected' : 'offline',
     epoch: state.room?.sourceEpoch, sentPackets: state.relaySentFrames, receivedPackets: state.relayReceivedFrames,
@@ -2019,6 +2028,9 @@ function renderTelemetry() {
     const metrics = [healthMetric('Connection', `${connected ? 'Connected' : 'Reconnecting'} · ${reconnects} / 60 s`, 'Ideal: connected · 0 reconnects / 60 s', connected ? upperHealth(reconnects,0,2) : 'bad')];
     if (isSender) {
       metrics.push(healthMetric('Outgoing queue', `${Math.round(queueMs)} ms`, 'Ideal: 0–100 ms · tolerable: ≤500 ms', connected ? upperHealth(queueMs,100,500) : 'bad'));
+      if (recentPublisherDrops.previous === null) recentPublisherDrops.update(0);
+      const drops=recentPublisherDrops.update((state.relayCaptureDrops||0)+(state.relayStaleCaptureDrops||0)+(state.relaySocketDrops||0));
+      metrics.push(healthMetric('Capture / outgoing drops / 60 s',String(drops),'Ideal: 0 · watch: 1 · details in saved diagnostics',upperHealth(drops,0,1)));
     } else {
       metrics.push(healthMetric('Playback buffer', measured ? `${state.relayWorkletBufferedMs} ms` : 'Not measured', `Ideal: near adaptive target ${state.relayWorkletTargetMs || state.syncOffsetMs} ms (±25% / 20 ms)`, measured ? bufferHealth(state.relayWorkletBufferedMs,state.relayWorkletTargetMs,state.relayWorkletRefilling) : 'pending'));
       metrics.push(healthMetric('Underruns / 60 s', measured ? String(underruns) : 'Not measured', `Ideal: 0 · watch: 1 · total: ${state.relayWorkletUnderruns || 0}`, measured ? upperHealth(underruns,0,1) : 'pending'));

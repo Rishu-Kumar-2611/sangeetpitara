@@ -12,7 +12,8 @@
   "credentialFindingsAfterReviewedExceptions": 0,
   "reviewedExceptions": [
     "Public TLS test fixture private key; excluded from app/runtime packages",
-    "Exact RFC6455 WebSocket handshake magic constant"
+    "Exact RFC6455 WebSocket handshake magic constant",
+    "Exact public RFC6455 sample nonce in malformed-handshake regression"
   ],
   "limits": "Automated scans and targeted adversarial tests; not an independent penetration test."
 }

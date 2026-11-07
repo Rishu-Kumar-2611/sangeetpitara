@@ -43,13 +43,13 @@ body{background:radial-gradient(ellipse at top left,var(--room-color-1),transpar
 </script><!-- SHARED THEME END -->
 <script data-shared-diagnostics>// Explicit allowlists: diagnostics never accept names, URLs, identifiers, audio,
 // chat, arbitrary errors, or capture content. Nothing is sent to a server.
-const NUMBERS = new Set(['epoch','sentPackets','receivedPackets','missingPackets','underruns','bufferMs','targetMs','jitterMs','queueMs','packetAgeMs','rms','peak','reconnects','closeCode']);
+const NUMBERS = new Set(['epoch','sentPackets','receivedPackets','missingPackets','underruns','bufferMs','targetMs','jitterMs','queueMs','packetAgeMs','rms','peak','reconnects','closeCode','captureDrops','staleCaptureDrops','socketDrops','acceptedCaptureFrames','rejectedCaptureFrames']);
 const ENUMS = {
   mode: ['internet','nearby'], direction: ['sender','listener','idle'],
   connection: ['connected','connecting','offline'],
   output: ['running','suspended','closed','unavailable'],
 };
-const EVENTS = new Set(['started','connection_changed','source_changed','output_changed','underrun','sequence_gap','socket_closed','exported']);
+const EVENTS = new Set(['started','connection_changed','source_changed','output_changed','underrun','sequence_gap','socket_closed','publisher_drop','exported']);
 class AudioDiagnostics {
   constructor({ clock = Date.now, capacity = 300, eventCapacity = 120 } = {}) {
     this.clock = clock;
@@ -76,7 +76,7 @@ class AudioDiagnostics {
       if (sample.connection !== previous.connection) this.event('connection_changed');
       if (sample.direction !== previous.direction || sample.epoch !== previous.epoch) this.event('source_changed');
       if (sample.output !== previous.output) this.event('output_changed');
-      for (const [key, type] of [['underruns','underrun'],['missingPackets','sequence_gap']]) {
+      for (const [key, type] of [['underruns','underrun'],['missingPackets','sequence_gap'],['captureDrops','publisher_drop'],['socketDrops','publisher_drop'],['staleCaptureDrops','publisher_drop']]) {
         if (Number.isFinite(previous[key]) && sample[key] > previous[key]) this.event(type, { count: sample[key] - previous[key] });
       }
     }
@@ -142,11 +142,11 @@ try{guest=sessionStorage.getItem(identityKey+'-guest')||guest;sessionStorage.set
 let roomState=null,trackUrl=null,trackPlayer=null,trackSource=null,publishNode=null,publishEpoch=null,packetSamples=[],sequence=0,screenStream=null,captureGeneration=0,pendingScreenEpoch=null,localShareError=null;
 let ring=new Float32Array(288000),write=0,read=0,fill=0,target=5760,playing=false,lastArrival=null;
 const localDiagnostics=new AudioDiagnostics();
-let localReceived=0,localMissing=0,localLastSequence=null,localPacketAt=null;
+let localPublished=0,localSocketDrops=0,localReceived=0,localMissing=0,localLastSequence=null,localPacketAt=null;
 $('export-diagnostics').onclick=()=>{const blob=new Blob([JSON.stringify(localDiagnostics.export({platform:'nearby-web',version:document.querySelector('meta[name=app-version]')?.content}),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SangeetPitara-audio-diagnostics.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 let localUnderruns=0,localUnderrunEvents=[];
 function localFactor(label,value,ideal,grade){const row=document.createElement('p');row.style.color=['#70dba5','#ffb454','#ff9a9a','#b6a797'][grade];row.textContent=label+': '+value+' · '+['Healthy','Watch','Needs attention','Informational'][grade]+' · '+ideal;return row}
-setInterval(()=>{const now=Date.now();localUnderrunEvents=localUnderrunEvents.filter(t=>now-t<60000);const panel=$('local-health');if(!panel)return;const online=ws?.readyState===WebSocket.OPEN,active=roomState?.room?.sourceStatus==='LIVE',sending=publishEpoch!==null;const recent=localUnderrunEvents.length;localDiagnostics.record({mode:'nearby',direction:!active?'idle':sending?'sender':'listener',connection:online?'connected':'offline',epoch:roomState?.room?.sourceEpoch,receivedPackets:localReceived,sentPackets:sequence,missingPackets:sending?undefined:localMissing,underruns:sending?undefined:localUnderruns,bufferMs:sending?undefined:fill/48,targetMs:sending?undefined:target/48,packetAgeMs:localPacketAt===null?undefined:now-localPacketAt,queueMs:sending?(ws?.bufferedAmount||0)/96:undefined,output:ctx?.state||'unavailable',refilling:active&&!sending&&!playing});panel.replaceChildren(localFactor('Connection',online?'Connected':'Not connected','Ideal: connected',online?0:joining?2:3),localFactor('Playback buffer',Math.round(fill/48)+' ms','Ideal: near adaptive target '+Math.round(target/48)+' ms (±25% / 20 ms)',!active||sending?3:!playing?2:Math.abs(fill-target)<=Math.max(960,target*.25)?0:fill>=target*.5?1:2),localFactor('Underruns / 60 s',recent+' (total '+localUnderruns+')','Ideal: 0 · tolerable: 1',!active||sending?3:recent===0?0:recent===1?1:2),localFactor('Format','48 kHz PCM16 mono','Source format; not a listening quality score',3));},1000);
+setInterval(()=>{const now=Date.now();localUnderrunEvents=localUnderrunEvents.filter(t=>now-t<60000);const panel=$('local-health');if(!panel)return;const online=ws?.readyState===WebSocket.OPEN,active=roomState?.room?.sourceStatus==='LIVE',sending=publishEpoch!==null;const recent=localUnderrunEvents.length;localDiagnostics.record({mode:'nearby',direction:!active?'idle':sending?'sender':'listener',connection:online?'connected':'offline',epoch:roomState?.room?.sourceEpoch,receivedPackets:localReceived,sentPackets:localPublished,socketDrops:sending?localSocketDrops:undefined,missingPackets:sending?undefined:localMissing,underruns:sending?undefined:localUnderruns,bufferMs:sending?undefined:fill/48,targetMs:sending?undefined:target/48,packetAgeMs:localPacketAt===null?undefined:now-localPacketAt,queueMs:sending?(ws?.bufferedAmount||0)/96:undefined,output:ctx?.state||'unavailable',refilling:active&&!sending&&!playing});panel.replaceChildren(localFactor('Connection',online?'Connected':'Not connected','Ideal: connected',online?0:joining?2:3),localFactor('Playback buffer',Math.round(fill/48)+' ms','Ideal: near adaptive target '+Math.round(target/48)+' ms (±25% / 20 ms)',!active||sending?3:!playing?2:Math.abs(fill-target)<=Math.max(960,target*.25)?0:fill>=target*.5?1:2),localFactor('Underruns / 60 s',recent+' (total '+localUnderruns+')','Ideal: 0 · tolerable: 1',!active||sending?3:recent===0?0:recent===1?1:2),localFactor('Format','48 kHz PCM16 mono','Source format; not a listening quality score',3));},1000);
 function status(t){$('status').textContent=t}
 function reset(){localLastSequence=null;localPacketAt=null;write=read=fill=0;playing=false;lastArrival=null;target=5760}
 function send(data){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(data))}
@@ -195,7 +195,8 @@ function publishAudio(input){
   for(let i=0;i<left.length;i++){
     const sample=Math.max(-1,Math.min(1,(left[i]+right[i])/2));packetSamples.push(Math.round(sample*(sample<0?32768:32767)));
     if(packetSamples.length===960){
-      if(ws.bufferedAmount<393216){const bytes=new ArrayBuffer(1940),v=new DataView(bytes);v.setUint32(0,0x52535231);v.setUint8(4,1);v.setUint8(5,1);v.setUint32(6,48000,true);v.setUint32(10,publishEpoch,true);v.setUint32(14,sequence++>>>0,true);v.setUint16(18,960,true);for(let j=0;j<960;j++)v.setInt16(20+j*2,packetSamples[j],true);ws.send(bytes)}
+      const outgoingSequence=sequence++>>>0;
+      if(ws.bufferedAmount<393216){const bytes=new ArrayBuffer(1940),v=new DataView(bytes);v.setUint32(0,0x52535231);v.setUint8(4,1);v.setUint8(5,1);v.setUint32(6,48000,true);v.setUint32(10,publishEpoch,true);v.setUint32(14,outgoingSequence,true);v.setUint16(18,960,true);for(let j=0;j<960;j++)v.setInt16(20+j*2,packetSamples[j],true);ws.send(bytes);localPublished++}else{localSocketDrops++}
       packetSamples=[];
     }
   }

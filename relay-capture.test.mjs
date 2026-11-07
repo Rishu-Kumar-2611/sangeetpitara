@@ -130,6 +130,7 @@ test('worklet backpressure bounds main-thread stalls without hiding sequence los
   w.process(new Float32Array(960));
   assert.equal(w.sent.length, 9);
   assert.equal(w.sent[8].sequence, 30);
+  assert.equal(w.sent[8].droppedPackets, 22);
 });
 
 test('worklet revocation, epoch handoff and stop do not leak prior source samples', async () => {

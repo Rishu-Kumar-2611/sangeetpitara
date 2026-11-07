@@ -91,7 +91,8 @@ class RoomSessionCoordinator(
         val sender = room?.self?.id != null && room.room.activeSourceId == room.self?.id
         audioDiagnostics.record(mapOf(
             "epoch" to room?.room?.sourceEpoch,
-            "sentPackets" to snapshot?.acceptedFrames,
+            "acceptedCaptureFrames" to snapshot?.acceptedFrames,
+            "rejectedCaptureFrames" to snapshot?.let { it.droppedUnauthorizedFrames + it.droppedNotLiveFrames + it.droppedStaleEpochFrames + it.droppedUnavailableFrames },
             "receivedPackets" to snapshot?.receivedRelayFrames,
             "underruns" to if (sender) null else playback?.underruns,
             "bufferMs" to if (sender) null else playback?.bufferMs,

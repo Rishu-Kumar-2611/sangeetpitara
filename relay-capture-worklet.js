@@ -11,6 +11,7 @@ class RelayCaptureProcessor extends AudioWorkletProcessor {
     this.epoch = null;
     this.sequence = 0;
     this.inFlight = 0;
+    this.droppedPackets = 0;
     this.maxInFlight = 8;
     this.stopped = false;
     this.monoScratch = null;
@@ -53,10 +54,10 @@ class RelayCaptureProcessor extends AudioWorkletProcessor {
       const sequence = this.sequence;
       this.sequence = (sequence + 1) >>> 0;
       // Backpressure also bounds messages when the page's main thread stalls.
-      if (this.inFlight >= this.maxInFlight) return;
+      if (this.inFlight >= this.maxInFlight) { this.droppedPackets += 1; return; }
       this.inFlight += 1;
       this.port.postMessage({
-        samples, sequence, sourceEpoch: this.epoch, capturedAt: currentTime,
+        samples, sequence, sourceEpoch: this.epoch, capturedAt: currentTime, droppedPackets: this.droppedPackets,
       }, [samples.buffer]);
     });
     return true;
