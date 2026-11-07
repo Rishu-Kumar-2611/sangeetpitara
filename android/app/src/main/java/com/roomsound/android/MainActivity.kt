@@ -1371,13 +1371,43 @@ class MainActivity : Activity() {
         renderHealth()
     }
 
+    private val healthUnderrunEvents = java.util.ArrayDeque<Pair<Long, Int>>()
+    private var healthLastUnderruns: Int? = null
+    private var healthLastEpoch: Long? = null
     private fun renderHealth() {
         if (!::healthText.isInitialized) return
         val session = roomSession
         val room = latestRoomState
         val transport = session?.transportSnapshot()
         val capture = latestSnapshot
-        healthText.text = buildString {
+        val health = android.text.SpannableStringBuilder()
+        fun factor(label: String, value: String, ideal: String, grade: Int) {
+            val start = health.length
+            val status = when (grade) { 0 -> "Healthy"; 1 -> "Watch"; 2 -> "Needs attention"; else -> "Informational" }
+            health.append("$label: $value · $status\n$ideal\n\n")
+            val color = when (grade) { 0 -> R.color.roomsound_success; 1 -> R.color.roomsound_warning; 2 -> R.color.roomsound_danger; else -> R.color.roomsound_cream_muted }
+            health.setSpan(android.text.style.ForegroundColorSpan(getColor(color)), start, health.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        val connection = session?.connectionState()?.name ?: "NOT CONNECTED"
+        factor("Connection", connection, "Ideal: joined and connected", if (connection == "JOINED") 0 else if (room != null) 2 else -1)
+        val count = transport?.playbackUnderruns
+        val epoch = room?.room?.sourceEpoch
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (epoch != healthLastEpoch || count == null || (healthLastUnderruns != null && count < healthLastUnderruns!!)) {
+            healthUnderrunEvents.clear()
+            healthLastUnderruns = 0
+            healthLastEpoch = epoch
+        }
+        if (count != null) {
+            val delta = count - (healthLastUnderruns ?: 0)
+            if (delta > 0) healthUnderrunEvents.addLast(now to delta)
+            healthLastUnderruns = count
+        }
+        while (healthUnderrunEvents.isNotEmpty() && now - healthUnderrunEvents.first.first >= 60000) healthUnderrunEvents.removeFirst()
+        val recent = healthUnderrunEvents.sumOf { it.second }
+        factor("Playback underruns / 60 s", if (count == null) "Not measured" else "$recent (total $count)", "Ideal: 0 · tolerable: 1 · attention: 2 or more", if (count == null) -1 else if (recent == 0) 0 else if (recent == 1) 1 else 2)
+        factor("Format", if (transport?.mediaRelayEnabled == true) "48 kHz PCM16 mono" else "Direct WebRTC", "Source format; does not certify audible quality", -1)
+        health.append(buildString {
             append("Connection: ")
                 .append(session?.connectionState()?.name?.lowercase(Locale.US) ?: "not connected")
             append("\nCapture: ").append(capture.status.name.lowercase(Locale.US))
@@ -1420,7 +1450,8 @@ class MainActivity : Activity() {
                 ?.takeIf { it.isNotBlank() }
                 ?.take(1800)
                 ?.let { append("\n\nNative diagnostics:\n").append(it) }
-        }
+        })
+        healthText.text = health
     }
 
     /** Capture snapshots arrive frequently; only update the controls that depend on them. */

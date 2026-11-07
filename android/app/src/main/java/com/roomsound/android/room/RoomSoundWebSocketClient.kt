@@ -425,6 +425,11 @@ class RoomSoundWebSocketClient(
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             if (!clearCurrentSocket(webSocket)) return
             setConnectionState(RoomConnectionState.CLOSED)
+            if (code == 1000 && reason == "Replaced by reconnect") {
+                stopRequested = true
+                emit(RoomSoundEvent.Removed("This room was opened in another instance. Close it before rejoining here."))
+                return
+            }
             scheduleReconnectIfNeeded()
         }
 

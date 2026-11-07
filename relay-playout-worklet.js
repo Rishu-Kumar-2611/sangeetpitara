@@ -22,6 +22,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.readPos = 0;
     this.available = 0;
     this.playing = false;
+    this.refilling = false;
     this.fadeProgress = 0;
     this.baseTargetFill = DEFAULT_TARGET_FILL;
     this.adaptiveExtraFill = 0;
@@ -70,6 +71,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.readPos = 0;
     this.available = 0;
     this.playing = false;
+    this.refilling = false;
     this.fadeProgress = 0;
     this.concealedSamples = 0;
     this.adaptiveExtraFill = 0;
@@ -147,15 +149,12 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
 
     // Refill the earned target fully so the next similar burst is covered.
     const requiredPrefill = Math.max(MIN_PREFILL_SAMPLES, this.targetFill);
-    if (!this.playing && this.available >= requiredPrefill) {
+    if ((!this.playing || this.refilling) && this.available >= requiredPrefill) {
       this.playing = true;
+      this.refilling = false;
       this.fadeProgress = 0;
       this.concealedSamples = 0;
       this.avgFill = this.available;
-    } else if (this.playing && this.concealedSamples > 0) {
-      // Smoothly crossfade back from PLC concealment into newly arrived live samples
-      this.concealedSamples = 0;
-      this.fadeProgress = 0;
     }
   }
 
@@ -198,7 +197,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     const rate = this._smoothedRate;
 
     for (let i = 0; i < blockLength; i += 1) {
-      if (this.available < 4) {
+      if (this.available < 4 || this.refilling) {
         if (!this.playing) {
           // Rebuffering began earlier in this block: decay the tail without
           // re-entering PLC, which would bump the cushion a second time.
@@ -209,9 +208,11 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
           continue;
         }
         // Packet Loss Concealment (PLC): instead of immediately dropping out during a
-        // brief WAN stall, smoothly replay the last 10 ms of audio with a gentle
-        // cosine attenuation envelope for up to 100 ms before entering rebuffering.
-        if (this.concealedSamples === 0) {
+        // brief WAN stall, smoothly replay the last 20 ms of audio with a gentle
+        // cosine attenuation envelope for up to 180 ms before entering rebuffering.
+        if (!this.refilling) {
+          this.refilling = true;
+          this.underruns += 1;
           // Grow the cushion after an underrun; measured gaps can grow it further.
           this.adaptiveExtraFill = Math.min(MAX_TARGET_FILL - this.baseTargetFill, Math.max(4_800, this.adaptiveExtraFill * 1.5));
           this.lastUnstableTime = currentTime;
@@ -227,9 +228,8 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
           if (outR !== outL) outR[i] = this.lastR;
           continue;
         }
-        // Stall exceeded 100 ms: pause playout and wait for clean prefill cushion
+        // Concealment exhausted: pause playout and wait for clean prefill cushion
         this.playing = false;
-        this.underruns += 1;
         this.concealedSamples = 0;
         this.lastL *= 0.985;
         this.lastR *= 0.985;
@@ -293,6 +293,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
         jitterMs: Math.round(this.jitterSeconds * 1000),
         underruns: this.underruns,
         playing: this.playing,
+        refilling: this.refilling,
       });
     }
   }

@@ -98,3 +98,35 @@ test('welcome is minimal and entry screens navigate without mixing forms', async
   await page.locator('#entry-back').click();
   await expect(page.locator('#welcome-actions')).toBeVisible();
 });
+
+test('replacement tab stops automatic reconnect instead of fighting the active tab', async ({page,context})=>{
+ await page.goto('/');await page.locator('[data-open-screen="create"]').click();
+ await page.getByLabel('Your display name').fill('Original');await page.getByLabel('Room name',{exact:true}).fill('Tab recovery');await page.locator('#create-room').click();
+ await expect(page.locator('#room-title')).toHaveText('Tab recovery');
+ const code=(await page.locator('#room-code-display').textContent()).trim();
+ const replacement=await context.newPage();await replacement.goto('/');await replacement.locator('[data-open-screen="join"]').click();
+ await replacement.getByLabel('Your display name').fill('Replacement');await replacement.getByLabel('Room code',{exact:true}).fill(code);await replacement.locator('#join-room').click();
+ await expect(replacement.locator('#room-title')).toHaveText('Tab recovery');
+ await expect(page.locator('#welcome-actions')).toBeVisible();
+ await page.waitForTimeout(3500);
+ await expect(replacement.locator('#room-title')).toHaveText('Tab recovery');
+ await expect(page.locator('#welcome-actions')).toBeVisible();
+});
+
+test('relay health shows ideal ranges and does not borrow listener underruns for a publisher',async({page},info)=>{
+ await page.addInitScript(()=>{navigator.mediaDevices.getDisplayMedia=async()=>{
+  const context=new AudioContext();const osc=context.createOscillator();const destination=context.createMediaStreamDestination();osc.connect(destination);osc.start();window.testAudioContext=context;return destination.stream;
+ };});
+ await page.goto('/');await page.locator('[data-open-screen="create"]').click();
+ await page.getByLabel('Your display name').fill('Health host');await page.getByLabel('Room name',{exact:true}).fill('Health check');await page.locator('#create-room').click();
+ await expect(page.locator('#room-title')).toHaveText('Health check');
+ await page.locator('#share-audio').click();
+ await expect(page.locator('#telemetry-list')).toContainText('Outgoing queue');
+ await expect(page.locator('#telemetry-list')).toContainText('Ideal: 0–100 ms');
+ await expect(page.locator('#telemetry-list')).not.toContainText('Underruns / 60 s');
+ await expect(page.locator('#telemetry-list')).toContainText('No fixed ideal');
+ await expect.poll(async()=>Number((await page.locator('.health-metric').filter({hasText:'Audio packets'}).locator('strong').textContent()).replaceAll(',',''))).toBeGreaterThan(10);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ if (await page.locator('#room-tab-health').isVisible()) await page.locator('#room-tab-health').click();
+ await page.locator('#telemetry-panel').screenshot({path:info.outputPath('health.png')});
+});

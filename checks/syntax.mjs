@@ -16,6 +16,7 @@ const files = [
   'ads.mjs',
   'media-relay.mjs',
   'app.js',
+  'stream-health.mjs',
   'themes.js',
   'room-palette.js',
   'relay-pcm.js',

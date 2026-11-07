@@ -197,7 +197,7 @@ const publicFiles = new Set([
   'index.html', 'about.html', 'contact.html', 'privacy.html', 'terms.html',
   'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'themes.css', 'themes.js',
   'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
-  'room-palette.js', 'media-relay.mjs', 'relay-pcm.js',
+  'room-palette.js', 'media-relay.mjs', 'relay-pcm.js', 'stream-health.mjs',
   'relay-capture-worklet.js', 'relay-playout-worklet.js', 'notifications-sw.js',
   'manifest.webmanifest',
 ]);
@@ -1802,7 +1802,11 @@ wss.on('connection', (ws, req) => {
     }
     dispatchMessage(ws, data);
   });
-  ws.on('close', () => { websocketConnections.set(Math.max(0, wss.clients.size)); handleDisconnect(ws); });
+  ws.on('close', (code, reason) => {
+    const known = ['Replaced by reconnect', 'Left room', 'Room ended'];
+    logger.info('WebSocket closed', { code, cause: known.includes(String(reason)) ? String(reason) : code === 1006 ? 'transport_lost' : 'other' });
+    websocketConnections.set(Math.max(0, wss.clients.size)); handleDisconnect(ws);
+  });
   ws.on('error', () => { websocketConnections.set(Math.max(0, wss.clients.size)); handleDisconnect(ws); });
 });
 

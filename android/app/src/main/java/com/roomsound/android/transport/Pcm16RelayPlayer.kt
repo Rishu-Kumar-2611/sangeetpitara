@@ -12,6 +12,7 @@ interface Pcm16RelayPlayerSink : Closeable {
     fun start(format: Pcm16AudioFormat, sourceEpoch: Long): Boolean
     fun stop(sourceEpoch: Long? = null)
     fun play(packet: Pcm16RelayPacket): Boolean
+    fun underrunCount(): Int? = null
     fun currentEpoch(): Long?
     fun setVolume(volume: Double)
 }
@@ -83,6 +84,13 @@ class Pcm16RelayPlayer internal constructor(
                 released = true
                 runCatching { output.close() }
             }
+        }
+    }
+
+    override fun underrunCount(): Int? {
+        val session = synchronized(lock) { active } ?: return null
+        return synchronized(session.outputLock) {
+            if (session.released || session.cancelled) null else session.output.underrunCount()
         }
     }
 

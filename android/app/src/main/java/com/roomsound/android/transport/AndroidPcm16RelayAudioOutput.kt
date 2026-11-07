@@ -55,6 +55,8 @@ internal class AndroidPcm16RelayAudioOutput(format: Pcm16AudioFormat) : Pcm16Rel
         }
     }
 
+    override fun underrunCount(): Int? = runCatching { track.underrunCount }.getOrNull()
+
     override val bufferCapacityBytes: Int
         get() = minOf(track.bufferSizeInFrames, track.bufferCapacityInFrames) * 2
 

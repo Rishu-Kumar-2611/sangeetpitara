@@ -174,3 +174,11 @@ test('compatibility playback earns a refill cushion and bounds an excessive back
   assert.ok(resets > 0);
   assert.ok(planner.nextTime <= 5.54);
 });
+
+test('configured capture cushion survives a two second main-thread stall with bounded memory', async () => {
+ const w=await worklet();w.message({type:'lease',epoch:1});w.message({type:'config',maxInFlight:128});
+ for(let i=0;i<100;i++)w.process(new Float32Array(960));
+ assert.equal(w.sent.length,100);assert.equal(w.sent[99].sequence,99);
+ for(let i=0;i<100;i++)w.process(new Float32Array(960));
+ assert.equal(w.sent.length,128);
+});

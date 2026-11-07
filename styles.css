@@ -1131,3 +1131,15 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
 .landing-view[data-entry-screen] .entry-tabs { display: none; }
 .landing-view[data-entry-screen] .nearby-card > form { padding: 0; margin-top: 24px; background: transparent; border: 0; }
 @media(max-width:600px) { .welcome-choice { padding: 19px 48px 19px 20px; } .welcome-choice strong { font-size: 18px; } }
+
+.health-metric { border: 1px solid transparent; min-width: 0; overflow-wrap: anywhere; }
+.health-metric b { font-size: 12px; }
+.health-metric.good { border-color: #70dba5; } .health-metric.good b { color: #70dba5; }
+.health-metric.warning { border-color: #ffb454; } .health-metric.warning b,.telemetry-state.warning { color: #ffb454; }
+.health-metric.bad { border-color: #ff9a9a; } .health-metric.bad b { color: #ff9a9a; }
+@media(max-width:600px) { .telemetry-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+
+.telemetry-stats:has(.health-metric) { grid-template-columns: minmax(0,1fr); }
+.telemetry-stats .health-metric { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 3px 10px; padding: 10px; }
+.health-metric strong { text-align: right; }
+.health-metric b,.health-metric em { grid-column: 1 / -1; }

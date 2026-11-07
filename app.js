@@ -1,19 +1,20 @@
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261107-phonecontrols1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261107-phonecontrols1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261107-health1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261107-health1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261107-health1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261107-phonecontrols1';
+} from './capture-tracks.js?v=20261107-health1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261107-phonecontrols1';
+} from './media-relay.mjs?v=20261107-health1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -25,8 +26,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261107-phonecontrols1';
-import { roomPalette } from './room-palette.js?v=20261107-phonecontrols1';
+} from './ads.mjs?v=20261107-health1';
+import { roomPalette } from './room-palette.js?v=20261107-health1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -52,7 +53,7 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
 };
 const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
 const SYNC_OFFSET_MAX_MS = 1000; // Matches the #sync-offset slider max and the worklet's target ceiling.
-const RELAY_CAPTURE_MAX_AGE_SECONDS = 0.12; // Never publish seconds-old background-tab audio.
+const RELAY_CAPTURE_MAX_AGE_SECONDS = 3; // Bounded recovery for a busy/background main thread.
 
 function clampVolume(v) {
   const n = Number(v);
@@ -833,13 +834,13 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261107-phonecontrols1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261107-health1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
           channelCount: 2, channelCountMode: 'max', channelInterpretation: 'speakers',
         });
-        processor.port.postMessage({ type: 'config', maxInFlight: 8 });
+        processor.port.postMessage({ type: 'config', maxInFlight: 128 });
         const node = processor;
         node.port.onmessage = ({ data }) => {
           if (!current() || state.relayProcessor !== node) return;
@@ -907,7 +908,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261107-phonecontrols1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261107-health1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -921,7 +922,9 @@ function setupRelayPlaybackWorklet(context, gain) {
           state.relayWorkletBufferedMs = data.bufferedMs ?? 0;
           state.relayWorkletTargetMs = data.targetMs ?? state.syncOffsetMs;
           state.relayWorkletJitterMs = data.jitterMs ?? 0;
+          recordUnderruns(data.underruns ?? 0);
           state.relayWorkletUnderruns = data.underruns ?? 0;
+          state.relayWorkletRefilling = Boolean(data.refilling);
           const nowStats = Date.now();
           if (!state._lastTelemetryRenderAt || nowStats - state._lastTelemetryRenderAt >= 900) {
             state._lastTelemetryRenderAt = nowStats;
@@ -1243,6 +1246,9 @@ function selectRoomTab(tabName) {
 }
 
 function resetToLanding(reason = '') {
+  recentUnderruns.reset();
+  recentReconnects.reset();
+  reconnectTotal = 0;
   if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
   state.reconnectAttempts = 0;
   state.explicitLeave = true;
@@ -1353,6 +1359,12 @@ function connectAnd(action, isReconnect = false) {
       toast('The host ended the room.', 'bad');
       return;
     }
+    if (code === 1000 && reason === 'Replaced by reconnect') {
+      state.lastRoomCode = null;
+      state.explicitLeave = true;
+      resetToLanding('This room was opened in another tab. Close that tab before rejoining here.');
+      return;
+    }
     if (code === 4003) {
       state.lastRoomCode = null;
       state.explicitLeave = true;
@@ -1373,6 +1385,8 @@ function connectAnd(action, isReconnect = false) {
       return;
     }
     setConnection('Offline', false);
+    reconnectTotal += 1;
+    recentReconnects.update(reconnectTotal);
     if (state.room) {
       closePeerConnections();
       // Let already buffered relay audio bridge a temporary socket loss.
@@ -1903,6 +1917,14 @@ function removePeerTelemetry(peerId, entry) {
   if (!hasRtcPeer) stopTelemetryPolling();
 }
 
+const recentUnderruns = new RecentCounter();
+const recentReconnects = new RecentCounter();
+let reconnectTotal = 0;
+function recordUnderruns(total) { if (recentUnderruns.previous === null) recentUnderruns.update(0); recentUnderruns.update(total); }
+function healthMetric(label, value, ideal, grade) {
+  const word = {good:'Healthy',warning:'Watch',bad:'Needs attention',pending:'Info'}[grade];
+  return `<span class="health-metric ${grade}"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong><b>${word}</b><em>${escapeHtml(ideal)}</em></span>`;
+}
 function renderTelemetry() {
   const panel = $('#telemetry-panel');
   if (!panel) return;
@@ -1937,30 +1959,36 @@ function renderTelemetry() {
 
   if (isMediaRelayEnabled()) {
     summary.textContent = `${sourceName} · epoch ${epoch} · PCM16 WebSocket relay (48 kHz)`;
-    status.textContent = 'Relay';
-    status.className = 'telemetry-state good';
     const isSender = isSelfSource();
-    const frameCount = isSender ? state.relaySentFrames : state.relayReceivedFrames;
-    const bufferLabel = isSender
-      ? `${Math.round((Number(state.ws?.bufferedAmount) || 0) / 1024)} KB socket`
-      : state.relayPlaybackWorkletReady
-        ? `${state.relayWorkletBufferedMs} ms (${state.relayWorkletTargetMs || state.syncOffsetMs} ms auto)`
-        : `${state.syncOffsetMs} ms cushion`;
-    const engineLabel = isSender
-      ? (state.relayProcessor && typeof AudioWorkletNode !== 'undefined' && state.relayProcessor instanceof AudioWorkletNode ? 'AudioWorklet capture' : 'Web Audio capture')
-      : (state.relayPlaybackWorkletReady ? 'AudioWorklet PI ring' : 'Web Audio scheduler');
-    list.innerHTML = `<article class="telemetry-peer">
-      <div class="telemetry-peer-heading">
-        <div><span class="telemetry-direction">${isSender ? 'PUBLISHING RELAY' : 'LISTENING RELAY'}</span><strong>${escapeHtml(sourceName)}</strong></div>
-        <span class="telemetry-connection good"><i></i>48 kHz Hi-Fi</span>
-      </div>
-      <div class="telemetry-peer-states"><span>Engine <strong>${escapeHtml(engineLabel)}</strong></span><span>Epoch <strong>${escapeHtml(epoch)}</strong></span></div>
-      <div class="telemetry-stats">
-        <span><small>Frames</small><strong>${formatTelemetryCount(frameCount)}</strong><em>20 ms packets</em></span>
-        <span><small>Buffer</small><strong>${escapeHtml(bufferLabel)}</strong><em>${state.relayWorkletUnderruns} underruns</em></span>
-        <span><small>Level</small><strong>${formatAudioLevel(state.liveAudioLevel)}</strong><em>live RMS</em></span>
-      </div>
-    </article>`;
+    const connected = state.ws?.readyState === WebSocket.OPEN;
+    if (recentReconnects.previous === null) recentReconnects.update(0);
+    const reconnects = recentReconnects.update(reconnectTotal);
+    const underruns = recentUnderruns.update(state.relayWorkletUnderruns || 0);
+    const queueMs = (Number(state.ws?.bufferedAmount) || 0) / 96;
+    const measured = state.relayPlaybackWorkletReady;
+    const metrics = [healthMetric('Connection', connected ? 'Connected' : 'Reconnecting', 'Ideal: connected · 0 reconnects / 60 s', connected ? upperHealth(reconnects,0,2) : 'bad')];
+    if (isSender) {
+      metrics.push(healthMetric('Outgoing queue', `${Math.round(queueMs)} ms`, 'Ideal: 0–100 ms · tolerable: ≤500 ms', connected ? upperHealth(queueMs,100,500) : 'bad'));
+    } else {
+      metrics.push(healthMetric('Playback buffer', measured ? `${state.relayWorkletBufferedMs} ms` : 'Not measured', `Ideal: near adaptive target ${state.relayWorkletTargetMs || state.syncOffsetMs} ms (±25% / 20 ms)`, measured ? bufferHealth(state.relayWorkletBufferedMs,state.relayWorkletTargetMs,state.relayWorkletRefilling) : 'pending'));
+      metrics.push(healthMetric('Underruns / 60 s', measured ? String(underruns) : 'Not measured', `Ideal: 0 · watch: 1 · total: ${state.relayWorkletUnderruns || 0}`, measured ? upperHealth(underruns,0,1) : 'pending'));
+      metrics.push(healthMetric('Arrival jitter', measured ? `${state.relayWorkletJitterMs} ms` : 'Not measured', 'Ideal: ≤20 ms · tolerable: ≤60 ms', measured ? upperHealth(state.relayWorkletJitterMs,20,60) : 'pending'));
+      metrics.push(healthMetric('Audio output', state.relayPlaybackContext?.state || 'Not started', 'Ideal: running (enable audio if suspended)', state.relayPlaybackContext ? (state.relayPlaybackContext.state === 'running' ? 'good' : 'bad') : 'pending'));
+    }
+    metrics.push(healthMetric('Audio packets', formatTelemetryCount(isSender ? state.relaySentFrames : state.relayReceivedFrames), 'Informational: 20 ms each · should increase while streaming', 'pending'));
+    const analyser = isSender ? state.relayPublisherAnalyser : state.relayPlaybackAnalyser;
+    if (analyser) {
+      const samples = new Float32Array(analyser.fftSize);
+      analyser.getFloatTimeDomainData(samples);
+      const rms = Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
+      metrics.push(healthMetric('Signal RMS', `${(rms * 100).toFixed(1)}%`, 'No fixed ideal: varies with music; quiet may mean paused', 'pending'));
+    }
+    metrics.push(healthMetric('Format', '48 kHz PCM16 mono', 'Source format · does not measure audible quality', 'pending'));
+    const grades = metrics.map(m => m.includes('health-metric bad') ? 'bad' : m.includes('health-metric warning') ? 'warning' : 'good');
+    const grade = grades.includes('bad') ? 'bad' : grades.includes('warning') ? 'warning' : 'good';
+    status.textContent = {good:'Healthy',warning:'Watch',bad:'Needs attention'}[grade];
+    status.className = `telemetry-state ${grade}`;
+    list.innerHTML = `<article class="telemetry-peer"><div class="telemetry-direction">${isSender ? 'PUBLISHING' : 'LISTENING'} RELAY · ${escapeHtml(sourceName)}</div><div class="telemetry-stats">${metrics.join('')}</div><p class="telemetry-empty">Green: ideal · Orange: tolerable · Red: attention. Quiet or paused music is not a network fault. Buffering adds delay to protect continuity; sender queue is not end-to-end latency. These indicators cannot certify sound fidelity.</p></article>`;
     return;
   }
 
@@ -2801,7 +2829,7 @@ function wireEvents() {
     void resumeRoomMediaAfterVisibility();
   });
   window.setInterval(() => {
-    if (!state.explicitLeave && state.room) void resumeRoomMediaAfterVisibility();
+    if (!state.explicitLeave && state.room) { void resumeRoomMediaAfterVisibility(); renderTelemetry(); }
   }, 2500);
   $('#chat-feed').addEventListener('click', (event) => {
     const chip = event.target.closest('[data-react-id]');

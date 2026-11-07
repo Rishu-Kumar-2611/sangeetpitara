@@ -5,6 +5,7 @@ import java.io.Closeable
 /** Small output contract exercised by the real relay writer in plain JVM tests. */
 internal interface Pcm16RelayAudioOutput : Closeable {
     /** Actual writable PCM capacity, not getMinBufferSize's estimated minimum. */
+    fun underrunCount(): Int? = null
     val bufferCapacityBytes: Int
     fun write(bytes: ByteArray, offset: Int, count: Int, blocking: Boolean): Int
     fun play(primedBytes: Int)

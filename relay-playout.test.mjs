@@ -99,3 +99,26 @@ test('very long outages retain bounded memory and recover with fresh audio', asy
   p.run(5_000);
   assert.equal(p.node.playing, true);
 });
+
+for (const bunchMs of [40, 60, 80]) {
+  test(`short ${bunchMs} ms bursts stabilize without repeated concealment`, async () => {
+    const p = await playout();
+    p.run(2000);
+    p.run(6000, { bunch: bunchMs / 20 });
+    const count = p.node.underruns;
+    p.run(12000, { bunch: bunchMs / 20 });
+    assert.equal(p.node.underruns, count);
+    assert.equal(p.node.refilling, false);
+  });
+}
+test('partial recovery waits for earned cushion and counts short starvation', async () => {
+  const p = await playout();
+  p.run(2000);
+  p.run(90, { connected: false });
+  assert.equal(p.node.underruns, 1);
+  assert.equal(p.node.refilling, true);
+  p.flush(1);
+  assert.equal(p.node.refilling, true);
+  p.flush(20);
+  assert.equal(p.node.refilling, false);
+});
