@@ -1,19 +1,19 @@
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261106-resilience1';
-import { RelayPcmPacketizer } from './relay-pcm.js?v=20261106-resilience1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261106-resilience2';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261106-resilience2';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261106-resilience1';
+} from './capture-tracks.js?v=20261106-resilience2';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261106-resilience1';
+} from './media-relay.mjs?v=20261106-resilience2';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -25,8 +25,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261106-resilience1';
-import { roomPalette } from './room-palette.js?v=20261106-resilience1';
+} from './ads.mjs?v=20261106-resilience2';
+import { roomPalette } from './room-palette.js?v=20261106-resilience2';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -129,6 +129,7 @@ const state = {
   relayPlaybackNextTime: 0,
   relayPlaybackSources: new Set(),
   relayLastSequence: null,
+  relayCompatibilityPlanner: new RelayPlaybackPlanner(),
   relayUnavailableNotified: false,
   visualizerRaf: null,
   liveAudioLevel: 0,
@@ -832,7 +833,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261106-resilience1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261106-resilience2');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -906,7 +907,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261106-resilience1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261106-resilience2')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1024,6 +1025,7 @@ function resetRelayPlaybackQueue(nextEpoch = null) {
   }
   state.relayPlaybackSources.clear();
   state.relayPlaybackNextTime = 0;
+  state.relayCompatibilityPlanner = new RelayPlaybackPlanner();
   state.relayPlaybackEpoch = nextEpoch;
   state.relayLastSequence = null;
 }
@@ -1095,13 +1097,14 @@ function handleRelayFrame(data) {
     return;
   }
 
-  // Compatibility Fallback Path (with initial prefill cushion & expanded 650 ms window)
-  const now = context.currentTime;
-  const RELAY_MAX_PLAYAHEAD_SECONDS = Math.max(0.04, state.syncOffsetMs / 1000) + 0.08;
-  if (state.relayPlaybackNextTime > now + RELAY_MAX_PLAYAHEAD_SECONDS) resetRelayPlaybackQueue(frame.sourceEpoch);
-  const initialCushion = Math.max(0.04, state.syncOffsetMs / 1000);
-  const targetNext = state.relayPlaybackNextTime || (now + initialCushion);
-  const startAt = Math.max(Math.max(now + 0.01, state.relayPlaybackNextTime || 0), targetNext);
+  // Compatibility scheduling also preserves weak-network bursts.
+  const planner = state.relayCompatibilityPlanner;
+  const plan = planner.schedule(context.currentTime, frame.sampleCount / frame.sampleRate, state.syncOffsetMs);
+  if (plan.reset) {
+    resetRelayPlaybackQueue(frame.sourceEpoch);
+    state.relayCompatibilityPlanner = planner;
+  }
+  const startAt = plan.startAt;
   const channels = frame.channels === 2 ? 2 : 1;
   const buffer = context.createBuffer(channels, frame.sampleCount, frame.sampleRate);
   if (channels === 2) {

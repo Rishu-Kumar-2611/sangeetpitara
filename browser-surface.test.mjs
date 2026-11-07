@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261106-resilience1';
+const assetVersion = '20261106-resilience2';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
@@ -162,12 +162,8 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(app, /new AudioWorkletNode/);
   assert.match(app, /syncRelayCaptureLease/);
   assert.match(app, /bufferedAmount\) \|\| 0\) \+ frameBytes > MEDIA_RELAY_MAX_BACKLOG_BYTES/);
-  // The fallback reset cap must stay above the largest Sync cushion.
-  assert.match(app, /RELAY_MAX_PLAYAHEAD_SECONDS = Math\.max\(0\.04, state\.syncOffsetMs \/ 1000\) \+ 0\.08/);
   assert.match(html, /id="sync-offset"[^>]*max="1000"/);
   assert.match(app, /SYNC_OFFSET_MAX_MS = 1000/);
-  assert.match(app, /state\.relayPlaybackNextTime > now \+ RELAY_MAX_PLAYAHEAD_SECONDS/);
-  assert.match(app, /Math\.max\(now \+ 0\.01, state\.relayPlaybackNextTime \|\| 0\)/);
   assert.match(app, /state\.relayLastSequence = frame\.sequence/);
   assert.match(app, /createMediaStreamDestination\(\)/);
   assert.match(app, /audio\.srcObject = destination\.stream/);

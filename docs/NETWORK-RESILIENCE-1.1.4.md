@@ -36,8 +36,14 @@ music. Sustained bandwidth below PCM requirements (about 0.8 Mbit/s mono, or
 compressed transport is needed for consistently slower links. No uninterrupted
 playback guarantee is made for arbitrary mobile connections.
 
-Local release validation: 114 Node tests passed under Node 22.14.0, including
+Local release validation: 116 Node tests passed under Node 22.14.0, including
 real WebSocket recovery and grace expiration; 79 Android JVM tests passed;
 Android debug assembly and lint passed; all four desktop/phone Playwright flows
 passed. The isolated release asset check and room-control smoke test passed.
 No physical Android device was connected for paired-device audio testing.
+
+The browser compatibility scheduler also preserves repeated half-second bursts,
+earns up to three seconds of refill cushion, and clears only excessive queues
+beyond four seconds. Behavioral tests verify contiguous scheduling and recovery
+bounds. Its web-only follow-up uses cache token 20261106-resilience2; the signed
+Android 1.1.4 release already contains the native resilience fixes.

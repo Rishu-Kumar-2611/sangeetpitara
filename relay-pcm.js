@@ -153,3 +153,26 @@ export class RelayPcmPacketizer {
     }
   }
 }
+
+/** Bounded scheduling for browsers without AudioWorklet playout. */
+export class RelayPlaybackPlanner {
+  constructor() {
+    this.nextTime = 0;
+    this.lastArrival = null;
+    this.cushionSeconds = 0.04;
+  }
+
+  schedule(now, duration, baseDelayMs = 40) {
+    const base = Math.max(0.04, Math.min(1, baseDelayMs / 1000));
+    this.cushionSeconds = Math.max(base, this.cushionSeconds);
+    if (this.lastArrival !== null && now - this.lastArrival > 0.08) {
+      this.cushionSeconds = Math.min(3, Math.max(this.cushionSeconds, now - this.lastArrival + 0.08));
+    }
+    this.lastArrival = now;
+    const reset = this.nextTime > now + 4;
+    if (reset) this.nextTime = 0;
+    const startAt = this.nextTime >= now + 0.01 ? this.nextTime : now + this.cushionSeconds;
+    this.nextTime = startAt + duration;
+    return { startAt, reset };
+  }
+}

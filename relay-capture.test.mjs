@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
-import { RelayPcmClarityFilter, RelayPcmPacketizer } from './relay-pcm.js';
+import { RelayPcmClarityFilter, RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js';
 import { decodePcm16Frame, encodePcm16Frame, validatePcm16FrameHeader } from './media-relay.mjs';
 
 test('stereo headers cannot claim more samples than the packet contains', () => {
@@ -147,4 +147,30 @@ test('worklet revocation, epoch handoff and stop do not leak prior source sample
   w.message({ type: 'stop' });
   assert.equal(w.process(new Float32Array(960)), false);
   assert.equal(w.sent.length, 1);
+});
+
+
+test('compatibility playback preserves half-second bursts without repeatedly clearing music', () => {
+  const planner = new RelayPlaybackPlanner();
+  let end = null;
+  for (let burst = 1; burst <= 30; burst++) {
+    for (let packet = 0; packet < 25; packet++) {
+      const plan = planner.schedule(burst * 0.5 + 0.04, 0.02);
+      assert.equal(plan.reset, false);
+      if (end !== null) assert.ok(Math.abs(plan.startAt - end) < 1e-8, 'scheduled music must remain contiguous');
+      end = plan.startAt + 0.02;
+    }
+  }
+  assert.ok(planner.cushionSeconds >= 0.58 && planner.cushionSeconds <= 3);
+});
+
+test('compatibility playback earns a refill cushion and bounds an excessive backlog', () => {
+  const planner = new RelayPlaybackPlanner();
+  assert.equal(planner.schedule(0, 0.02).startAt, 0.04);
+  const recovered = planner.schedule(1.5, 0.02);
+  assert.ok(recovered.startAt >= 3.08);
+  let resets = 0;
+  for (let packet = 0; packet < 500; packet++) resets += Number(planner.schedule(1.5, 0.02).reset);
+  assert.ok(resets > 0);
+  assert.ok(planner.nextTime <= 5.54);
 });
