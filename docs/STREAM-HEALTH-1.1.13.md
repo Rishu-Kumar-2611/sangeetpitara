@@ -33,3 +33,7 @@ Automated regression tests cover adaptive burst recovery, partial-prefill recove
 - Playwright desktop and phone: 18 checks passed; two strengthened health-panel checks then passed while proving live PCM packet counts increased. Screenshots inspected at both sizes.
 - Android: testDebugUnitTest, assembleDebug and lintDebug passed; 93 JVM tests, 0 failures. Existing deprecation/nullability warnings remain.
 - No physical Android phone was connected, so actual OEM background behavior and weak-signal listening are not yet certified.
+
+## Hosted shared-IP regression
+
+The first hosted browser run exposed HTTP 429 responses after repeated room page loads. Font files (.woff2) were being counted against the 120/minute API/WebSocket allowance rather than the 600/minute static allowance. The backend follow-up classifies supported font types as static assets. An integration check loads 140 fonts, verifies config and WebSocket access still work, then confirms excessive API requests remain throttled. This is relevant to users sharing a public IP; it does not establish the cause of every earlier disconnect. The signed APK is unchanged by this server-only follow-up.

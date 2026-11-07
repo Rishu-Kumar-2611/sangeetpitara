@@ -1518,7 +1518,7 @@ const server = http.createServer(async (req, res) => {
 
   const reqExt = extname(requestPath);
   const isStaticAssetRequest = (req.method === 'GET' || req.method === 'HEAD')
-    && ['.css', '.js', '.mjs', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.ico', '.webmanifest'].includes(reqExt);
+    && ['.css', '.js', '.mjs', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.ico', '.webmanifest', '.woff', '.woff2', '.ttf', '.otf'].includes(reqExt);
   const ip = getClientIp(req);
   if (!checkRateLimit(ip, { isStaticAsset: isStaticAssetRequest })) {
     res.writeHead(429, { 'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': '60' });

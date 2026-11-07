@@ -137,3 +137,19 @@ test('legacy production auth settings do not gate anonymous rooms while internal
   assert.equal(joined.state.room.name, 'Private');
   assert.equal(joined.state.self.name, 'Owner');
 });
+
+test('font downloads do not consume room connection allowance while API throttling remains active', async (t) => {
+ const running=await startServer();t.after(()=>running.server.kill());
+ for(let i=0;i<140;i++) {
+   const response=await fetch(`${running.http}/fonts/mukta-400-latin.woff2`);
+   assert.equal(response.status,200);await response.arrayBuffer();
+ }
+ assert.equal((await fetch(`${running.http}/config`)).status,200);
+ const client=socket(running.ws);t.after(()=>client.instance.close());await client.open();
+ let limited=false;
+ for(let i=0;i<125;i++) {
+   const response=await fetch(`${running.http}/config`);await response.arrayBuffer();
+   if(response.status===429){limited=true;break;}
+ }
+ assert.equal(limited,true,'API request protection must still enforce its limit');
+});
