@@ -435,27 +435,48 @@ class MainActivity : Activity() {
         val nearbyPanel = panelContainer()
         nearbyPanel.addView(sectionTitle("Nearby Vibe"), matchWrap())
         nearbyPanel.addView(sectionLabel("Offline music on the same hotspot or Wi-Fi. This Android phone shares audio; friends listen in their browser."), matchWrap())
-        nearbyPanel.addView(button("1. Open hotspot settings", ButtonTone.SECONDARY) {
+        val nearbyName = inputText("Your name for Nearby Vibe", null)
+        nearbyPanel.addView(nearbyName, marginLayout())
+        nearbyPanel.addView(button("Open hotspot settings", ButtonTone.SECONDARY) {
             runCatching { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }
         }, marginLayout())
-        nearbyPanel.addView(button("2. Host Nearby Vibe") {
+        nearbyPanel.addView(button("Host & create nearby room") {
             val session = roomSession
             if (session == null || !session.canSelectRoom()) appendRoomEvent("Leave your current room first.")
             else runCatching {
+                val name = nearbyName.text.toString().trim().ifEmpty { displayNameInput.text.toString().trim() }
+                require(name.isNotEmpty()) { "Enter your name above before hosting." }
+                displayNameInput.setText(name)
                 nearbyEndpointOverride = session.startNearbyHost()
                 check(configureRoomSession(session))
                 if (roomNameInput.text.isBlank()) roomNameInput.setText("Nearby Vibe")
-                appendRoomEvent("Local host ready. Enter your name, tap Create room, then show the offline invite. Keep hotspot enabled.")
+                createRoom()
+                refreshNearbyInvite()
+                appendRoomEvent("Creating your local room. The offline invite appears in Nearby Vibe once joined.")
             }.onFailure { appendRoomEvent("Nearby hosting failed: ${it.message}") }
         }, marginLayout())
-        nearbyPanel.addView(button("Show offline invite", ButtonTone.SECONDARY) {
+        nearbyInviteText = labelText().apply {
+            setTextIsSelectable(true)
+            textSize = 15f
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            setBackgroundResource(R.drawable.bg_roomsound_inset)
+        }
+        nearbyPanel.addView(nearbyInviteText, marginLayout())
+        nearbyCopyButton = button("Copy local invite", ButtonTone.SECONDARY) {
+            val link = roomSession?.nearbyInvites()?.firstOrNull() ?: return@button
+            (getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Nearby Vibe", link))
+            android.widget.Toast.makeText(this, "Local invite copied", android.widget.Toast.LENGTH_SHORT).show()
+        }
+        val inviteActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        inviteActions.addView(nearbyCopyButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        nearbyShareButton = button("Share invite", ButtonTone.SECONDARY) {
             val links = roomSession?.nearbyInvites().orEmpty()
-            android.app.AlertDialog.Builder(this).setTitle("Nearby Vibe invite")
-                .setMessage(if (links.isEmpty()) "Create a nearby room first. Enable your hotspot or connect to Wi-Fi." else "Friends must join your Wi-Fi/hotspot, then open one of these local links:\n\n" + links.joinToString("\n\n"))
-                .setPositiveButton("Copy") { _, _ ->
-                    (getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Nearby Vibe", links.joinToString("\n")))
-                }.setNegativeButton("Close", null).show()
-        }, marginLayout())
+            if (links.isNotEmpty()) startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Join my hotspot or Wi-Fi, then open Nearby Vibe:\n" + links.joinToString("\n")) }, "Share Nearby Vibe"))
+        }
+        inviteActions.addView(nearbyShareButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8) })
+        nearbyPanel.addView(inviteActions, marginLayout())
+        nearbyPanel.addView(button("Refresh invite", ButtonTone.SECONDARY) { refreshNearbyInvite() }, marginLayout())
+        refreshNearbyInvite()
         nearbyPanel.addView(button("Join nearby invite in browser", ButtonTone.SECONDARY) {
             val entry = inputText("Paste the host's local invite link", null)
             android.app.AlertDialog.Builder(this).setTitle("Join Nearby Vibe").setView(entry)
@@ -713,6 +734,21 @@ class MainActivity : Activity() {
         }
     }
 
+    private lateinit var nearbyInviteText: TextView
+    private lateinit var nearbyCopyButton: Button
+    private lateinit var nearbyShareButton: Button
+    private fun refreshNearbyInvite() {
+        if (!::nearbyInviteText.isInitialized) return
+        val links = runCatching { roomSession?.nearbyInvites().orEmpty() }.getOrDefault(emptyList())
+        nearbyInviteText.text = when {
+            links.isNotEmpty() -> "Your offline invite\n\n" + links.joinToString("\n\n") + "\n\nFriends: join this phone's hotspot, then open the link."
+            nearbyEndpointOverride != null && roomSession?.currentRoomState() != null -> "No local network address yet. Enable your hotspot or connect to Wi-Fi, then tap Refresh invite."
+            nearbyEndpointOverride != null -> "Creating your nearby room… Your invite will appear here when connected."
+            else -> "Your local link appears here after you host a nearby room. The online website cannot generate a link for your phone."
+        }
+        nearbyCopyButton.isEnabled = links.isNotEmpty()
+        nearbyShareButton.isEnabled = links.isNotEmpty()
+    }
     private var nearbyEndpointOverride: String? = null
 
     private fun configuredRoomEndpoint(): String? = nearbyEndpointOverride ?: RoomEndpointBootstrap.selectEndpoint(
@@ -935,6 +971,7 @@ class MainActivity : Activity() {
     private fun renderRoomState(state: RoomState?) {
         try {
         latestRoomState = state
+        refreshNearbyInvite()
         updateRoomEntryControls()
         renderCaptureControls(state)
         if (state == null) {
@@ -1751,7 +1788,7 @@ class MainActivity : Activity() {
 
     private fun panelContainer(background: Int = R.drawable.bg_roomsound_panel) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(15), dp(14), dp(15), dp(16))
+        setPadding(dp(20), dp(20), dp(20), dp(22))
         setBackgroundResource(background)
         elevation = 0f
         clipToPadding = true
@@ -1801,7 +1838,7 @@ class MainActivity : Activity() {
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT,
     ).apply {
-        topMargin = dp(9)
+        topMargin = dp(12)
         gravity = Gravity.CENTER_HORIZONTAL
     }
 
@@ -1809,7 +1846,7 @@ class MainActivity : Activity() {
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT,
     ).apply {
-        bottomMargin = dp(12)
+        bottomMargin = dp(18)
     }
 
     /** Checks GitHub Releases off the main thread; shows a notice only for a newer version. */

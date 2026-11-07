@@ -8,9 +8,10 @@ external scripts, fonts, account login or internet audio relay is required.
 ## Use
 
 1. Connect the host to Wi-Fi or enable its hotspot in Android Settings.
-2. In the app, choose Nearby Vibe → Host Nearby Vibe. Enter your name and room
-   name, then Create room using the existing controls.
-3. Tap Show offline invite and copy the link for the hotspot/Wi-Fi interface.
+2. In the app's Nearby Vibe card, enter your name and tap Host & create nearby
+   room. This creates the local room automatically.
+3. The offline invite appears directly in the card. Use Copy local invite or
+   Share invite. If no address is shown, enable hotspot/Wi-Fi and Refresh invite.
 4. Friends connect to that same network and open the link in their browser.
    Android guests can use Join nearby invite in browser inside the app.
 5. Friends enter their name and tap Join and listen. The host uses Share device
@@ -68,3 +69,14 @@ without private keys; public signing uses the existing GitHub release secrets.
 The network is offline, not a music download service: the host needs downloaded
 or locally playable content. Android apps that prohibit playback capture remain
 unsupported by the operating system.
+
+## Invite and UI refinement (1.1.6)
+
+Hosting now creates the room in one action. Its local invite stays visible and
+selectable, with Copy/Share controls disabled until an address is available.
+Normalized owner endpoint matching prevents showing a local invite for an online
+room. The website gives explicit invite instructions, restores its desktop grid
+and uses a compact phone layout. Offline guest pages share the warm brass theme.
+Validation: 117 Node tests, 81 Android JVM tests, debug assembly/lint, and six
+browser checks passed. Desktop and phone landing screenshots were visually
+reviewed. Physical Android UI/hotspot testing still requires a connected device.

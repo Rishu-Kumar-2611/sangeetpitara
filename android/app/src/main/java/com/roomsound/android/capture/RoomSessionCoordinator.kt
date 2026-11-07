@@ -80,6 +80,7 @@ class RoomSessionCoordinator(
     }
     fun nearbyInvites(): List<String> {
         val host = nearbyHost ?: return emptyList()
+        if (endpoint != RoomEndpointValidator.normalize(host.ownerEndpoint)) return emptyList()
         val code = currentRoomState()?.room?.code ?: return emptyList()
         return java.net.NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
             .filter { it is java.net.Inet4Address && it.isSiteLocalAddress && !it.isLoopbackAddress }

@@ -22,16 +22,16 @@
     <meta name="roomsound-media-relay" content="server-configured-pcm16" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob: data:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'" />
     <title>SangeetPitara — listen together</title>
-    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261107-nearby1" />
+    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261107-ui1" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=20261107-nearby1" />
+    <link rel="stylesheet" href="/styles.css?v=20261107-ui1" />
   </head>
   <body>
     <div class="aura" id="aura" aria-hidden="true"><span class="aura-blob aura-blob-one"></span><span class="aura-blob aura-blob-two"></span><span class="aura-blob aura-blob-three"></span></div>
     <main id="app" class="shell">
       <section id="landing-view" class="landing-view">
         <div class="landing-copy">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261107-nearby1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261107-ui1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="eyebrow">PRIVATE LIVE AUDIO ROOMS</div>
           <h1>Listen together.</h1>
           <p class="landing-hint">Create a room or join with an invite code.</p>
@@ -47,15 +47,7 @@
           </a>
         </div>
 
-          <section class="entry-card" aria-labelledby="nearby-vibe-title">
-            <div class="eyebrow">TOGETHER, OFFLINE</div><h2 id="nearby-vibe-title">Nearby Vibe</h2>
-            <p>Share music over the same Wi-Fi or phone hotspot. No internet connection needed for the local room.</p>
-            <ol><li>The host opens Nearby Vibe in the updated Android app and enables a hotspot.</li><li>Friends join that hotspot or the same Wi-Fi.</li><li>The host creates the room and copies its offline invite. Open that invite here or directly in your browser.</li></ol>
-            <p>The host phone serves the listening page locally, so friends do not need to load this website again. Hotspot range, interference and browser background limits still apply.</p>
-            <form id="nearby-invite-form"><label class="field-label" for="nearby-invite">Local invite link</label><input id="nearby-invite" class="text-input" type="url" placeholder="http://192.168.…:8765/#invite=…" required><button class="secondary-button full-button" type="submit">Open nearby room</button><p id="nearby-invite-error" role="alert"></p></form>
-          </section>
-
-          <div class="entry-card">
+          <div class="entry-card online-entry">
             <div class="card-heading">
               <div>
                 <div class="eyebrow">GET STARTED</div>
@@ -101,11 +93,19 @@
             </div>
           </div>
         </div>
+          <section class="entry-card nearby-card" aria-labelledby="nearby-vibe-title">
+            <div class="eyebrow">TOGETHER, OFFLINE</div><h2 id="nearby-vibe-title">Nearby Vibe</h2><span class="nearby-badge">Same Wi-Fi. No internet.</span>
+            <p>Share music over the same Wi-Fi or phone hotspot. No internet connection needed for the local room.</p>
+            <details class="nearby-guide"><summary>Where do I find my local invite?</summary><ol><li>The host opens Nearby Vibe in the updated Android app and enables a hotspot.</li><li>Friends join that hotspot or the same Wi-Fi.</li><li>In the app, enter your name and tap Host &amp; create nearby room. Your local link appears in the invite card. Open that invite here or directly in your browser.</li></ol></details>
+            <p>The host phone serves the listening page locally, so friends do not need to load this website again. Hotspot range, interference and browser background limits still apply.</p>
+            <form id="nearby-invite-form"><label class="field-label" for="nearby-invite">Local invite link</label><input id="nearby-invite" class="text-input" type="url" placeholder="http://192.168.…:8765/#invite=…" required><button class="secondary-button full-button" type="submit">Open nearby room</button><p id="nearby-invite-error" role="alert"></p></form>
+          </section>
+
       </section>
 
       <section id="room-view" class="room-view hidden" data-room-tab="chat">
         <header class="topbar">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261107-nearby1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261107-ui1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="room-crumb"><span class="crumb-room-name" id="top-room-name">Listening room</span><span class="crumb-separator">/</span><span class="room-code-small" id="top-room-code">------</span></div>
           <div class="topbar-actions">
             <span class="connection-chip" id="connection-chip"><span class="connection-dot"></span><span id="connection-label">Connecting</span></span>
@@ -137,7 +137,7 @@
 
             <section class="now-playing" aria-label="Now playing">
             <div class="source-card" id="source-card">
-              <div class="source-orb source-cover" id="source-orb" aria-hidden="true"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261107-nearby1" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span></div>
+              <div class="source-orb source-cover" id="source-orb" aria-hidden="true"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261107-ui1" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span></div>
               <div class="source-card-copy">
                 <div class="source-kicker" id="source-kicker">Nothing playing</div>
                 <h2 id="source-title">The room is quiet</h2>
@@ -248,6 +248,6 @@
     </div>
     <div id="toast-stack" class="toast-stack"></div>
     <div id="modal-root"></div>
-    <script type="module" src="/app.js?v=20261107-nearby1"></script>
+    <script type="module" src="/app.js?v=20261107-ui1"></script>
   </body>
 </html>
