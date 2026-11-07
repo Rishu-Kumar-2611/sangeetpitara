@@ -21,3 +21,6 @@ Thumbs.db
 
 # OmniRush local session state and attachments; never commit private workspace data.
 .opencode/
+.neon
+
+.nearby-dev/

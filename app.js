@@ -1,19 +1,19 @@
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261106-resilience2';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261106-resilience2';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261107-nearby1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261107-nearby1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261106-resilience2';
+} from './capture-tracks.js?v=20261107-nearby1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261106-resilience2';
+} from './media-relay.mjs?v=20261107-nearby1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -25,8 +25,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261106-resilience2';
-import { roomPalette } from './room-palette.js?v=20261106-resilience2';
+} from './ads.mjs?v=20261107-nearby1';
+import { roomPalette } from './room-palette.js?v=20261107-nearby1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -833,7 +833,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261106-resilience2');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261107-nearby1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -907,7 +907,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261106-resilience2')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261107-nearby1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -2921,3 +2921,17 @@ function wireGlobalCookieBanner(){
   } catch {}
 }
 try{ wireGlobalCookieBanner(); }catch(e){}
+
+// Local invitations navigate directly to the host phone; they never use the cloud relay.
+$('#nearby-invite-form')?.addEventListener('submit', event => {
+  event.preventDefault();
+  try {
+    const url = new URL($('#nearby-invite').value);
+    const parts = url.hostname.split('.').map(Number);
+    const privateIp = parts.length === 4 && parts.every(n => Number.isInteger(n) && n >= 0 && n <= 255)
+      && (parts[0] === 10 || (parts[0] === 192 && parts[1] === 168) || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31));
+    const invite = new URLSearchParams(url.hash.slice(1));
+    if (url.protocol !== 'http:' || !privateIp || url.username || url.password || !/^[A-Za-z0-9-]{36}$/.test(invite.get('invite') || '') || !/^[A-Z0-9]{6}$/.test(invite.get('code') || '')) throw new Error();
+    location.assign(url.href);
+  } catch { $('#nearby-invite-error').textContent = 'Paste the complete private Wi-Fi/hotspot invite from the host app.'; }
+});

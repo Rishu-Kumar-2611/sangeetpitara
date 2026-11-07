@@ -1,0 +1,58 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}</style>
+<!-- /*
+ * #%L
+ * NanoHttpd-Websocket
+ * %%
+ * Copyright (C) 2012 - 2015 nanohttpd
+ * %%
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * 
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ *    list of conditions and the following disclaimer.
+ * 
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ * 
+ * 3. Neither the name of the nanohttpd nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software without
+ *    specific prior written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
+ * #L%
+ */ -->
+<h1>Nearby Vibe</h1><p>Music from the host's phone. Same Wi-Fi or hotspot. No internet required.</p><small>This local room uses your hotspot's network security. Join a trusted host; keep the hotspot password private. Your browser may pause audio when backgrounded.</small><p id="status" role="status">Enter your name and tap Listen.</p><label for="name">Your name</label><input id="name" maxlength="40" autocomplete="nickname"><button id="listen">Join and listen</button><button id="leave" hidden>Leave room</button><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step=".05" value=".8"><h2>Room chat</h2><ul id="chat"></ul><form id="form"><label for="message">Message</label><input id="message" maxlength="1000"><button>Send</button></form>
+<script>
+'use strict';
+const $=id=>document.getElementById(id),params=new URLSearchParams(location.hash.slice(1)),invite=params.get('invite'),code=params.get('code');
+let ws,ctx,gain,node,joining=false,ended=false,retry=0,timer,epoch=null,guest=crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random(),secret=null;
+try{guest=sessionStorage.getItem('nv-guest')||guest;sessionStorage.setItem('nv-guest',guest);secret=sessionStorage.getItem('nv-secret')}catch{}
+let ring=new Float32Array(288000),write=0,read=0,fill=0,target=5760,playing=false,lastArrival=null;
+function status(t){$('status').textContent=t}
+function reset(){write=read=fill=0;playing=false;lastArrival=null;target=5760}
+function send(data){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(data))}
+function append(name,text){const li=document.createElement('li');li.textContent=name+': '+text;$('chat').append(li);while($('chat').children.length>50)$('chat').firstChild.remove()}
+function connect(){if(!joining||ended)return;ws=new WebSocket('ws://'+location.host+'/?invite='+encodeURIComponent(invite));ws.binaryType='arraybuffer';
+ws.onopen=()=>send({type:'join-room',code,guestId:guest,reconnectSecret:secret,displayName:$('name').value.trim()});
+ws.onmessage=e=>{if(typeof e.data==='string'){const m=JSON.parse(e.data);if(m.type==='joined'){secret=m.reconnectSecret;try{sessionStorage.setItem('nv-secret',secret)}catch{}retry=0;status('Connected locally. Waiting for host music.');$('listen').hidden=true;$('leave').hidden=false}if(m.state){const r=m.state.room;if(epoch!==r.sourceEpoch){reset();epoch=r.sourceEpoch}if(r.sourceStatus!=='LIVE'){reset();status('Connected locally. Waiting for host music.')}}if(m.type==='chat')append(m.message.senderName,m.message.text);if(m.type==='room-ended'){ended=true;stop();status('The host ended this nearby room.')}if(m.type==='error')status(m.message);return}
+const v=new DataView(e.data);if(v.byteLength<20||v.getUint32(0)!==0x52535231||v.getUint8(4)!==1||v.getUint8(5)!==1||v.getUint32(6,true)!==48000||v.getUint32(10,true)!==epoch)return;
+const n=v.getUint16(18,true);if(n<1||n>32768||20+n*2!==v.byteLength)return;const now=performance.now();if(lastArrival!==null&&now-lastArrival>80)target=Math.min(144000,Math.max(target,Math.ceil((now-lastArrival+100)*48)));lastArrival=now;
+if(fill+n>=ring.length){read=write;fill=0;playing=false}for(let i=0;i<n;i++){ring[write]=v.getInt16(20+i*2,true)/32768;write=(write+1)%ring.length}fill+=n;if(!playing&&fill>=target){playing=true;status('Listening over local Wi-Fi · '+Math.round(fill/48)+' ms buffered')}
+};
+ws.onclose=()=>{if(joining&&!ended){status('Local connection lost. Reconnecting to the host…');timer=setTimeout(connect,Math.min(10000,1000*2**retry++))}};
+ws.onerror=()=>status('Cannot reach the host. Check that you joined the same hotspot and the host app is running.');}
+async function audio(){ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});await ctx.resume();gain=ctx.createGain();gain.gain.value=Number($('volume').value);gain.connect(ctx.destination);node=ctx.createScriptProcessor(2048,0,1);node.onaudioprocess=e=>{const out=e.outputBuffer.getChannelData(0),step=48000/ctx.sampleRate;for(let i=0;i<out.length;i++){if(!playing||fill<Math.ceil(step)+1){out[i]=0;if(playing){playing=false;target=Math.min(144000,Math.max(target+4800,target*1.5));status('Buffering local music…')}continue}const at=Math.floor(read),f=read-at;out[i]=ring[at]*(1-f)+ring[(at+1)%ring.length]*f;read=(read+step)%ring.length;fill-=step}};node.connect(gain)}
+function stop(){joining=false;clearTimeout(timer);send({type:'leave-room'});ws?.close();node?.disconnect();gain?.disconnect();ctx?.close();ctx=null;reset();$('listen').hidden=false;$('leave').hidden=true}
+$('listen').onclick=async()=>{if(joining)return;if(!invite||!code){status('Open the complete local invitation copied by your host.');return}if(!$('name').value.trim()){status('Enter your name first.');return}try{ended=false;await audio();joining=true;connect()}catch{status('Audio could not start. Try Chrome or another browser, then tap Listen again.')}};
+$('leave').onclick=()=>{stop();status('You left the nearby room.')};$('volume').oninput=()=>{if(gain)gain.gain.value=Number($('volume').value)};$('form').onsubmit=e=>{e.preventDefault();if($('message').value.trim()){send({type:'chat',text:$('message').value.trim()});$('message').value=''}};addEventListener('pagehide',stop);
+</script></html>

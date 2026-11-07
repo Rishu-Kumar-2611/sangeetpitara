@@ -71,6 +71,20 @@ class RoomSessionCoordinator(
     }
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArraySet<Listener>()
+    private var nearbyHost: com.roomsound.android.nearby.NearbyRoomHost? = null
+    fun startNearbyHost(): String {
+        check(canSelectRoom()) { "Leave the current room first." }
+        nearbyHost?.close()
+        val host = com.roomsound.android.nearby.NearbyRoomHost({ appContext.assets.open("nearby/index.html") }).also { it.startHosting(); nearbyHost = it }
+        return host.ownerEndpoint
+    }
+    fun nearbyInvites(): List<String> {
+        val host = nearbyHost ?: return emptyList()
+        val code = currentRoomState()?.room?.code ?: return emptyList()
+        return java.net.NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
+            .filter { it is java.net.Inet4Address && it.isSiteLocalAddress && !it.isLoopbackAddress }
+            .map { "http://${it.hostAddress}:${host.listeningPort}/#invite=${host.invite}&code=$code" }
+    }
     private var endpoint: String? = null
     private var client: RoomSoundWebSocketClient? = null
     private var clientListener: RoomSoundWebSocketClient.Listener? = null
@@ -739,6 +753,8 @@ class RoomSessionCoordinator(
         notifyRoomSessionStopped()
         abortAttempt("The room service stopped.", true)
         closed = true
+        nearbyHost?.close()
+        nearbyHost = null
         disposeRoom()
         listeners.clear()
         main.removeCallbacksAndMessages(null)

@@ -40,9 +40,9 @@ val configuredDefaultEndpoint = configuredValue("ROOMSOUND_DEFAULT_ENDPOINT")
     ?: "wss://sangeet-pitaraa.onrender.com"
 // The release workflow derives both from the pushed v<major>.<minor>.<patch> tag.
 val configuredVersionName = configuredValue("ROOMSOUND_VERSION_NAME")
-    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.4")
+    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.5")
 val configuredVersionCode = configuredValue("ROOMSOUND_VERSION_CODE")?.toInt()
-    ?: releaseProperties.getProperty("VERSION_CODE", "10104").toInt()
+    ?: releaseProperties.getProperty("VERSION_CODE", "10105").toInt()
 // GitHub repository whose latest release the app checks for an update notice.
 val configuredReleasesRepository = configuredValue("ROOMSOUND_RELEASES_REPOSITORY")
     ?: "Rishu-Kumar-2611/sangeetpitara"
@@ -169,6 +169,7 @@ tasks.register<Copy>("exportDebugApk") {
 // .github/workflows/release.yml build, sign and publish them to GitHub Releases.
 
 dependencies {
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
     // JSON signaling/control uses the platform org.json APIs. OkHttp is used
     // only for the native RoomSound WebSocket client.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -176,4 +177,5 @@ dependencies {
     implementation("io.github.webrtc-sdk:android:150.7871.01")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

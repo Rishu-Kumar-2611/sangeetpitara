@@ -432,6 +432,48 @@ class MainActivity : Activity() {
         accessPanel.addView(accessButton, marginLayout())
         content.addView(accessPanel, panelLayout())
 
+        val nearbyPanel = panelContainer()
+        nearbyPanel.addView(sectionTitle("Nearby Vibe"), matchWrap())
+        nearbyPanel.addView(sectionLabel("Offline music on the same hotspot or Wi-Fi. This Android phone shares audio; friends listen in their browser."), matchWrap())
+        nearbyPanel.addView(button("1. Open hotspot settings", ButtonTone.SECONDARY) {
+            runCatching { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }
+        }, marginLayout())
+        nearbyPanel.addView(button("2. Host Nearby Vibe") {
+            val session = roomSession
+            if (session == null || !session.canSelectRoom()) appendRoomEvent("Leave your current room first.")
+            else runCatching {
+                nearbyEndpointOverride = session.startNearbyHost()
+                check(configureRoomSession(session))
+                if (roomNameInput.text.isBlank()) roomNameInput.setText("Nearby Vibe")
+                appendRoomEvent("Local host ready. Enter your name, tap Create room, then show the offline invite. Keep hotspot enabled.")
+            }.onFailure { appendRoomEvent("Nearby hosting failed: ${it.message}") }
+        }, marginLayout())
+        nearbyPanel.addView(button("Show offline invite", ButtonTone.SECONDARY) {
+            val links = roomSession?.nearbyInvites().orEmpty()
+            android.app.AlertDialog.Builder(this).setTitle("Nearby Vibe invite")
+                .setMessage(if (links.isEmpty()) "Create a nearby room first. Enable your hotspot or connect to Wi-Fi." else "Friends must join your Wi-Fi/hotspot, then open one of these local links:\n\n" + links.joinToString("\n\n"))
+                .setPositiveButton("Copy") { _, _ ->
+                    (getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Nearby Vibe", links.joinToString("\n")))
+                }.setNegativeButton("Close", null).show()
+        }, marginLayout())
+        nearbyPanel.addView(button("Join nearby invite in browser", ButtonTone.SECONDARY) {
+            val entry = inputText("Paste the host's local invite link", null)
+            android.app.AlertDialog.Builder(this).setTitle("Join Nearby Vibe").setView(entry)
+                .setPositiveButton("Open") { _, _ ->
+                    runCatching {
+                        val uri = java.net.URI(entry.text.toString().trim())
+                        val host = uri.host.orEmpty()
+                        require(uri.scheme == "http" && host.matches(Regex("(10|192\\.168|172\\.(1[6-9]|2[0-9]|3[01]))\\.[0-9.]+")) && uri.userInfo == null)
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri.toString())))
+                    }.onFailure { appendRoomEvent("Paste the complete private hotspot invite from your host.") }
+                }.setNegativeButton("Cancel", null).show()
+        }, marginLayout())
+        nearbyPanel.addView(button("Use online rooms", ButtonTone.SECONDARY) {
+            if (roomSession?.canSelectRoom() != true) appendRoomEvent("Leave your current room first.")
+            else { nearbyEndpointOverride = null; roomSession?.let(::configureRoomSession) }
+        }, marginLayout())
+        content.addView(nearbyPanel, panelLayout())
+
         val roomPanel = panelContainer()
         roomPanel.addView(sectionTitle("Room control"), matchWrap())
         roomPanel.addView(sectionLabel("Create or join a listening room"), matchWrap())
@@ -671,7 +713,9 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun configuredRoomEndpoint(): String? = RoomEndpointBootstrap.selectEndpoint(
+    private var nearbyEndpointOverride: String? = null
+
+    private fun configuredRoomEndpoint(): String? = nearbyEndpointOverride ?: RoomEndpointBootstrap.selectEndpoint(
         configuredEndpoint = BuildConfig.ROOMSOUND_DEFAULT_ENDPOINT,
         isDebugBuild = BuildConfig.DEBUG,
         isEmulator = isProbablyEmulator(),

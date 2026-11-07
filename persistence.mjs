@@ -766,7 +766,14 @@ export async function createRepositoryFromEnv(env = process.env) {
 
   const repository = new PostgresRepository({ connectionString: databaseUrl, poolOptions });
   try {
-    await repository.migrate();
+    const directUrl = typeof env.DATABASE_URL_UNPOOLED === 'string' ? env.DATABASE_URL_UNPOOLED.trim() : '';
+    if (directUrl && directUrl !== databaseUrl) {
+      const migrationRepository = new PostgresRepository({ connectionString: directUrl, poolOptions: { ...poolOptions, max: 1 } });
+      try { await migrationRepository.migrate(); }
+      finally { await migrationRepository.close(); }
+    } else {
+      await repository.migrate();
+    }
     return repository;
   } catch (error) {
     await repository.close().catch(() => {});
