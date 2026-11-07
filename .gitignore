@@ -29,3 +29,9 @@ Thumbs.db
 .private-migration/
 .desktop-package/
 /downloads/*.zip
+
+# Local measurements and encrypted database archives are private by default.
+SangeetPitara-audio-diagnostics.json
+*.sgb
+*.sgb.json
+hardening-dependencies.json

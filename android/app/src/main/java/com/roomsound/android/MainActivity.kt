@@ -55,6 +55,7 @@ import java.util.UUID
 /** Native Android room controls. Media/signaling state is owned by the service. */
 class MainActivity : Activity() {
     companion object {
+        private const val REQUEST_AUDIO_DIAGNOSTICS = 6105
         private const val REQUEST_MEDIA_PROJECTION = 6102
         private const val REQUEST_RUNTIME_PERMISSIONS = 6103
         private const val REQUEST_POST_NOTIFICATIONS = 6104
@@ -779,6 +780,17 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(11), dp(12), dp(11))
         }
         healthPanel.addView(healthText, matchWrap())
+        healthPanel.addView(button("Save audio diagnostics", ButtonTone.SECONDARY) {
+            try {
+                startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_TITLE, "SangeetPitara-audio-diagnostics.json")
+                }, REQUEST_AUDIO_DIAGNOSTICS)
+            } catch (_: Exception) {
+                android.widget.Toast.makeText(this, "No document picker is available.", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }, matchWrap())
         nativePanels["status"] = healthPanel
         content.addView(healthPanel, panelLayout())
 
@@ -1406,6 +1418,12 @@ class MainActivity : Activity() {
         while (healthUnderrunEvents.isNotEmpty() && now - healthUnderrunEvents.first.first >= 60000) healthUnderrunEvents.removeFirst()
         val recent = healthUnderrunEvents.sumOf { it.second }
         factor("Playback underruns / 60 s", if (count == null) "Not measured" else "$recent (total $count)", "Ideal: 0 · tolerable: 1 · attention: 2 or more", if (count == null) -1 else if (recent == 0) 0 else if (recent == 1) 1 else 2)
+        transport?.playbackHealth?.let { playback ->
+            factor("Last audio packet", playback.packetAgeMs?.let { "${it.toInt()} ms ago" } ?: "Waiting", "Ideal: <=100 ms; tolerable: <=1000 ms (transport only)", playback.packetAgeMs?.let { if (it <= 100) 0 else if (it <= 1000) 1 else 2 } ?: -1)
+            factor("Playback buffer", playback.bufferMs?.let { "${it.toInt()} ms" } ?: "Not measured", "Ideal: near adaptive target ${playback.targetMs?.toInt() ?: 0} ms", if (playback.bufferMs == null || playback.targetMs == null) -1 else if (kotlin.math.abs(playback.bufferMs - playback.targetMs) <= maxOf(20.0, playback.targetMs * .25)) 0 else if (playback.bufferMs >= playback.targetMs * .5) 1 else 2)
+            factor("Arrival jitter", "${playback.jitterMs.toInt()} ms", "Ideal: <=20 ms; tolerable: <=60 ms", if (playback.packetAgeMs == null) -1 else if (playback.jitterMs <= 20) 0 else if (playback.jitterMs <= 60) 1 else 2)
+            factor("Missing packets (total)", playback.missingPackets.toString(), "Ideal: 0; history includes earlier source/transport gaps", -1)
+        }
         factor("Format", if (transport?.mediaRelayEnabled == true) "48 kHz PCM16 mono" else "Direct WebRTC", "Source format; does not certify audible quality", -1)
         health.append(buildString {
             append("Connection: ")
@@ -1759,6 +1777,22 @@ class MainActivity : Activity() {
     @Deprecated("Uses the dependency-free platform Activity result API.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_AUDIO_DIAGNOSTICS) {
+            if (resultCode != RESULT_OK) return
+            val uri = data?.data ?: return
+            val diagnostics = roomSession?.exportAudioDiagnostics(BuildConfig.VERSION_NAME)
+            if (diagnostics == null) {
+                android.widget.Toast.makeText(this, "Join a room before saving diagnostics.", android.widget.Toast.LENGTH_LONG).show()
+                return
+            }
+            Thread {
+                val saved = runCatching {
+                    requireNotNull(contentResolver.openOutputStream(uri, "wt")).use { it.write(diagnostics.toByteArray(Charsets.UTF_8)) }
+                }.isSuccess
+                runOnUiThread { android.widget.Toast.makeText(this, if (saved) "Audio diagnostics saved. No audio or personal details included." else "Could not save diagnostics. Try another folder.", android.widget.Toast.LENGTH_LONG).show() }
+            }.start()
+            return
+        }
         if (requestCode != REQUEST_MEDIA_PROJECTION || !projectionConsentInFlight) return
         projectionConsentInFlight = false
         if (resultCode != RESULT_OK || data == null) {

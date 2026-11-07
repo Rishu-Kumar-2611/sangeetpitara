@@ -71,6 +71,40 @@ class RoomSessionCoordinator(
     }
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArraySet<Listener>()
+    private val audioDiagnostics = com.roomsound.android.transport.AudioDiagnosticHistory()
+    private val diagnosticSampler = object : Runnable {
+        override fun run() {
+            if (closed) return
+            sampleAudioDiagnostics()
+            main.postDelayed(this, 1000)
+        }
+    }
+    init { main.post(diagnosticSampler) }
+    fun exportAudioDiagnostics(version: String): String {
+        sampleAudioDiagnostics()
+        return audioDiagnostics.export(version)
+    }
+    private fun sampleAudioDiagnostics() {
+        val room = currentRoomState()
+        val snapshot = transportSnapshot()
+        val playback = snapshot?.playbackHealth
+        val sender = room?.self?.id != null && room.room.activeSourceId == room.self?.id
+        audioDiagnostics.record(mapOf(
+            "epoch" to room?.room?.sourceEpoch,
+            "sentPackets" to snapshot?.acceptedFrames,
+            "receivedPackets" to snapshot?.receivedRelayFrames,
+            "underruns" to if (sender) null else playback?.underruns,
+            "bufferMs" to if (sender) null else playback?.bufferMs,
+            "targetMs" to if (sender) null else playback?.targetMs,
+            "packetAgeMs" to if (sender) null else playback?.packetAgeMs,
+            "jitterMs" to if (sender) null else playback?.jitterMs,
+            "missingPackets" to if (sender) null else playback?.missingPackets,
+        ), if (room?.room?.activeSourceId == null) "idle" else if (sender) "sender" else "listener",
+            if (connectionState() == RoomConnectionState.JOINED) "connected" else "offline",
+            when (playback?.running) { true -> "running"; false -> "suspended"; null -> "unavailable" },
+            if (pairedHttpClient != null || nearbyHost != null) "nearby" else "internet")
+    }
+
     private var nearbyHost: com.roomsound.android.nearby.NearbyRoomHost? = null
     @Volatile private var nearbyIdentity: com.roomsound.android.nearby.NearbyTlsIdentity? = null
     /** Key generation may take seconds on older hardware; call on a worker. */

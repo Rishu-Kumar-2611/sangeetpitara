@@ -1,0 +1,16 @@
+title = "SangeetPitara credential scan"
+[extend]
+useDefault = true
+
+# Deliberately public TLS test fixture, never packaged or used by the app.
+[[allowlists]]
+description = "Public local-TLS test fixture only"
+paths = ['^desktop/test-fixtures/test-only-key\.pem$']
+
+# RFC 6455 handshake magic is a protocol constant, not an API credential.
+[[allowlists]]
+description = "Exact WebSocket protocol constant in vendored testable server"
+condition = "AND"
+regexTarget = "line"
+paths = ['^android/app/src/main/java/com/roomsound/android/nearby/NearbyWSD\.java$']
+regexes = ['^\s*private final static String WEBSOCKET_KEY_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";\s*$']

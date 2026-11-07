@@ -20,3 +20,8 @@ oracleJdk-*/
 .desktop-package/
 downloads/*.zip
 android/.kotlin/
+
+*.sgb
+*.sgb.json
+SangeetPitara-audio-diagnostics.json
+hardening-dependencies.json

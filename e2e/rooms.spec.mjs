@@ -130,3 +130,14 @@ test('relay health shows ideal ranges and does not borrow listener underruns for
  if (await page.locator('#room-tab-health').isVisible()) await page.locator('#room-tab-health').click();
  await page.locator('#telemetry-panel').screenshot({path:info.outputPath('health.png')});
 });
+
+test('audio diagnostic export contains bounded measurements without room identity or invite secrets',async({page})=>{
+ await page.goto('/');await page.locator('[data-open-screen="create"]').click();await page.getByLabel('Your display name').fill('Private diagnostic name');await page.getByLabel('Room name',{exact:true}).fill('Private diagnostic room');await page.locator('#create-room').click();
+ await expect(page.locator('#room-title')).toHaveText('Private diagnostic room');const code=(await page.locator('#room-code-display').textContent()).trim();
+ if(await page.locator('#room-tab-health').isVisible())await page.locator('#room-tab-health').click();
+ const downloading=page.waitForEvent('download');await page.locator('#export-audio-diagnostics').click();const download=await downloading;
+ const stream=await download.createReadStream();let text='';for await(const chunk of stream)text+=chunk.toString();const data=JSON.parse(text);
+ expect(data.schemaVersion).toBe(1);expect(data.samples.length).toBeGreaterThan(0);expect(data.samples.length).toBeLessThanOrEqual(300);
+ for(const privateText of [code,'Private diagnostic name','Private diagnostic room','roomsound-reconnect-secret','http://','https://'])expect(text).not.toContain(privateText);
+ expect(data.samples.at(-1).direction).toBe('idle');
+});

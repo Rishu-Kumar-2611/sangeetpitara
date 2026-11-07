@@ -1,3 +1,4 @@
+import net from 'node:net';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -41,4 +42,11 @@ test('loopback companion verifies the host pin and bridges exact local TLS messa
     assert.equal((await fetch(`${companion.origin}/pair`,{method:'POST',headers,body:JSON.stringify({invite})})).status,409);
     assert.equal(remoteConnections,1);
   }finally{client?.terminate();await companion.close();for(const peer of wss.clients)peer.terminate();await new Promise(r=>wss.close(r));secureServer.closeAllConnections();certificateServer.closeAllConnections();await Promise.all([new Promise(r=>secureServer.close(r)),new Promise(r=>certificateServer.close(r))]);}
+});
+
+test('malformed local URLs cannot crash the companion HTTP or upgrade handlers',async()=>{
+ const companion=await createDesktopCompanion({port:0});
+ const port=Number(new URL(companion.origin).port);
+ const request=upgrade=>new Promise((resolve,reject)=>{const socket=net.createConnection({host:'127.0.0.1',port});let text='';const timer=setTimeout(()=>{socket.destroy();reject(new Error('Malformed URL did not close'));},3000);socket.on('data',chunk=>text+=chunk);socket.once('error',reject);socket.once('close',()=>{clearTimeout(timer);resolve(text)});socket.once('connect',()=>socket.write(`GET http://[ HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: ${upgrade?'Upgrade':'close'}\r\n${upgrade?'Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n':''}\r\n`));});
+ try{assert.match(await request(false),/400/);await request(true);assert.equal((await fetch(companion.origin)).status,200);}finally{await companion.close();}
 });

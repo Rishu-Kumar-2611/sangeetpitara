@@ -1,0 +1,76 @@
+{
+  "recordedAt": "2026-11-07T14:55:00.112Z",
+  "scope": "Isolated loopback synthetic PCM relay; no speaker, browser playout, WAN, production host or acoustic measurements.",
+  "results": [
+    {
+      "connections": 10,
+      "rooms": 1,
+      "durationMs": 10000,
+      "minListenerPackets": 500,
+      "baselineMissingPackets": 0,
+      "unexpectedCloses": 0,
+      "reconnectedListeners": 3,
+      "reconnectMs": 33,
+      "loopbackRelayP95Ms": 3,
+      "maxEventLoopDelayMs": 1,
+      "maxRssMB": 78,
+      "averageOneCoreCpuPercent": 14
+    },
+    {
+      "connections": 25,
+      "rooms": 3,
+      "durationMs": 10000,
+      "minListenerPackets": 499,
+      "baselineMissingPackets": 0,
+      "unexpectedCloses": 0,
+      "reconnectedListeners": 6,
+      "reconnectMs": 68,
+      "loopbackRelayP95Ms": 5,
+      "maxEventLoopDelayMs": 2,
+      "maxRssMB": 77,
+      "averageOneCoreCpuPercent": 22
+    },
+    {
+      "connections": 50,
+      "rooms": 5,
+      "durationMs": 10000,
+      "minListenerPackets": 499,
+      "baselineMissingPackets": 0,
+      "unexpectedCloses": 0,
+      "reconnectedListeners": 13,
+      "reconnectMs": 101,
+      "loopbackRelayP95Ms": 6,
+      "maxEventLoopDelayMs": 1,
+      "maxRssMB": 79,
+      "averageOneCoreCpuPercent": 26
+    },
+    {
+      "connections": 100,
+      "rooms": 10,
+      "durationMs": 10000,
+      "minListenerPackets": 499,
+      "baselineMissingPackets": 0,
+      "unexpectedCloses": 0,
+      "reconnectedListeners": 25,
+      "reconnectMs": 93,
+      "loopbackRelayP95Ms": 8,
+      "maxEventLoopDelayMs": 5,
+      "maxRssMB": 79,
+      "averageOneCoreCpuPercent": 33
+    },
+    {
+      "connections": 200,
+      "rooms": 20,
+      "durationMs": 10000,
+      "minListenerPackets": 499,
+      "baselineMissingPackets": 0,
+      "unexpectedCloses": 0,
+      "reconnectedListeners": 50,
+      "reconnectMs": 134,
+      "loopbackRelayP95Ms": 8,
+      "maxEventLoopDelayMs": 10,
+      "maxRssMB": 81,
+      "averageOneCoreCpuPercent": 37
+    }
+  ]
+}

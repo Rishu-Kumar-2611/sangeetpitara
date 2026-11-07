@@ -1,0 +1,26 @@
+# Provisioning template, not a claim that an alert receiver has been deployed.
+# Scrape /metrics with a bearer token supplied privately to your monitoring host.
+# Probe /ready separately using the blackbox exporter or an external HTTPS check.
+groups:
+  - name: sangeetpitara
+    rules:
+      - alert: SangeetPitaraNotReady
+        expr: probe_success{job="sangeetpitara-ready"} == 0
+        for: 2m
+        annotations:
+          summary: "Public readiness failed; inspect Render deployment and database health"
+      - alert: SangeetPitaraRelayBacklogDrops
+        expr: increase(roomsound_relay_packets{outcome="backlog_drop"}[5m]) > 0
+        for: 1m
+        annotations:
+          summary: "Listeners are losing delayed audio because their bounded send queues filled"
+      - alert: SangeetPitaraRepeatedTransportClosures
+        expr: increase(roomsound_websocket_closes{category="transport_lost"}[5m]) > 5
+        for: 1m
+        annotations:
+          summary: "Investigate connection-close history and receiver diagnostics"
+      - alert: SangeetPitaraEventLoopDelay
+        expr: roomsound_event_loop_delay_ms > 100
+        for: 2m
+        annotations:
+          summary: "Sustained server scheduling delay; compare load, memory and deployment activity"

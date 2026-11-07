@@ -5,6 +5,7 @@ import java.io.Closeable
 /** Small output contract exercised by the real relay writer in plain JVM tests. */
 internal interface Pcm16RelayAudioOutput : Closeable {
     /** Actual writable PCM capacity, not getMinBufferSize's estimated minimum. */
+    fun outputHealth(): Pcm16OutputHealth? = null
     fun underrunCount(): Int? = null
     val bufferCapacityBytes: Int
     fun write(bytes: ByteArray, offset: Int, count: Int, blocking: Boolean): Int
@@ -18,3 +19,5 @@ internal interface Pcm16RelayAudioOutput : Closeable {
      */
     fun interrupt()
 }
+
+internal data class Pcm16OutputHealth(val bufferedMs: Double, val targetMs: Double, val underruns: Int, val running: Boolean)

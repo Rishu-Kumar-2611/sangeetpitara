@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up pinned Node.js
         uses: actions/setup-node@v4
         with:
@@ -33,6 +35,14 @@ jobs:
         run: npm ci
       - name: Run offline regression suite
         run: npm test
+      - name: Reject tracked private runtime files
+        run: node checks/repository-safety.mjs
+      - name: Scan committed history for credentials
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/repo:ro" zricethezav/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f git --config /repo/.gitleaks.toml --redact=100 /repo
+      - name: Audit locked production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Check relay delivery and reconnect capacity
+        run: node checks/capacity.mjs --quick
       - name: Check bounded browser playout latency
         run: node checks/latency-benchmark.mjs --check --current-only
       - name: Install Chromium for browser regressions

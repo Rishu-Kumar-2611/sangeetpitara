@@ -1,3 +1,4 @@
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261107-health1';
 import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261107-health1';
 import { createGuestId, createSafeStorage } from './guest-id.js?v=20261107-health1';
 import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261107-health1';
@@ -32,6 +33,7 @@ import { roomPalette } from './room-palette.js?v=20261107-health1';
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
+const audioDiagnostics = new AudioDiagnostics();
 const browserStorage = createSafeStorage();
 
 const guestStorageKey = 'roomsound-guest-id';
@@ -771,6 +773,7 @@ function sendRelayPcmFrame(samples, sourceEpoch, capturedSequence = null) {
     });
     state.ws.send(frame);
     state.relaySentFrames += 1;
+    state.relayPacketProgress = { at: Date.now(), epoch: sourceEpoch, sender: true };
   } catch (error) {
     console.warn('[SangeetPitara] PCM16 relay frame was not sent', error);
   }
@@ -1077,6 +1080,7 @@ function handleRelayFrame(data) {
     if (distance > 1) state.relayDroppedSequenceFrames += (distance - 1);
   }
   state.relayReceivedFrames += 1;
+  state.relayPacketProgress = { at: Date.now(), epoch: frame.sourceEpoch, sender: false };
 
   const context = ensureRelayPlaybackContext();
   if (!context || !state.relayPlaybackGain) return;
@@ -1246,7 +1250,9 @@ function selectRoomTab(tabName) {
 }
 
 function resetToLanding(reason = '') {
+  state.relayPacketProgress = null;
   recentUnderruns.reset();
+  recentMissing.reset();
   recentReconnects.reset();
   reconnectTotal = 0;
   if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
@@ -1354,6 +1360,7 @@ function connectAnd(action, isReconnect = false) {
     if (!isCurrentSocket()) return;
     const code = event.code;
     const reason = event.reason || '';
+    audioDiagnostics.event('socket_closed', { closeCode: code });
     if (state.pendingRoomEnd) {
       resetToLanding();
       toast('The host ended the room.', 'bad');
@@ -1918,12 +1925,48 @@ function removePeerTelemetry(peerId, entry) {
 }
 
 const recentUnderruns = new RecentCounter();
+const recentMissing = new RecentCounter();
 const recentReconnects = new RecentCounter();
 let reconnectTotal = 0;
 function recordUnderruns(total) { if (recentUnderruns.previous === null) recentUnderruns.update(0); recentUnderruns.update(total); }
 function healthMetric(label, value, ideal, grade) {
   const word = {good:'Healthy',warning:'Watch',bad:'Needs attention',pending:'Info'}[grade];
   return `<span class="health-metric ${grade}"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong><b>${word}</b><em>${escapeHtml(ideal)}</em></span>`;
+}
+function diagnosticSnapshot() {
+  const sender = isSelfSource();
+  const progress = state.relayPacketProgress;
+  const currentPacket = progress && progress.epoch === state.room?.sourceEpoch && progress.sender === sender;
+  const analyser = sender ? state.relayPublisherAnalyser : state.relayPlaybackAnalyser;
+  let rms, peak;
+  if (analyser) {
+    const samples = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(samples);
+    rms = Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length);
+    peak = samples.reduce((maximum,value)=>Math.max(maximum,Math.abs(value)),0);
+  }
+  return {
+    rms, peak,
+    mode: 'internet', direction: state.room?.activeSourceId ? (sender ? 'sender' : 'listener') : 'idle',
+    connection: state.ws?.readyState === WebSocket.OPEN ? 'connected' : 'offline',
+    epoch: state.room?.sourceEpoch, sentPackets: state.relaySentFrames, receivedPackets: state.relayReceivedFrames,
+    missingPackets: sender ? undefined : state.relayDroppedSequenceFrames,
+    underruns: !sender && state.relayPlaybackWorkletReady ? state.relayWorkletUnderruns : undefined,
+    bufferMs: !sender && state.relayPlaybackWorkletReady ? state.relayWorkletBufferedMs : undefined,
+    targetMs: !sender && state.relayPlaybackWorkletReady ? state.relayWorkletTargetMs : undefined,
+    jitterMs: !sender && state.relayPlaybackWorkletReady ? state.relayWorkletJitterMs : undefined,
+    queueMs: sender ? (Number(state.ws?.bufferedAmount) || 0) / 96 : undefined,
+    packetAgeMs: currentPacket ? Math.max(0, Date.now() - progress.at) : undefined,
+    output: sender ? 'unavailable' : (state.relayPlaybackContext?.state || 'unavailable'),
+    refilling: !sender && Boolean(state.relayWorkletRefilling), reconnects: reconnectTotal,
+  };
+}
+function exportAudioDiagnostics() {
+  audioDiagnostics.record(diagnosticSnapshot());
+  const version = document.querySelector('meta[name="app-version"]')?.content || 'development';
+  const file = new Blob([JSON.stringify(audioDiagnostics.export({ version }), null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(file), link = document.createElement('a');
+  link.href = url; link.download = 'SangeetPitara-audio-diagnostics.json'; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function renderTelemetry() {
   const panel = $('#telemetry-panel');
@@ -1933,6 +1976,13 @@ function renderTelemetry() {
     return;
   }
   panel.classList.remove('hidden');
+  audioDiagnostics.record(diagnosticSnapshot());
+  if (!$('#export-audio-diagnostics')) {
+    const button = document.createElement('button'); button.id = 'export-audio-diagnostics'; button.type = 'button';
+    button.className = 'secondary-button'; button.textContent = 'Save audio diagnostics';
+    button.title = 'Save up to five minutes of measurements locally. No audio, names, chat or invite details.';
+    button.addEventListener('click', exportAudioDiagnostics); panel.append(button);
+  }
 
   const sourceId = state.room.activeSourceId;
   const sourceMember = state.members.find((member) => member.id === sourceId);
@@ -1966,7 +2016,7 @@ function renderTelemetry() {
     const underruns = recentUnderruns.update(state.relayWorkletUnderruns || 0);
     const queueMs = (Number(state.ws?.bufferedAmount) || 0) / 96;
     const measured = state.relayPlaybackWorkletReady;
-    const metrics = [healthMetric('Connection', connected ? 'Connected' : 'Reconnecting', 'Ideal: connected · 0 reconnects / 60 s', connected ? upperHealth(reconnects,0,2) : 'bad')];
+    const metrics = [healthMetric('Connection', `${connected ? 'Connected' : 'Reconnecting'} · ${reconnects} / 60 s`, 'Ideal: connected · 0 reconnects / 60 s', connected ? upperHealth(reconnects,0,2) : 'bad')];
     if (isSender) {
       metrics.push(healthMetric('Outgoing queue', `${Math.round(queueMs)} ms`, 'Ideal: 0–100 ms · tolerable: ≤500 ms', connected ? upperHealth(queueMs,100,500) : 'bad'));
     } else {
@@ -1974,6 +2024,12 @@ function renderTelemetry() {
       metrics.push(healthMetric('Underruns / 60 s', measured ? String(underruns) : 'Not measured', `Ideal: 0 · watch: 1 · total: ${state.relayWorkletUnderruns || 0}`, measured ? upperHealth(underruns,0,1) : 'pending'));
       metrics.push(healthMetric('Arrival jitter', measured ? `${state.relayWorkletJitterMs} ms` : 'Not measured', 'Ideal: ≤20 ms · tolerable: ≤60 ms', measured ? upperHealth(state.relayWorkletJitterMs,20,60) : 'pending'));
       metrics.push(healthMetric('Audio output', state.relayPlaybackContext?.state || 'Not started', 'Ideal: running (enable audio if suspended)', state.relayPlaybackContext ? (state.relayPlaybackContext.state === 'running' ? 'good' : 'bad') : 'pending'));
+    }
+    const snapshot = diagnosticSnapshot();
+    metrics.push(healthMetric('Last audio packet', Number.isFinite(snapshot.packetAgeMs) ? `${Math.round(snapshot.packetAgeMs)} ms ago` : 'Waiting', 'Ideal: ≤100 ms · watch: ≤1000 ms · transport only', Number.isFinite(snapshot.packetAgeMs) ? upperHealth(snapshot.packetAgeMs,100,1000) : 'pending'));
+    if (!isSender) {
+      const missing = recentMissing.update(state.relayDroppedSequenceFrames || 0);
+      metrics.push(healthMetric('Missing packets / 60 s', String(missing), 'Ideal: 0 · watch: 1 · source or transport gaps', upperHealth(missing,0,1)));
     }
     metrics.push(healthMetric('Audio packets', formatTelemetryCount(isSender ? state.relaySentFrames : state.relayReceivedFrames), 'Informational: 20 ms each · should increase while streaming', 'pending'));
     const analyser = isSender ? state.relayPublisherAnalyser : state.relayPlaybackAnalyser;
@@ -1986,7 +2042,7 @@ function renderTelemetry() {
     metrics.push(healthMetric('Format', '48 kHz PCM16 mono', 'Source format · does not measure audible quality', 'pending'));
     const grades = metrics.map(m => m.includes('health-metric bad') ? 'bad' : m.includes('health-metric warning') ? 'warning' : 'good');
     const grade = grades.includes('bad') ? 'bad' : grades.includes('warning') ? 'warning' : 'good';
-    status.textContent = {good:'Healthy',warning:'Watch',bad:'Needs attention'}[grade];
+    status.textContent = `${isSender ? 'Sender' : 'Playback'}: ${{good:'Healthy',warning:'Watch',bad:'Needs attention'}[grade]}`;
     status.className = `telemetry-state ${grade}`;
     list.innerHTML = `<article class="telemetry-peer"><div class="telemetry-direction">${isSender ? 'PUBLISHING' : 'LISTENING'} RELAY · ${escapeHtml(sourceName)}</div><div class="telemetry-stats">${metrics.join('')}</div><p class="telemetry-empty">Green: ideal · Orange: tolerable · Red: attention. Quiet or paused music is not a network fault. Buffering adds delay to protect continuity; sender queue is not end-to-end latency. These indicators cannot certify sound fidelity.</p></article>`;
     return;
@@ -2828,6 +2884,7 @@ function wireEvents() {
     }
     void resumeRoomMediaAfterVisibility();
   });
+  window.setInterval(() => { if (state.room) audioDiagnostics.record(diagnosticSnapshot()); }, 1000);
   window.setInterval(() => {
     if (!state.explicitLeave && state.room) { void resumeRoomMediaAfterVisibility(); renderTelemetry(); }
   }, 2500);

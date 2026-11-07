@@ -12,6 +12,7 @@ interface Pcm16RelayPlayerSink : Closeable {
     fun start(format: Pcm16AudioFormat, sourceEpoch: Long): Boolean
     fun stop(sourceEpoch: Long? = null)
     fun play(packet: Pcm16RelayPacket): Boolean
+    fun playbackHealth(): Pcm16PlaybackHealth? = null
     fun underrunCount(): Int? = null
     fun currentEpoch(): Long?
     fun setVolume(volume: Double)
@@ -64,6 +65,7 @@ class Pcm16RelayPlayer internal constructor(
         var firstPacketAt: Long? = null
         var lastPacketAt: Long? = null
         var cushionBytes = 0
+        var jitterMs = 0.0
         var playbackStarted = false
         var crossfadeNext = false
         @Volatile var cancelled = false
@@ -85,6 +87,27 @@ class Pcm16RelayPlayer internal constructor(
                 runCatching { output.close() }
             }
         }
+    }
+
+    override fun playbackHealth(): Pcm16PlaybackHealth? {
+        val session: Session
+        val software: Double
+        val target: Double
+        val age: Double?
+        val gaps: Long
+        val jitter: Double
+        synchronized(lock) {
+            session = active ?: return null
+            software = session.queuedBytes / 96.0
+            target = session.cushionBytes / 96.0
+            age = session.lastPacketAt?.let { (nanoTime() - it).coerceAtLeast(0) / 1_000_000.0 }
+            gaps = missingSequences
+            jitter = session.jitterMs
+        }
+        val output = synchronized(session.outputLock) {
+            if (session.cancelled || session.released) null else session.output.outputHealth()
+        }
+        return Pcm16PlaybackHealth(software, output?.let { software + it.bufferedMs }, output?.let { target + it.targetMs }, age, jitter, gaps, output?.underruns, output?.running)
     }
 
     override fun underrunCount(): Int? {
@@ -184,6 +207,11 @@ class Pcm16RelayPlayer internal constructor(
         }
         session.lastSequence = packet.sequence
         val now = nanoTime()
+        session.lastPacketAt?.let { previous ->
+            val elapsedMs = (now - previous).coerceAtLeast(0) / 1_000_000.0
+            val expectedMs = packet.sampleCount * 1000.0 / packet.sampleRate
+            if (elapsedMs >= expectedMs * .25 && elapsedMs < 1500) session.jitterMs += (kotlin.math.abs(elapsedMs - expectedMs) - session.jitterMs) / 16
+        }
         if (adaptiveBuffering) session.lastPacketAt?.let { previous ->
             val gapMs = TimeUnit.NANOSECONDS.toMillis((now - previous).coerceAtLeast(0))
             if (gapMs > 80) session.cushionBytes = maxOf(session.cushionBytes,
@@ -416,3 +444,5 @@ class Pcm16RelayPlayer internal constructor(
         private val ZERO_WRITE_TIMEOUT_NANOS = TimeUnit.MILLISECONDS.toNanos(120)
     }
 }
+
+data class Pcm16PlaybackHealth(val softwareBufferMs: Double, val bufferMs: Double?, val targetMs: Double?, val packetAgeMs: Double?, val jitterMs: Double, val missingPackets: Long, val underruns: Int?, val running: Boolean?)

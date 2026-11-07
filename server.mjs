@@ -1,3 +1,4 @@
+import { clientAddress } from './client-address.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import os from 'node:os';
@@ -29,6 +30,7 @@ import { createStructuredLogger, createHealthState, createMetricsRegistry } from
 import { createRepositoryFromEnv } from './persistence.mjs';
 import {
   constantTimeEqual,
+  parseJsonBody,
   readJsonBody as readSecureJsonBody,
   readRawBody,
   RequestBodyError as SecureRequestBodyError,
@@ -145,6 +147,17 @@ const metrics = createMetricsRegistry({ prefix: 'roomsound' });
 const httpRequests = metrics.registerCounter('http_requests', 'HTTP requests handled by route and status.');
 const websocketConnections = metrics.registerGauge('websocket_connections', 'Currently open WebSocket connections.');
 const activeRooms = metrics.registerGauge('active_rooms', 'Currently active in-memory rooms.');
+const relayPackets = metrics.registerCounter('relay_packets', 'Relay packet outcomes per receiving socket; no room labels.');
+const socketCloses = metrics.registerCounter('websocket_closes', 'WebSocket closures by bounded category.');
+const socketLifetime = metrics.registerHistogram('websocket_lifetime_seconds', 'Connection lifetime before close.', [1,5,15,60,300,1800,3600]);
+const databasePoolErrors = metrics.registerGauge('database_pool_errors', 'Handled idle PostgreSQL connection errors.');
+const processRss = metrics.registerGauge('process_resident_memory_bytes', 'Resident process memory.');
+const processCpu = metrics.registerGauge('process_cpu_seconds', 'Cumulative process user and system CPU seconds.');
+const eventLoopDelay = metrics.registerGauge('event_loop_delay_ms', 'Most recent event-loop scheduling delay.');
+let expectedLoopTick = performance.now() + 1000;
+const loopSampler = setInterval(() => { const now=performance.now(); eventLoopDelay.set(Math.max(0, now-expectedLoopTick)); expectedLoopTick=now+1000; },1000);
+loopSampler.unref();
+
 const audit = createAuditRecorder({
   sink: (event) => logger.info('audit event', event),
   onSinkError: (error) => logger.warn('audit sink failed', { error }),
@@ -197,7 +210,7 @@ const publicFiles = new Set([
   'index.html', 'about.html', 'contact.html', 'privacy.html', 'terms.html',
   'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'themes.css', 'themes.js',
   'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
-  'room-palette.js', 'media-relay.mjs', 'relay-pcm.js', 'stream-health.mjs',
+  'room-palette.js', 'media-relay.mjs', 'relay-pcm.js', 'stream-health.mjs', 'audio-diagnostics.mjs',
   'relay-capture-worklet.js', 'relay-playout-worklet.js', 'notifications-sw.js',
   'manifest.webmanifest',
 ]);
@@ -248,6 +261,7 @@ function isAllowedOrigin(origin, allowedList) {
   let originUrl;
   try {
     originUrl = new URL(origin);
+    if (originUrl.username || originUrl.password || originUrl.pathname !== "/" || originUrl.search || originUrl.hash) return false;
   } catch {
     return false;
   }
@@ -264,14 +278,7 @@ function isAllowedOrigin(origin, allowedList) {
   });
 }
 
-function getClientIp(req) {
-  const trustProxy = process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true';
-  if (trustProxy) {
-    const fwd = req.headers['x-forwarded-for'];
-    if (typeof fwd === 'string' && fwd.trim()) return fwd.split(',')[0].trim();
-  }
-  return req.socket.remoteAddress || 'unknown';
-}
+function getClientIp(req) { return clientAddress(req); }
 
 const randomId = () => crypto.randomUUID();
 const randomCode = () => crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 6);
@@ -1118,8 +1125,9 @@ function handleBinaryFrame(ws, raw) {
   const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
   for (const target of room.members.values()) {
     if (target.id === member.id || !target.ws || target.ws.readyState !== WebSocket.OPEN) continue;
-    if (Number(target.ws.bufferedAmount) > MEDIA_RELAY_MAX_BACKLOG_BYTES) continue;
+    if (Number(target.ws.bufferedAmount) > MEDIA_RELAY_MAX_BACKLOG_BYTES) { relayPackets.inc(1,{outcome:'backlog_drop'}); continue; }
     target.ws.send(bytes);
+    relayPackets.inc(1,{outcome:'forwarded'});
   }
 }
 
@@ -1541,6 +1549,9 @@ const server = http.createServer(async (req, res) => {
     }
     httpRequests.inc(1, { route: 'metrics', status: 200 });
     res.writeHead(200, { 'Content-Type': metrics.contentType, 'Cache-Control': 'no-store' });
+    databasePoolErrors.set(repository.poolErrors || 0);
+    processRss.set(process.memoryUsage().rss);
+    const cpu=process.cpuUsage(); processCpu.set((cpu.user+cpu.system)/1e6);
     res.end(metrics.renderPrometheus());
     return;
   }
@@ -1669,6 +1680,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+server.headersTimeout = 15_000;
+server.requestTimeout = 30_000;
+server.keepAliveTimeout = 5_000;
+server.maxHeadersCount = 100;
+
 const wss = new WebSocketServer({
   server,
   perMessageDeflate: false,
@@ -1751,6 +1767,7 @@ function checkBinaryFrameRate(ws, byteLength) {
 wss.on('connection', (ws, req) => {
   try { req.socket?.setNoDelay?.(true); } catch {}
   ws._ip = getClientIp(req);
+  ws._connectedAt = Date.now();
   ws._lastActivityAt = Date.now();
   ws.on('pong', () => { ws._lastActivityAt = Date.now(); });
   ws.authenticatedUser = null;
@@ -1762,16 +1779,20 @@ wss.on('connection', (ws, req) => {
   // bounded so audio is not queued behind a slow control request.
   ws._dispatchTail = Promise.resolve();
   websocketConnections.set(wss.clients.size);
+  const authTimer = setTimeout(() => { if (!ws.authReady) { ws.pendingMessages.length = 0; ws.close(1013, 'Authentication timed out'); } }, 8000);
+  authTimer.unref();
   void auth.currentUser(sessionTokenFromRequest(req)).then((user) => {
+    clearTimeout(authTimer);
+    if (ws.readyState !== WebSocket.OPEN) return;
     ws.authenticatedUser = user;
     ws.authReady = true;
     const pending = ws.pendingMessages.splice(0);
     for (const data of pending) dispatchPending(ws, data);
   }).catch((error) => {
+    clearTimeout(authTimer);
     logger.warn('WebSocket authentication lookup failed', { error });
-    ws.authReady = true;
-    const pending = ws.pendingMessages.splice(0);
-    for (const data of pending) dispatchPending(ws, data);
+    ws.pendingMessages.length = 0;
+    ws.close(1013, 'Authentication unavailable');
   });
   ws.on('message', (raw, isBinary) => {
     ws._lastActivityAt = Date.now();
@@ -1788,13 +1809,13 @@ wss.on('connection', (ws, req) => {
       }
       return dispatchBinaryFrame(ws, data);
     }
+    if (!checkJsonMessageRate(ws)) return sendError(ws, 'You are sending messages too quickly.');
     let data;
     try {
-      data = JSON.parse(raw.toString());
-    } catch (error) {
-      return sendError(ws, `Invalid message: ${error.message}`);
+      data = parseJsonBody(raw, { maxBytes: MAX_PAYLOAD_BYTES, maxStringBytes: MAX_PAYLOAD_BYTES });
+    } catch {
+      return sendError(ws, 'Invalid message: expected a bounded JSON object.');
     }
-    if (!checkJsonMessageRate(ws)) return sendError(ws, 'You are sending messages too quickly.');
     if (!ws.authReady) {
       if (ws.pendingMessages.length >= 8) return sendError(ws, 'Authentication is still loading; try again.');
       ws.pendingMessages.push({ binary: false, data });
@@ -1803,6 +1824,10 @@ wss.on('connection', (ws, req) => {
     dispatchMessage(ws, data);
   });
   ws.on('close', (code, reason) => {
+    clearTimeout(authTimer);
+    ws.pendingMessages.length = 0;
+    const category=({1000:'normal',1001:'going_away',1006:'transport_lost',1008:'policy',1009:'too_large',1011:'server_error',1013:'retry'})[code] || 'other';
+    socketCloses.inc(1,{category}); socketLifetime.observe(Math.max(0,Date.now()-ws._connectedAt)/1000);
     const known = ['Replaced by reconnect', 'Left room', 'Room ended'];
     logger.info('WebSocket closed', { code, cause: known.includes(String(reason)) ? String(reason) : code === 1006 ? 'transport_lost' : 'other' });
     websocketConnections.set(Math.max(0, wss.clients.size)); handleDisconnect(ws);

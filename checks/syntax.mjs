@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const files = [
   'server.mjs',
+  'client-address.mjs',
   'auth.mjs',
   'persistence.mjs',
   'security.mjs',
@@ -17,6 +18,7 @@ const files = [
   'media-relay.mjs',
   'app.js',
   'stream-health.mjs',
+  'audio-diagnostics.mjs',
   'themes.js',
   'room-palette.js',
   'relay-pcm.js',
@@ -29,7 +31,7 @@ const files = [
 ];
 
 // The production-only image excludes desktop tools and Android assets.
-const developmentFiles = ['desktop/nearby-desktop.mjs', 'desktop/package-desktop.mjs', 'desktop/sync-nearby-theme.mjs'];
+const developmentFiles = ['desktop/nearby-desktop.mjs', 'desktop/package-desktop.mjs', 'desktop/sync-nearby-theme.mjs', 'ops/backup-crypto.mjs', 'ops/database-backup.mjs', 'checks/capacity.mjs', 'checks/recovery-drill.mjs', 'checks/repository-safety.mjs'];
 for (const file of [...files, ...developmentFiles.filter(file => existsSync(resolve(root,file)))]) {
   const result = spawnSync(process.execPath, ['--check', resolve(root, file)], {
     cwd: root,

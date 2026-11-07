@@ -14,6 +14,18 @@ internal class AndroidPcm16RelayAudioOutput(format: Pcm16AudioFormat) : Pcm16Rel
     // once playback has actually consumed data, never after a timed sleep.
     private var restoreBufferFrames: Int? = null
     private var observedUnderruns = 0
+    private val writtenBytes = java.util.concurrent.atomic.AtomicLong()
+    private var lastHead = 0L
+    private var headWraps = 0L
+
+    @Synchronized
+    override fun outputHealth(): Pcm16OutputHealth? = runCatching {
+        val head = track.playbackHeadPosition.toLong() and 0xffff_ffffL
+        if (head < lastHead) headWraps += 1L shl 32
+        lastHead = head
+        val queued = (writtenBytes.get() / 2 - head - headWraps).coerceIn(0, track.bufferCapacityInFrames.toLong())
+        Pcm16OutputHealth(queued * 1000.0 / track.sampleRate, track.bufferSizeInFrames * 1000.0 / track.sampleRate, track.underrunCount, track.playState == AudioTrack.PLAYSTATE_PLAYING)
+    }.getOrNull()
 
     init {
         val minimum = AudioTrack.getMinBufferSize(
@@ -68,6 +80,7 @@ internal class AndroidPcm16RelayAudioOutput(format: Pcm16AudioFormat) : Pcm16Rel
             bytes, offset, boundedCount,
             if (blocking) AudioTrack.WRITE_BLOCKING else AudioTrack.WRITE_NON_BLOCKING,
         )
+        if (written > 0) writtenBytes.addAndGet(written.toLong())
         // A poor network/device can earn a little more cushion, rather than
         // forcing every listener to carry 600 ms of latency from the start.
         val underruns = track.underrunCount

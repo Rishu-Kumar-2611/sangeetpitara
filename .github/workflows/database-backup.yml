@@ -1,0 +1,45 @@
+name: Encrypted database backup
+
+# Manual until the owner selects a destination, retention and recovery-key policy.
+# It deliberately does not keep the free web service awake or modify production.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: encrypted-database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Create and verify encrypted archive
+        env:
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_BACKUP_URL }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          BACKUP_FILE: .private-migration/backups/SangeetPitara-${{ github.run_id }}.sgb
+        run: |
+          if [ -z "$DATABASE_URL_UNPOOLED" ] || [ -z "$BACKUP_ENCRYPTION_KEY" ]; then
+            echo "Configure DATABASE_BACKUP_URL and BACKUP_ENCRYPTION_KEY repository secrets first. Keep an offline copy of the key."
+            exit 1
+          fi
+          mkdir -p .private-migration/backups
+          node ops/database-backup.mjs create --output "$BACKUP_FILE"
+          node ops/database-backup.mjs verify --file "$BACKUP_FILE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-database-${{ github.run_id }}
+          path: |
+            .private-migration/backups/*.sgb
+            .private-migration/backups/*.sgb.json
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error

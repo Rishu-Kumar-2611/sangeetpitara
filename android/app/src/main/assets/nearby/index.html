@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="app-version" content="1.1.13"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
 body{background:radial-gradient(ellipse at top left,#19322c 0,transparent 55%),#100d0b;color:#f7f1ea;max-width:640px;padding:clamp(20px,5vw,40px);line-height:1.55}
 h1{font-size:clamp(32px,8vw,44px);letter-spacing:-.045em;margin:12px 0 8px;color:#f5bd68}
 h2{font-size:21px;letter-spacing:-.02em;margin-top:28px}p{color:#d0c2b3}small{display:block;font-size:13px;color:#c4b6a7}
@@ -41,6 +41,65 @@ body{background:radial-gradient(ellipse at top left,var(--room-color-1),transpar
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',attach,{once:true}); else attach();
 })();
 </script><!-- SHARED THEME END -->
+<script data-shared-diagnostics>// Explicit allowlists: diagnostics never accept names, URLs, identifiers, audio,
+// chat, arbitrary errors, or capture content. Nothing is sent to a server.
+const NUMBERS = new Set(['epoch','sentPackets','receivedPackets','missingPackets','underruns','bufferMs','targetMs','jitterMs','queueMs','packetAgeMs','rms','peak','reconnects','closeCode']);
+const ENUMS = {
+  mode: ['internet','nearby'], direction: ['sender','listener','idle'],
+  connection: ['connected','connecting','offline'],
+  output: ['running','suspended','closed','unavailable'],
+};
+const EVENTS = new Set(['started','connection_changed','source_changed','output_changed','underrun','sequence_gap','socket_closed','exported']);
+class AudioDiagnostics {
+  constructor({ clock = Date.now, capacity = 300, eventCapacity = 120 } = {}) {
+    this.clock = clock;
+    this.capacity = Math.max(1, Math.min(600, Math.trunc(capacity) || 300));
+    this.eventCapacity = Math.max(1, Math.min(200, Math.trunc(eventCapacity) || 120));
+    this.samples = []; this.events = []; this.previous = null; this.lastSample = -Infinity;
+  }
+  event(type, fields = {}) {
+    if (!EVENTS.has(type)) return;
+    const record = { at: this.clock(), type };
+    if (Number.isInteger(fields.closeCode) && fields.closeCode >= 0 && fields.closeCode <= 4999) record.closeCode = fields.closeCode;
+    if (Number.isFinite(fields.count) && fields.count >= 0) record.count = Math.min(1e12, Math.trunc(fields.count));
+    this.events.push(record);
+    if (this.events.length > this.eventCapacity) this.events.splice(0, this.events.length - this.eventCapacity);
+  }
+  record(input) {
+    const sample = { at: this.clock() };
+    for (const key of NUMBERS) if (Number.isFinite(input[key]) && input[key] >= 0) sample[key] = Math.min(input[key], 1e12);
+    for (const [key, values] of Object.entries(ENUMS)) if (values.includes(input[key])) sample[key] = input[key];
+    if (typeof input.refilling === 'boolean') sample.refilling = input.refilling;
+    const previous = this.previous;
+    if (!previous) this.event('started');
+    else {
+      if (sample.connection !== previous.connection) this.event('connection_changed');
+      if (sample.direction !== previous.direction || sample.epoch !== previous.epoch) this.event('source_changed');
+      if (sample.output !== previous.output) this.event('output_changed');
+      for (const [key, type] of [['underruns','underrun'],['missingPackets','sequence_gap']]) {
+        if (Number.isFinite(previous[key]) && sample[key] > previous[key]) this.event(type, { count: sample[key] - previous[key] });
+      }
+    }
+    this.previous = sample;
+    if (sample.at - this.lastSample >= 1000 || sample.at < this.lastSample) {
+      this.lastSample = sample.at; this.samples.push(sample);
+      if (this.samples.length > this.capacity) this.samples.splice(0, this.samples.length - this.capacity);
+    }
+    return sample;
+  }
+  export({ platform = 'web', version = 'development' } = {}) {
+    this.event('exported');
+    return {
+      schemaVersion: 1, generatedAt: new Date(this.clock()).toISOString(),
+      platform: ['web','android','nearby-web'].includes(platform) ? platform : 'web',
+      version: typeof version === 'string' && version.length <= 24 && /^\d+\.\d+\.\d+$/.test(version) ? version : 'development',
+      privacy: 'Local measurements only. No audio, names, chat, room codes, IPs, URLs, or credentials.',
+      limitations: 'Packet submission is not speaker delivery. End-to-end delay, radio strength and acoustic fidelity are not measured.',
+      samples: this.samples.map(s => ({ ...s })), events: this.events.map(e => ({ ...e })),
+    };
+  }
+}
+</script><!-- SHARED DIAGNOSTICS END -->
 <!-- /*
  * #%L
  * NanoHttpd-Websocket
@@ -73,7 +132,7 @@ body{background:radial-gradient(ellipse at top left,var(--room-color-1),transpar
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  * #L%
  */ -->
-<section id="desktop-pairing" hidden><h2>Connect to your local host</h2><p>Join the host's Wi-Fi or hotspot, then paste the complete invite copied from the updated Android app.</p><form id="pair-form"><label for="pair-invite">Host's local invite</label><input id="pair-invite" type="url" required><button>Connect to host</button></form><p id="pair-status" role="status"></p></section><h1>Play Close</h1><section aria-label="Stream health"><h2>Stream health</h2><div id="local-health"></div><small>Green: ideal · Orange: tolerable · Red: attention. Adaptive buffering protects continuity by adding delay. Format and packet totals do not certify sound fidelity.</small></section><p>Take turns playing music. Same Wi-Fi or hotspot. No internet required.</p><small>This local room uses your hotspot's network security. Join a trusted host; keep the hotspot password private. Your browser may pause audio when backgrounded.</small><p id="status" role="status">Enter your name and tap Listen.</p><label for="name">Your name</label><input id="name" maxlength="40" autocomplete="nickname"><button id="listen">Join and listen</button><button id="leave" hidden>Leave room</button><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step=".05" value=".8"><section id="controls" hidden><h2>Audio control</h2><p id="source-status"></p><p>To share sound from other Android apps, use Play Close → Join nearby room in app. On Windows, use the desktop companion to share screen or tab audio after approval. Only audio is sent to the room; your screen video stays on your device.</p><button id="share-screen" hidden>Share screen / system audio</button><aside id="screen-setup"><p>Screen audio needs the Windows desktop companion. Download and extract it, run Start Play Close.cmd, then paste this host's complete invite into its local browser page. After approval, select Entire screen and enable Share system audio, or choose a Chrome/Edge tab with audio.</p><a href="https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/latest/download/SangeetPitara-Desktop-Windows.zip" target="_blank" rel="noopener">Download Windows companion</a><p>The download needs internet once. Room audio stays on your hotspot. Ordinary HTTP invite pages can still listen and share saved files.</p></aside><label for="track">Or share a saved music file</label><input id="track" type="file" accept="audio/*"><button id="request">Ask to play music</button><button id="cancel-request" hidden>Cancel request</button><button id="share" hidden>Play selected music</button><button id="stop-source" hidden>Stop sharing</button><button id="takeover" hidden>Take back audio control</button><div id="moderation"></div></section><h2>Room chat</h2><ul id="chat"></ul><form id="form"><label for="message">Message</label><input id="message" maxlength="1000"><button>Send</button></form>
+<section id="desktop-pairing" hidden><h2>Connect to your local host</h2><p>Join the host's Wi-Fi or hotspot, then paste the complete invite copied from the updated Android app.</p><form id="pair-form"><label for="pair-invite">Host's local invite</label><input id="pair-invite" type="url" required><button>Connect to host</button></form><p id="pair-status" role="status"></p></section><h1>Play Close</h1><section aria-label="Stream health"><h2>Stream health</h2><div id="local-health"></div><button id="export-diagnostics" type="button">Save audio diagnostics</button><small>Green: ideal · Orange: tolerable · Red: attention. Adaptive buffering protects continuity by adding delay. Format and packet totals do not certify sound fidelity.</small></section><p>Take turns playing music. Same Wi-Fi or hotspot. No internet required.</p><small>This local room uses your hotspot's network security. Join a trusted host; keep the hotspot password private. Your browser may pause audio when backgrounded.</small><p id="status" role="status">Enter your name and tap Listen.</p><label for="name">Your name</label><input id="name" maxlength="40" autocomplete="nickname"><button id="listen">Join and listen</button><button id="leave" hidden>Leave room</button><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step=".05" value=".8"><section id="controls" hidden><h2>Audio control</h2><p id="source-status"></p><p>To share sound from other Android apps, use Play Close → Join nearby room in app. On Windows, use the desktop companion to share screen or tab audio after approval. Only audio is sent to the room; your screen video stays on your device.</p><button id="share-screen" hidden>Share screen / system audio</button><aside id="screen-setup"><p>Screen audio needs the Windows desktop companion. Download and extract it, run Start Play Close.cmd, then paste this host's complete invite into its local browser page. After approval, select Entire screen and enable Share system audio, or choose a Chrome/Edge tab with audio.</p><a href="https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/latest/download/SangeetPitara-Desktop-Windows.zip" target="_blank" rel="noopener">Download Windows companion</a><p>The download needs internet once. Room audio stays on your hotspot. Ordinary HTTP invite pages can still listen and share saved files.</p></aside><label for="track">Or share a saved music file</label><input id="track" type="file" accept="audio/*"><button id="request">Ask to play music</button><button id="cancel-request" hidden>Cancel request</button><button id="share" hidden>Play selected music</button><button id="stop-source" hidden>Stop sharing</button><button id="takeover" hidden>Take back audio control</button><div id="moderation"></div></section><h2>Room chat</h2><ul id="chat"></ul><form id="form"><label for="message">Message</label><input id="message" maxlength="1000"><button>Send</button></form>
 <script>
 'use strict';
 const $=id=>document.getElementById(id),params=new URLSearchParams(location.hash.slice(1)),invite=params.get('invite'),code=params.get('code');
@@ -82,11 +141,14 @@ const identityKey='nv-'+(window.NEARBY_DESKTOP?.scope||params.get('pin')||locati
 try{guest=sessionStorage.getItem(identityKey+'-guest')||guest;sessionStorage.setItem(identityKey+'-guest',guest);secret=sessionStorage.getItem(identityKey+'-secret')}catch{}
 let roomState=null,trackUrl=null,trackPlayer=null,trackSource=null,publishNode=null,publishEpoch=null,packetSamples=[],sequence=0,screenStream=null,captureGeneration=0,pendingScreenEpoch=null,localShareError=null;
 let ring=new Float32Array(288000),write=0,read=0,fill=0,target=5760,playing=false,lastArrival=null;
+const localDiagnostics=new AudioDiagnostics();
+let localReceived=0,localMissing=0,localLastSequence=null,localPacketAt=null;
+$('export-diagnostics').onclick=()=>{const blob=new Blob([JSON.stringify(localDiagnostics.export({platform:'nearby-web',version:document.querySelector('meta[name=app-version]')?.content}),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SangeetPitara-audio-diagnostics.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 let localUnderruns=0,localUnderrunEvents=[];
 function localFactor(label,value,ideal,grade){const row=document.createElement('p');row.style.color=['#70dba5','#ffb454','#ff9a9a','#b6a797'][grade];row.textContent=label+': '+value+' · '+['Healthy','Watch','Needs attention','Informational'][grade]+' · '+ideal;return row}
-setInterval(()=>{const now=Date.now();localUnderrunEvents=localUnderrunEvents.filter(t=>now-t<60000);const panel=$('local-health');if(!panel)return;const online=ws?.readyState===WebSocket.OPEN,active=roomState?.room?.sourceStatus==='LIVE',sending=publishEpoch!==null;const recent=localUnderrunEvents.length;panel.replaceChildren(localFactor('Connection',online?'Connected':'Not connected','Ideal: connected',online?0:joining?2:3),localFactor('Playback buffer',Math.round(fill/48)+' ms','Ideal: near adaptive target '+Math.round(target/48)+' ms (±25% / 20 ms)',!active||sending?3:!playing?2:Math.abs(fill-target)<=Math.max(960,target*.25)?0:fill>=target*.5?1:2),localFactor('Underruns / 60 s',recent+' (total '+localUnderruns+')','Ideal: 0 · tolerable: 1',!active||sending?3:recent===0?0:recent===1?1:2),localFactor('Format','48 kHz PCM16 mono','Source format; not a listening quality score',3));},1000);
+setInterval(()=>{const now=Date.now();localUnderrunEvents=localUnderrunEvents.filter(t=>now-t<60000);const panel=$('local-health');if(!panel)return;const online=ws?.readyState===WebSocket.OPEN,active=roomState?.room?.sourceStatus==='LIVE',sending=publishEpoch!==null;const recent=localUnderrunEvents.length;localDiagnostics.record({mode:'nearby',direction:!active?'idle':sending?'sender':'listener',connection:online?'connected':'offline',epoch:roomState?.room?.sourceEpoch,receivedPackets:localReceived,sentPackets:sequence,missingPackets:sending?undefined:localMissing,underruns:sending?undefined:localUnderruns,bufferMs:sending?undefined:fill/48,targetMs:sending?undefined:target/48,packetAgeMs:localPacketAt===null?undefined:now-localPacketAt,queueMs:sending?(ws?.bufferedAmount||0)/96:undefined,output:ctx?.state||'unavailable',refilling:active&&!sending&&!playing});panel.replaceChildren(localFactor('Connection',online?'Connected':'Not connected','Ideal: connected',online?0:joining?2:3),localFactor('Playback buffer',Math.round(fill/48)+' ms','Ideal: near adaptive target '+Math.round(target/48)+' ms (±25% / 20 ms)',!active||sending?3:!playing?2:Math.abs(fill-target)<=Math.max(960,target*.25)?0:fill>=target*.5?1:2),localFactor('Underruns / 60 s',recent+' (total '+localUnderruns+')','Ideal: 0 · tolerable: 1',!active||sending?3:recent===0?0:recent===1?1:2),localFactor('Format','48 kHz PCM16 mono','Source format; not a listening quality score',3));},1000);
 function status(t){$('status').textContent=t}
-function reset(){write=read=fill=0;playing=false;lastArrival=null;target=5760}
+function reset(){localLastSequence=null;localPacketAt=null;write=read=fill=0;playing=false;lastArrival=null;target=5760}
 function send(data){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(data))}
 function append(name,text){const li=document.createElement('li');li.textContent=name+': '+text;$('chat').append(li);while($('chat').children.length>50)$('chat').firstChild.remove()}
 function connect(){if(!joining||ended)return;ws=new WebSocket('ws://'+location.host+'/?invite='+encodeURIComponent(invite));ws.binaryType='arraybuffer';
@@ -94,9 +156,9 @@ ws.onopen=()=>send({type:'join-room',code,guestId:guest,reconnectSecret:secret,d
 ws.onmessage=e=>{if(typeof e.data==='string'){const m=JSON.parse(e.data);if(m.type==='joined'){secret=m.reconnectSecret;try{sessionStorage.setItem(identityKey+'-secret',secret)}catch{}retry=0;status('Connected locally. Waiting for host music.');$('listen').hidden=true;$('leave').hidden=false}if(m.state){renderControls(m.state);const r=m.state.room;if(epoch!==r.sourceEpoch){reset();epoch=r.sourceEpoch}if(r.sourceStatus!=='LIVE'){reset();if(!localShareError)status('Connected locally. Waiting for host music.')}}if(m.type==='chat')append(m.message.senderName,m.message.text);if(m.type==='removed'){ended=true;stop();status('You were removed from this nearby room.')}if(m.type==='room-ended'){ended=true;stop();status('The host ended this nearby room.')}if(m.type==='error')status(m.message);return}
 const v=new DataView(e.data);if(v.byteLength<20||v.getUint32(0)!==0x52535231||v.getUint8(4)!==1||v.getUint8(5)!==1||v.getUint32(6,true)!==48000||v.getUint32(10,true)!==epoch)return;
 const n=v.getUint16(18,true);if(n<1||n>32768||20+n*2!==v.byteLength)return;const now=performance.now();if(lastArrival!==null&&now-lastArrival>80)target=Math.min(144000,Math.max(target,Math.ceil((now-lastArrival+100)*48)));lastArrival=now;
-if(fill+n>=ring.length){read=write;fill=0;playing=false}for(let i=0;i<n;i++){ring[write]=v.getInt16(20+i*2,true)/32768;write=(write+1)%ring.length}fill+=n;if(!playing&&fill>=target){playing=true;status('Listening over local Wi-Fi · '+Math.round(fill/48)+' ms buffered')}
+const packetSequence=v.getUint32(14,true);if(localLastSequence!==null){const distance=(packetSequence-localLastSequence)>>>0;if(distance===0||distance>=0x80000000)return;if(distance>1)localMissing+=distance-1}localLastSequence=packetSequence;localPacketAt=Date.now();localReceived++;if(fill+n>=ring.length){read=write;fill=0;playing=false}for(let i=0;i<n;i++){ring[write]=v.getInt16(20+i*2,true)/32768;write=(write+1)%ring.length}fill+=n;if(!playing&&fill>=target){playing=true;status('Listening over local Wi-Fi · '+Math.round(fill/48)+' ms buffered')}
 };
-ws.onclose=()=>{stopTrack();$('controls').hidden=true;if(joining&&!ended){status('Local connection lost. Reconnecting to the host…');timer=setTimeout(connect,Math.min(10000,1000*2**retry++))}};
+ws.onclose=e=>{localDiagnostics.event('socket_closed',{closeCode:e.code});stopTrack();$('controls').hidden=true;if(joining&&!ended){status('Local connection lost. Reconnecting to the host…');timer=setTimeout(connect,Math.min(10000,1000*2**retry++))}};
 ws.onerror=()=>status('Cannot reach the host. Check that you joined the same hotspot and the host app is running.');}
 async function audio(){ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});await ctx.resume();gain=ctx.createGain();gain.gain.value=Number($('volume').value);gain.connect(ctx.destination);node=ctx.createScriptProcessor(2048,0,1);node.onaudioprocess=e=>{const out=e.outputBuffer.getChannelData(0),step=48000/ctx.sampleRate;for(let i=0;i<out.length;i++){if(!playing||fill<Math.ceil(step)+1){out[i]=0;if(playing){localUnderruns++;localUnderrunEvents.push(Date.now());playing=false;target=Math.min(144000,Math.max(target+4800,target*1.5));status('Buffering local music…')}continue}const at=Math.floor(read),f=read-at;out[i]=ring[at]*(1-f)+ring[(at+1)%ring.length]*f;read=(read+step)%ring.length;fill-=step}};node.connect(gain)}
 function stop(){stopTrack();roomState=null;$('controls').hidden=true;joining=false;clearTimeout(timer);send({type:'leave-room'});ws?.close();node?.disconnect();gain?.disconnect();ctx?.close();ctx=null;reset();$('listen').hidden=false;$('leave').hidden=true}

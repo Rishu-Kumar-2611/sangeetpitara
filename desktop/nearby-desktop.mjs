@@ -49,7 +49,7 @@ export async function createDesktopCompanion({ port = 8767, pagePath = new URL('
   const reply = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
   const server = http.createServer(async (req, res) => {
     if (!validHost(req)) { reply(res,403,{error:'Local access only.'}); return; }
-    const path = new URL(req.url,origin()).pathname;
+    let path; try { path = new URL(req.url,origin()).pathname; } catch { reply(res,400,{error:'Invalid request URL.'}); return; }
     if (req.method === 'GET' && path === '/') {
       res.writeHead(200, { 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'Referrer-Policy':'no-referrer',
         'Content-Security-Policy':`default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; media-src blob:; connect-src 'self' ws://${req.headers.host}; base-uri 'none'; frame-ancestors 'none'` });
@@ -75,7 +75,7 @@ export async function createDesktopCompanion({ port = 8767, pagePath = new URL('
   server.requestTimeout=10_000; server.headersTimeout=10_000;
   const wss=new WebSocketServer({noServer:true,maxPayload:65_556,perMessageDeflate:false});
   server.on('upgrade',(req,socket,head)=>{
-    const url=new URL(req.url,origin());
+    let url; try { url=new URL(req.url,origin()); } catch { socket.destroy(); return; }
     if(!validHost(req)||!validOrigin(req)||!pairing||url.pathname!=='/'||url.searchParams.get('invite')!==pairing.invite||bridges.size>=10){socket.destroy();return;}
     wss.handleUpgrade(req,socket,head,client=>{
       const pair=pairing; bridges.add(client); let ready=false,closed=false;const pending=[];

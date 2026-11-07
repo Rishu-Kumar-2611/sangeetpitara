@@ -42,6 +42,9 @@ try {
   assert.equal((await fetch(`${base}/auth.mjs`)).status, 404);
   assert.equal((await fetch(`${base}/metrics`)).status, 401);
   assert.equal((await fetch(`${base}/app.js`)).status, 200);
+  assert.equal((await fetch(`${base}/audio-diagnostics.mjs`)).status, 200);
+  assert.equal((await fetch(`${base}/client-address.mjs`)).status, 404);
+  assert.equal((await fetch(`${base}/ops/database-backup.mjs`)).status, 404);
   const registration = await fetch(`${base}/api/auth/register`, { method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'container@example.test', password: 'Container-only-test-password-2026' }) });

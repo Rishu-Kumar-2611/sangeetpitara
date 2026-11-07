@@ -373,6 +373,12 @@ export class PostgresRepository {
     this.kind = 'postgres';
     this.pool = pool || new Pool({ connectionString, ...poolOptions });
     this.ownsPool = !pool;
+    this.poolErrors = 0;
+    // pg removes broken idle clients itself. Handling the pool error keeps a
+    // temporary database interruption from becoming an uncaught process error.
+    // Store no exception, SQL, connection string or credentials here.
+    this.onPoolError = () => { this.poolErrors += 1; };
+    this.pool.on?.('error', this.onPoolError);
     this.migrationsDirectory = migrationsDirectory;
   }
 
@@ -681,6 +687,7 @@ export class PostgresRepository {
 
   async close() {
     if (this.ownsPool) await this.pool.end();
+    this.pool.off?.('error', this.onPoolError);
   }
 }
 

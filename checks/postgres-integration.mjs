@@ -117,9 +117,20 @@ try {
   assert.equal((await room(base, { type: 'join-room', code: guest.state.room.code, displayName: 'Returning guest', guestId: 'integration-guest', reconnectSecret: guest.reconnectSecret })).type, 'error');
   assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 200,
     'Database session survives the server restart');
+  if (dockerStarted) {
+    execFileSync('docker', ['stop', container], {stdio:'ignore'});
+    await delay(500);
+    assert.equal((await fetch(`${base}/health`)).status,200,'Database outage must not crash the server');
+    assert.equal((await fetch(`${base}/ready`)).status,503,'Database outage must fail readiness');
+    const interrupted = new WebSocket(base.replace('http','ws'),{headers:{Cookie:cookie}});sockets.push(interrupted);
+    const closed = new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Database outage authentication did not close')),12000);interrupted.on('error',()=>{});interrupted.once('close',code=>{clearTimeout(timer);resolve(code);});});
+    assert.equal(await closed,1013,'Authentication lookup failure must not fall back to guest privileges');
+    assert.equal((await fetch(`${base}/health`)).status,200);
+    console.log('POSTGRES OUTAGE PASS: server stays alive, readiness fails, and authentication closes safely.');
+  }
   console.log('POSTGRES PASS: real migrations, explicit admin roles, revocation, durable sessions, and safe guest-room restart.');
 } finally {
   await stop();
   await repository?.close();
-  if (dockerStarted) execFileSync('docker', ['rm', '-f', container], { stdio: 'ignore' });
+  if (dockerStarted) { try { execFileSync('docker', ['rm', '-f', container], { stdio: 'ignore' }); } catch {} }
 }

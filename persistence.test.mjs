@@ -1,7 +1,8 @@
+import { EventEmitter } from 'node:events';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hashSessionToken } from './auth.mjs';
-import { DuplicateEmailError, InMemoryRepository, createRepositoryFromEnv } from './persistence.mjs';
+import { DuplicateEmailError, InMemoryRepository, PostgresRepository, createRepositoryFromEnv } from './persistence.mjs';
 
 test('offline repository persists users, expires sessions, and revokes all sessions', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
@@ -34,4 +35,12 @@ test('DATABASE_URL absence selects the offline adapter without opening PostgreSQ
   assert.ok(repository instanceof InMemoryRepository);
   assert.equal(repository.kind, 'memory');
   await repository.close();
+});
+
+test('idle PostgreSQL errors are bounded and recover without retaining private error contents',async()=>{
+ const pool=new EventEmitter();pool.query=async()=>({rows:[{value:1}]});
+ const repository=new PostgresRepository({pool});
+ assert.doesNotThrow(()=>pool.emit('error',new Error('private database connection details')));
+ assert.equal(repository.poolErrors,1);assert.equal(await repository.healthCheck(),true);
+ assert.equal(repository.lastError,undefined);await repository.close();assert.equal(pool.listenerCount('error'),0);
 });

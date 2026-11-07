@@ -153,3 +153,15 @@ test('font downloads do not consume room connection allowance while API throttli
  }
  assert.equal(limited,true,'API request protection must still enforce its limit');
 });
+
+test('WebSocket rejects unsafe JSON and invalid UTF-8 without reflecting contents or losing room usability',async t=>{
+ const running=await startServer();t.after(()=>running.server.kill());const client=socket(running.ws);t.after(()=>client.instance.terminate());await client.open();
+ const invalid=['[1,2]', '{"__proto__":{"secret":"do-not-reflect"}}', '{"nested":'+ '['.repeat(12)+'0'+']'.repeat(12)+'}'];
+ for(const payload of invalid){
+  const reply=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Validation timeout')),3000);client.instance.once('message',raw=>{clearTimeout(timer);resolve(JSON.parse(raw))});});
+  client.instance.send(payload,{binary:false});const result=await reply;assert.equal(result.type,'error');assert.match(result.message,/Invalid message/);assert.ok(!result.message.includes('do-not-reflect'));
+ }
+ client.instance.send(JSON.stringify({type:'create-room',name:'Safe after errors',displayName:'Test',guestId:'safe-json-test'}));
+ const joined=await client.wait(m=>m.type==='joined');assert.equal(joined.state.room.name,'Safe after errors');
+ const closed=new Promise(resolve=>client.instance.once('close',resolve));client.instance.send(Buffer.from([0xc3,0x28]),{binary:false});assert.equal(await closed,1007);
+});

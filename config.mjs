@@ -17,6 +17,7 @@ export function productionConfigErrors(env = process.env, { appVersion = env.APP
   }
 
   const errors = [];
+  if (env.TRUST_PROXY_HOPS && (!/^[1-8]$/.test(String(env.TRUST_PROXY_HOPS)))) errors.push('TRUST_PROXY_HOPS must be an integer from 1 to 8.');
   if (!nonEmpty(env.DATABASE_URL)) errors.push('DATABASE_URL must be configured in production.');
 
   const origins = String(env.ALLOWED_ORIGINS || '')

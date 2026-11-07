@@ -19,6 +19,24 @@ import java.util.concurrent.atomic.AtomicInteger
 /** These tests run the production writer, queue and codec, not a startup policy. */
 class Pcm16RelayPlayerTest {
     @Test
+    fun healthCombinesHardwareAndSoftwareWithoutInventingMissingReadings() {
+        val output = Output(capacity = 3840)
+        player(output).use { player ->
+            assertNull(player.playbackHealth())
+            player.start(Pcm16RelayPlayer.FORMAT, EPOCH)
+            assertNull(player.playbackHealth()!!.bufferMs)
+            output.measuredOutput = Pcm16OutputHealth(40.0, 40.0, 2, true)
+            val health = player.playbackHealth()!!
+            assertEquals(40.0, health.bufferMs!!, 0.001)
+            assertEquals(40.0, health.targetMs!!, 0.001)
+            assertEquals(2, health.underruns)
+            assertNull(health.packetAgeMs)
+            player.stop()
+            assertNull(player.playbackHealth())
+        }
+    }
+
+    @Test
     fun outputWithoutHealthMeasurementIsNeverReportedAsZeroUnderruns() {
         val output = Output(capacity = 3840)
         player(output).use { player ->
@@ -632,6 +650,8 @@ class Pcm16RelayPlayerTest {
         results: List<Int> = emptyList(),
         private val manualConsumption: Boolean = false,
     ) : Pcm16RelayAudioOutput {
+        var measuredOutput: Pcm16OutputHealth? = null
+        override fun outputHealth(): Pcm16OutputHealth? = measuredOutput
         var measuredUnderruns: Int? = null
         override fun underrunCount(): Int? = measuredUnderruns
         override val bufferCapacityBytes = capacity

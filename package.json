@@ -15,7 +15,9 @@
     "smoke": "node smoke.mjs",
     "test:browser": "playwright test",
     "test:postgres": "node checks/postgres-integration.mjs",
-    "build": "npm run check"
+    "build": "npm run check",
+    "test:capacity": "node checks/capacity.mjs",
+    "test:recovery": "node checks/recovery-drill.mjs"
   },
   "dependencies": {
     "@neon/config": "^1.13.0",
