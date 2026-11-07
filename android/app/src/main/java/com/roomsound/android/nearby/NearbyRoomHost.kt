@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 import com.roomsound.android.room.Pcm16RelayPacketCodec
 
 /** One ephemeral local room. No database, account service, STUN or cloud requests. */
-class NearbyRoomHost(private val page: () -> InputStream, private val port: Int = 8765, private val tlsFactory: javax.net.ssl.SSLServerSocketFactory? = null) : NearbyWSD(port), Closeable {
+class NearbyRoomHost(private val page: () -> InputStream, private val port: Int = 8765, private val tlsFactory: javax.net.ssl.SSLServerSocketFactory? = null, private val certificatePem: String? = null) : NearbyWSD(port), Closeable {
     val invite = UUID.randomUUID().toString()
     private val ownerKey = UUID.randomUUID().toString()
     val ownerEndpoint get() = "ws://127.0.0.1:$listeningPort/?owner=$ownerKey"
@@ -86,6 +86,7 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
     }
     override fun serveHttp(session: IHTTPSession): Response {
         if (session.method != Method.GET) return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, "text/plain", "GET only")
+        if (session.uri == "/nearby-certificate" && certificatePem != null) return newFixedLengthResponse(Response.Status.OK,"application/x-pem-file",certificatePem).also { it.addHeader("Cache-Control","no-store") }
         if (session.uri == "/config") return newFixedLengthResponse("{\"iceServers\":[],\"mediaRelay\":{\"enabled\":true,\"mode\":\"pcm16\",\"sampleRate\":48000,\"channels\":1},\"nearby\":true}")
         if (session.uri != "/" && session.uri != "/index.html") return newFixedLengthResponse(Response.Status.NOT_FOUND,"text/plain","Not found")
         val authority = session.headers["host"].orEmpty().takeIf { it.matches(Regex("[0-9.]+:[0-9]+")) }

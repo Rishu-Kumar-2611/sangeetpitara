@@ -13,6 +13,11 @@ import javax.net.ssl.X509TrustManager
 /** A private IPv4 endpoint and its exact certificate, carried in the local invite. */
 data class NearbyPairing(val host: String, val port: Int, val invite: String, val code: String, val fingerprint: String) {
     val endpoint get() = "wss://$host:$port/?invite=$invite"
+    fun reconnectSecret(master: String): String {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(master.toByteArray(Charsets.UTF_8),"HmacSHA256"))
+        return mac.doFinal("$endpoint:$fingerprint".toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    }
     fun client(): OkHttpClient {
         val trust = object : X509TrustManager {
             override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()

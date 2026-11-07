@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const files = [
@@ -15,6 +16,7 @@ const files = [
   'ads.mjs',
   'media-relay.mjs',
   'app.js',
+  'themes.js',
   'room-palette.js',
   'relay-pcm.js',
   'relay-capture-worklet.js',
@@ -25,11 +27,17 @@ const files = [
   'smoke.mjs',
 ];
 
-for (const file of files) {
+// The production-only image excludes desktop tools and Android assets.
+const developmentFiles = ['desktop/nearby-desktop.mjs', 'desktop/package-desktop.mjs', 'desktop/sync-nearby-theme.mjs'];
+for (const file of [...files, ...developmentFiles.filter(file => existsSync(resolve(root,file)))]) {
   const result = spawnSync(process.execPath, ['--check', resolve(root, file)], {
     cwd: root,
     stdio: ['ignore', 'inherit', 'inherit'],
   });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
+}
+if (existsSync(resolve(root,'desktop/sync-nearby-theme.mjs'))) {
+  const sync = spawnSync(process.execPath, [resolve(root, 'desktop/sync-nearby-theme.mjs'), '--check'], { cwd: root, stdio: 'inherit' });
+  if (sync.status !== 0) process.exit(sync.status ?? 1);
 }

@@ -7,6 +7,40 @@ button{min-height:50px;font-weight:600;background:#efad48;border:1px solid #f8c6
 button:focus-visible,input:focus-visible{outline:3px solid #77cbbb;outline-offset:3px}#status{border:1px solid #77603d;border-radius:16px;background:#211b15;padding:16px;color:#f3d9af}
 #chat{padding-left:22px;border-block:1px solid #ffffff14;min-height:48px}#leave{background:transparent;border-color:#77603d;color:#edcd9e}
 </style>
+<!-- SHARED THEME START --><style data-shared-theme>.theme-bar { position: sticky; top: 0; z-index: 35; display: flex; justify-content: flex-end; padding: 8px clamp(16px,4vw,40px); min-height: 52px; background: var(--glass-strong,#211b15); color: var(--muted,#c4b6a7); border-bottom: 1px solid var(--line,#ffffff18); backdrop-filter: blur(20px); }
+.theme-bar label { display: flex; align-items: center; gap: 10px; font: 14px system-ui; }
+.theme-bar select { width: auto; min-height: 36px; padding: 6px 30px 6px 12px; border-radius: 12px; border: 1px solid var(--line-strong,#77603d); background: var(--surface,#211b15); color: var(--text,#f7f1ea); font: inherit; }
+.theme-bar select:focus-visible { outline: 3px solid var(--accent,#efad48); outline-offset: 2px; }
+html[data-theme] { color-scheme: dark; }
+html[data-theme=midnight] { --bg:#0c1220; --surface:#172238; --text:#f0f4ff; --muted:#b2c2dd; --accent:#91b8ff; --accent-hover:#b9d2ff; --on-accent:#091324; --accent-soft:#91b8ff22; --glass:#172238c0; --glass-strong:#172238eb; --room-color-1:#152c4a !important; --room-color-2:#1c2444 !important; --room-hue-1:210 !important; --room-hue-2:237 !important; }
+html[data-theme=forest] { --bg:#0b1713; --surface:#142820; --text:#eff8ef; --muted:#b6cabb; --accent:#83d7b1; --accent-hover:#b1f3d6; --on-accent:#071c12; --accent-soft:#83d7b122; --glass:#142820c0; --glass-strong:#142820eb; --room-color-1:#153c2c !important; --room-color-2:#173734 !important; --room-hue-1:147 !important; --room-hue-2:174 !important; }
+html[data-theme=rose] { --bg:#1c1018; --surface:#2c1b28; --text:#fff0f7; --muted:#cfb1c3; --accent:#edaccc; --accent-hover:#ffd1e7; --on-accent:#2b0f21; --accent-soft:#edaccc22; --glass:#2c1b28c0; --glass-strong:#2c1b28eb; --room-color-1:#42213a !important; --room-color-2:#361e30 !important; --room-hue-1:326 !important; --room-hue-2:303 !important; }
+html[data-theme] .topbar { top: 60px; }
+html[data-theme] #app + footer { color: var(--muted); }
+@media(max-width:600px) { html[data-theme] .room-actions-menu { top: 124px; } }
+
+:root{--bg:#100d0b;--surface:#211b15;--text:#f7f1ea;--muted:#c4b6a7;--accent:#efad48;--on-accent:#19150d;--room-color-1:#19322c;--room-color-2:#281b12}
+body{background:radial-gradient(ellipse at top left,var(--room-color-1),transparent 65%),var(--bg);color:var(--text)}h1,a{color:var(--accent)}p,small{color:var(--muted)}input{background:var(--bg);color:var(--text)}button{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}#status{background:var(--surface);color:var(--text)}#leave{color:var(--accent)}aside{border:1px solid #ffffff22;border-radius:16px;padding:16px;margin:16px 0;font-size:15px}.theme-bar{padding:8px 0;background:var(--surface)}
+</style><script data-shared-theme>(() => {
+  const choices = [['brass','Brass'],['midnight','Midnight'],['forest','Forest'],['rose','Rose']];
+  let selected = 'brass';
+  try { const saved = localStorage.getItem('sangeetpitara-theme'); if (choices.some(([key]) => key === saved)) selected = saved; } catch {}
+  document.documentElement.dataset.theme = selected;
+  const attach = () => {
+    const bar = document.createElement('div'); bar.className = 'theme-bar';
+    const label = document.createElement('label'); label.textContent = 'Theme ';
+    const picker = document.createElement('select'); picker.id = 'theme-picker'; picker.setAttribute('aria-label','Theme');
+    for (const [key,name] of choices) { const option = document.createElement('option'); option.value = key; option.textContent = name; picker.append(option); }
+    picker.value = selected;
+    picker.addEventListener('change', () => {
+      document.documentElement.dataset.theme = picker.value;
+      try { localStorage.setItem('sangeetpitara-theme',picker.value); } catch {}
+    });
+    label.append(picker); bar.append(label); document.body.prepend(bar);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',attach,{once:true}); else attach();
+})();
+</script><!-- SHARED THEME END -->
 <!-- /*
  * #%L
  * NanoHttpd-Websocket
@@ -39,13 +73,14 @@ button:focus-visible,input:focus-visible{outline:3px solid #77cbbb;outline-offse
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  * #L%
  */ -->
-<h1>Nearby Vibe</h1><p>Take turns playing music. Same Wi-Fi or hotspot. No internet required.</p><small>This local room uses your hotspot's network security. Join a trusted host; keep the hotspot password private. Your browser may pause audio when backgrounded.</small><p id="status" role="status">Enter your name and tap Listen.</p><label for="name">Your name</label><input id="name" maxlength="40" autocomplete="nickname"><button id="listen">Join and listen</button><button id="leave" hidden>Leave room</button><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step=".05" value=".8"><section id="controls" hidden><h2>Audio control</h2><p id="source-status"></p><p>To share sound from other Android apps, use Play Close → Join nearby room in app. In this browser, choose a music file stored on your device.</p><label for="track">Music file to share</label><input id="track" type="file" accept="audio/*"><button id="request">Ask to play music</button><button id="cancel-request" hidden>Cancel request</button><button id="share" hidden>Play selected music</button><button id="stop-source" hidden>Stop sharing</button><button id="takeover" hidden>Take back audio control</button><div id="moderation"></div></section><h2>Room chat</h2><ul id="chat"></ul><form id="form"><label for="message">Message</label><input id="message" maxlength="1000"><button>Send</button></form>
+<section id="desktop-pairing" hidden><h2>Connect to your local host</h2><p>Join the host's Wi-Fi or hotspot, then paste the complete invite copied from the updated Android app.</p><form id="pair-form"><label for="pair-invite">Host's local invite</label><input id="pair-invite" type="url" required><button>Connect to host</button></form><p id="pair-status" role="status"></p></section><h1>Play Close</h1><p>Take turns playing music. Same Wi-Fi or hotspot. No internet required.</p><small>This local room uses your hotspot's network security. Join a trusted host; keep the hotspot password private. Your browser may pause audio when backgrounded.</small><p id="status" role="status">Enter your name and tap Listen.</p><label for="name">Your name</label><input id="name" maxlength="40" autocomplete="nickname"><button id="listen">Join and listen</button><button id="leave" hidden>Leave room</button><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step=".05" value=".8"><section id="controls" hidden><h2>Audio control</h2><p id="source-status"></p><p>To share sound from other Android apps, use Play Close → Join nearby room in app. On Windows, use the desktop companion to share screen or tab audio after approval. Only audio is sent to the room; your screen video stays on your device.</p><button id="share-screen" hidden>Share screen / system audio</button><aside id="screen-setup"><p>Screen audio needs the Windows desktop companion. Download and extract it, run Start Play Close.cmd, then paste this host's complete invite into its local browser page. After approval, select Entire screen and enable Share system audio, or choose a Chrome/Edge tab with audio.</p><a href="https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/latest/download/SangeetPitara-Desktop-Windows.zip" target="_blank" rel="noopener">Download Windows companion</a><p>The download needs internet once. Room audio stays on your hotspot. Ordinary HTTP invite pages can still listen and share saved files.</p></aside><label for="track">Or share a saved music file</label><input id="track" type="file" accept="audio/*"><button id="request">Ask to play music</button><button id="cancel-request" hidden>Cancel request</button><button id="share" hidden>Play selected music</button><button id="stop-source" hidden>Stop sharing</button><button id="takeover" hidden>Take back audio control</button><div id="moderation"></div></section><h2>Room chat</h2><ul id="chat"></ul><form id="form"><label for="message">Message</label><input id="message" maxlength="1000"><button>Send</button></form>
 <script>
 'use strict';
 const $=id=>document.getElementById(id),params=new URLSearchParams(location.hash.slice(1)),invite=params.get('invite'),code=params.get('code');
 let ws,ctx,gain,node,joining=false,ended=false,retry=0,timer,epoch=null,guest=crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random(),secret=null;
-try{guest=sessionStorage.getItem('nv-guest')||guest;sessionStorage.setItem('nv-guest',guest);secret=sessionStorage.getItem('nv-secret')}catch{}
-let roomState=null,trackUrl=null,trackPlayer=null,trackSource=null,publishNode=null,publishEpoch=null,packetSamples=[],sequence=0;
+const identityKey='nv-'+(window.NEARBY_DESKTOP?.scope||params.get('pin')||location.host)+'-'+invite;
+try{guest=sessionStorage.getItem(identityKey+'-guest')||guest;sessionStorage.setItem(identityKey+'-guest',guest);secret=sessionStorage.getItem(identityKey+'-secret')}catch{}
+let roomState=null,trackUrl=null,trackPlayer=null,trackSource=null,publishNode=null,publishEpoch=null,packetSamples=[],sequence=0,screenStream=null,captureGeneration=0,pendingScreenEpoch=null,localShareError=null;
 let ring=new Float32Array(288000),write=0,read=0,fill=0,target=5760,playing=false,lastArrival=null;
 function status(t){$('status').textContent=t}
 function reset(){write=read=fill=0;playing=false;lastArrival=null;target=5760}
@@ -53,7 +88,7 @@ function send(data){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(da
 function append(name,text){const li=document.createElement('li');li.textContent=name+': '+text;$('chat').append(li);while($('chat').children.length>50)$('chat').firstChild.remove()}
 function connect(){if(!joining||ended)return;ws=new WebSocket('ws://'+location.host+'/?invite='+encodeURIComponent(invite));ws.binaryType='arraybuffer';
 ws.onopen=()=>send({type:'join-room',code,guestId:guest,reconnectSecret:secret,displayName:$('name').value.trim()});
-ws.onmessage=e=>{if(typeof e.data==='string'){const m=JSON.parse(e.data);if(m.type==='joined'){secret=m.reconnectSecret;try{sessionStorage.setItem('nv-secret',secret)}catch{}retry=0;status('Connected locally. Waiting for host music.');$('listen').hidden=true;$('leave').hidden=false}if(m.state){renderControls(m.state);const r=m.state.room;if(epoch!==r.sourceEpoch){reset();epoch=r.sourceEpoch}if(r.sourceStatus!=='LIVE'){reset();status('Connected locally. Waiting for host music.')}}if(m.type==='chat')append(m.message.senderName,m.message.text);if(m.type==='removed'){ended=true;stop();status('You were removed from this nearby room.')}if(m.type==='room-ended'){ended=true;stop();status('The host ended this nearby room.')}if(m.type==='error')status(m.message);return}
+ws.onmessage=e=>{if(typeof e.data==='string'){const m=JSON.parse(e.data);if(m.type==='joined'){secret=m.reconnectSecret;try{sessionStorage.setItem(identityKey+'-secret',secret)}catch{}retry=0;status('Connected locally. Waiting for host music.');$('listen').hidden=true;$('leave').hidden=false}if(m.state){renderControls(m.state);const r=m.state.room;if(epoch!==r.sourceEpoch){reset();epoch=r.sourceEpoch}if(r.sourceStatus!=='LIVE'){reset();if(!localShareError)status('Connected locally. Waiting for host music.')}}if(m.type==='chat')append(m.message.senderName,m.message.text);if(m.type==='removed'){ended=true;stop();status('You were removed from this nearby room.')}if(m.type==='room-ended'){ended=true;stop();status('The host ended this nearby room.')}if(m.type==='error')status(m.message);return}
 const v=new DataView(e.data);if(v.byteLength<20||v.getUint32(0)!==0x52535231||v.getUint8(4)!==1||v.getUint8(5)!==1||v.getUint32(6,true)!==48000||v.getUint32(10,true)!==epoch)return;
 const n=v.getUint16(18,true);if(n<1||n>32768||20+n*2!==v.byteLength)return;const now=performance.now();if(lastArrival!==null&&now-lastArrival>80)target=Math.min(144000,Math.max(target,Math.ceil((now-lastArrival+100)*48)));lastArrival=now;
 if(fill+n>=ring.length){read=write;fill=0;playing=false}for(let i=0;i<n;i++){ring[write]=v.getInt16(20+i*2,true)/32768;write=(write+1)%ring.length}fill+=n;if(!playing&&fill>=target){playing=true;status('Listening over local Wi-Fi · '+Math.round(fill/48)+' ms buffered')}
@@ -63,6 +98,8 @@ ws.onerror=()=>status('Cannot reach the host. Check that you joined the same hot
 async function audio(){ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});await ctx.resume();gain=ctx.createGain();gain.gain.value=Number($('volume').value);gain.connect(ctx.destination);node=ctx.createScriptProcessor(2048,0,1);node.onaudioprocess=e=>{const out=e.outputBuffer.getChannelData(0),step=48000/ctx.sampleRate;for(let i=0;i<out.length;i++){if(!playing||fill<Math.ceil(step)+1){out[i]=0;if(playing){playing=false;target=Math.min(144000,Math.max(target+4800,target*1.5));status('Buffering local music…')}continue}const at=Math.floor(read),f=read-at;out[i]=ring[at]*(1-f)+ring[(at+1)%ring.length]*f;read=(read+step)%ring.length;fill-=step}};node.connect(gain)}
 function stop(){stopTrack();roomState=null;$('controls').hidden=true;joining=false;clearTimeout(timer);send({type:'leave-room'});ws?.close();node?.disconnect();gain?.disconnect();ctx?.close();ctx=null;reset();$('listen').hidden=false;$('leave').hidden=true}
 function stopTrack(){
+  captureGeneration++;pendingScreenEpoch=null;
+  const captured=screenStream;screenStream=null;captured?.getTracks().forEach(track=>track.stop());
   trackPlayer?.pause();if(trackPlayer){trackPlayer.removeAttribute('src');trackPlayer.load()}
   trackSource?.disconnect();publishNode?.disconnect();trackPlayer=trackSource=publishNode=null;
   if(trackUrl)URL.revokeObjectURL(trackUrl);trackUrl=null;packetSamples=[];publishEpoch=null;
@@ -72,9 +109,10 @@ function renderControls(state){
   $('controls').hidden=false;const mine=room.activeSourceId===self.id,moderator=self.id===room.hostId||self.id===room.cohostId;
   const pending=(state.requests||[]).find(r=>r.requesterId===self.id&&r.status==='PENDING');
   const source=(state.members||[]).find(m=>m.id===room.activeSourceId);
-  $('source-status').textContent=mine?'You have audio control. Choose a music file and tap Play.':source?source.name+' has audio control.':'No music is being shared. Ask the host for control.';
+  $('source-status').textContent=mine?'You have audio control. Share screen/tab audio or choose a music file.':source?source.name+' has audio control.':'No music is being shared. Ask the host for control.';
   $('request').hidden=mine||!!pending||moderator;$('cancel-request').hidden=!pending;
-  $('share').hidden=!(mine||moderator);$('stop-source').hidden=!mine;$('takeover').hidden=!moderator||mine;
+  $('share').hidden=!(mine||moderator);$('share-screen').hidden=!(mine||moderator);$('stop-source').hidden=!mine;$('takeover').hidden=!moderator||mine;
+  if(pendingScreenEpoch!==null&&((!mine&&!moderator)||room.sourceEpoch!==pendingScreenEpoch))stopTrack();
   if(publishNode&&(!mine||!((room.sourceStatus==='LIVE'&&publishEpoch===room.sourceEpoch)||(room.sourceStatus==='STARTING'&&publishEpoch===room.sourceEpoch+1))))stopTrack();
   const area=$('moderation');area.replaceChildren();if(!moderator)return;
   const action=(label,data)=>{const b=document.createElement('button');b.textContent=label;b.onclick=()=>send(data);area.append(b)};
@@ -97,11 +135,50 @@ function publishAudio(input){
     }
   }
 }
-$('request').onclick=()=>send({type:'request-control',sourceType:'DEVICE_AUDIO',note:'Share a local music file'});
+$('request').onclick=()=>send({type:'request-control',sourceType:'DEVICE_AUDIO',note:'Share screen/tab audio or a local music file'});
 $('cancel-request').onclick=()=>{const r=roomState?.requests?.find(r=>r.requesterId===roomState.self?.id&&r.status==='PENDING');if(r)send({type:'cancel-request',requestId:r.id})};
 $('takeover').onclick=()=>send({type:'takeover',sourceType:'DEVICE_AUDIO'});
 $('stop-source').onclick=()=>{stopTrack();send({type:'stop-source'})};
+$('screen-setup').hidden=!!window.NEARBY_DESKTOP||!!(window.isSecureContext&&navigator.mediaDevices?.getDisplayMedia);
+if(window.NEARBY_DESKTOP){
+  $('desktop-pairing').hidden=false;
+  $('pair-status').textContent=window.NEARBY_DESKTOP.paired?'Host paired. Enter your name below to join.':'Waiting for the host invite.';
+  $('pair-form').onsubmit=async event=>{
+    event.preventDefault();if(joining){$('pair-status').textContent='Leave the current room before pairing again.';return}
+    try{
+      const response=await fetch('/pair',{method:'POST',headers:{'Content-Type':'application/json','X-Nearby-Token':window.NEARBY_DESKTOP.token},body:JSON.stringify({invite:$('pair-invite').value.trim()})});
+      const result=await response.json();if(!response.ok)throw Error(result.error);
+      location.hash=new URLSearchParams({invite:result.invite,code:result.code}).toString();location.reload();
+    }catch(error){$('pair-status').textContent=error.message||'Cannot connect to the host.'}
+  };
+}
+$('share-screen').onclick=async()=>{
+  localShareError=null;
+  const state=roomState,r=state?.room,self=state?.self;
+  if(!r||!self||(r.activeSourceId!==self.id&&r.hostId!==self.id&&r.cohostId!==self.id)){status('Ask the host for audio control first.');return}
+  if(!window.isSecureContext||!navigator.mediaDevices?.getDisplayMedia){$('screen-setup').hidden=false;status('Use the Windows desktop companion for screen audio. See the download and setup instructions below.');return}
+  stopTrack();const generation=captureGeneration;pendingScreenEpoch=r.sourceEpoch;
+  try{
+    // The picker must open directly from the participant's own click.
+    const captured=await navigator.mediaDevices.getDisplayMedia({video:{displaySurface:'monitor'},audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,suppressLocalAudioPlayback:false},systemAudio:'include',windowAudio:'system',selfBrowserSurface:'exclude',surfaceSwitching:'include'});
+    if(generation!==captureGeneration||roomState?.room.id!==r.id||roomState?.room.sourceEpoch!==r.sourceEpoch){captured.getTracks().forEach(t=>t.stop());return}
+    screenStream=captured;pendingScreenEpoch=null;
+    if(!captured.getAudioTracks().some(t=>t.readyState==='live'))throw Error('No audio was selected. Choose Entire screen with Share system audio, or a Chrome/Edge tab with Share tab audio.');
+    await ctx.resume();if(generation!==captureGeneration)return;
+    if(ctx.sampleRate!==48000)throw Error('This browser cannot publish at 48 kHz. Try current Chrome or Edge.');
+    trackSource=ctx.createMediaStreamSource(new MediaStream(captured.getAudioTracks()));
+    publishNode=ctx.createScriptProcessor(2048,2,1);publishNode.onaudioprocess=e=>{publishAudio(e.inputBuffer);e.outputBuffer.getChannelData(0).fill(0)};
+    trackSource.connect(publishNode);publishNode.connect(gain);publishEpoch=roomState.room.sourceEpoch+1;
+    for(const track of captured.getTracks())track.onended=()=>{if(generation===captureGeneration){stopTrack();if(roomState?.room.activeSourceId===roomState?.self?.id)send({type:'stop-source'});status('Screen audio sharing stopped.')}};
+    send({type:'start-source',sourceType:'DEVICE_AUDIO',sourceLabel:'screen or tab audio'});status('Sharing screen/tab audio locally. Screen video is not transmitted.');
+  }catch(error){
+    if(generation!==captureGeneration)return;
+    stopTrack();if(roomState?.room.activeSourceId===roomState?.self?.id)send({type:'stop-source'});
+    localShareError=error.name==='NotAllowedError'?'Screen sharing was cancelled or not permitted.':error.message||'Screen audio could not start.';status(localShareError);
+  }
+};
 $('share').onclick=async()=>{
+  localShareError=null;
   const file=$('track').files[0];if(!file){status('Choose a music file on your device first.');return}
   try{
     await ctx.resume();if(ctx.sampleRate!==48000)throw Error('This browser cannot publish at 48 kHz. Use the Android app.');
@@ -114,7 +191,7 @@ $('share').onclick=async()=>{
     trackPlayer.onended=()=>{stopTrack();if(roomState?.room.activeSourceId===roomState?.self?.id)send({type:'stop-source'})};
     trackPlayer.onerror=()=>{stopTrack();if(roomState?.room.activeSourceId===roomState?.self?.id)send({type:'stop-source'});status('This file could not be played. Choose another audio file.')};
     await trackPlayer.play();status('Sharing your music over local Wi-Fi.');
-  }catch(error){stopTrack();if(roomState?.room.activeSourceId===roomState?.self?.id)send({type:'stop-source'});status(error.message||'Could not play that music file.')}
+  }catch(error){stopTrack();if(roomState?.room.activeSourceId===roomState?.self?.id)send({type:'stop-source'});localShareError=error.message||'Could not play that music file.';status(localShareError)}
 };
 $('listen').onclick=async()=>{if(joining)return;if(!invite||!code){status('Open the complete local invitation copied by your host.');return}if(!$('name').value.trim()){status('Enter your name first.');return}try{ended=false;await audio();joining=true;connect()}catch{status('Audio could not start. Try Chrome or another browser, then tap Listen again.')}};
 $('leave').onclick=()=>{stop();status('You left the nearby room.')};$('volume').oninput=()=>{if(gain)gain.gain.value=Number($('volume').value)};$('form').onsubmit=e=>{e.preventDefault();if($('message').value.trim()){send({type:'chat',text:$('message').value.trim()});$('message').value=''}};addEventListener('pagehide',stop);

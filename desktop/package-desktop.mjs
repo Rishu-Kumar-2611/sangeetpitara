@@ -1,0 +1,37 @@
+import { readFile, writeFile, mkdir, rm, cp, copyFile } from 'node:fs/promises';
+import { resolve, dirname, basename, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+const sync=spawnSync(process.execPath,[fileURLToPath(new URL('sync-nearby-theme.mjs',import.meta.url)),'--check'],{stdio:'inherit'});
+if(sync.status!==0)throw Error('Bundled offline themes are out of date.');
+const work=resolve(root,'.desktop-package');
+if(dirname(work)!==root||basename(work)!=='.desktop-package')throw Error('Unsafe packaging path.');
+await rm(work,{recursive:true,force:true});await mkdir(work,{recursive:true});
+const checks=await(await fetch('https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt')).text();
+const match=checks.match(/^([a-f0-9]{64})\s+(node-v24\.\d+\.\d+-win-x64\.zip)$/m);
+if(!match)throw Error('Could not find the official Node.js Windows x64 runtime.');
+const response=await fetch(`https://nodejs.org/dist/latest-v24.x/${match[2]}`);if(!response.ok)throw Error(`Node download failed: ${response.status}`);
+const archive=Buffer.from(await response.arrayBuffer());
+if(createHash('sha256').update(archive).digest('hex')!==match[1])throw Error('Node.js runtime checksum mismatch.');
+const archivePath=join(work,'node.zip');await writeFile(archivePath,archive);
+const unpacked=join(work,'node-unpacked');await mkdir(unpacked);
+const run=(command,args,cwd=root)=>{const result=spawnSync(command,args,{cwd,stdio:'inherit'});if(result.error)throw result.error;if(result.status!==0)throw Error(`${command} failed`);};
+const quote=text=>`'${text.replaceAll("'","''")}'`;
+if(process.platform==='win32')run('powershell.exe',['-NoProfile','-NonInteractive','-Command',`Expand-Archive -LiteralPath ${quote(archivePath)} -DestinationPath ${quote(unpacked)} -Force`]);
+else run('unzip',['-q',archivePath,'-d',unpacked]);
+const name='SangeetPitara-Desktop',stage=join(work,'package',name),nodeFolder=join(unpacked,match[2].replace(/\.zip$/,''));
+await mkdir(join(stage,'runtime'),{recursive:true});await mkdir(join(stage,'desktop'));await mkdir(join(stage,'android/app/src/main/assets/nearby'),{recursive:true});
+await copyFile(join(nodeFolder,'node.exe'),join(stage,'runtime/node.exe'));await copyFile(join(nodeFolder,'LICENSE'),join(stage,'runtime/NODE-LICENSE.txt'));
+await copyFile(join(root,'desktop/nearby-desktop.mjs'),join(stage,'desktop/nearby-desktop.mjs'));
+await copyFile(join(root,'desktop/Start Play Close.cmd'),join(stage,'Start Play Close.cmd'));await copyFile(join(root,'desktop/README.txt'),join(stage,'README.txt'));
+await copyFile(join(root,'android/app/src/main/assets/nearby/index.html'),join(stage,'android/app/src/main/assets/nearby/index.html'));
+await cp(join(root,'node_modules/ws'),join(stage,'node_modules/ws'),{recursive:true});
+await writeFile(join(stage,'package.json'),JSON.stringify({private:true,type:'module'}));
+await writeFile(join(stage,'runtime/runtime-provenance.txt'),`Official Node.js download: https://nodejs.org/dist/latest-v24.x/${match[2]}\nArchive SHA256: ${match[1]}\n`);
+await mkdir(join(root,'downloads'),{recursive:true});const output=join(root,'downloads/SangeetPitara-Desktop-Windows.zip');
+if(process.platform==='win32')run('powershell.exe',['-NoProfile','-NonInteractive','-Command',`Compress-Archive -LiteralPath ${quote(stage)} -DestinationPath ${quote(output)} -Force`]);
+else {await rm(output,{force:true});run('zip',['-q','-r',output,name],dirname(stage));}
+console.log(`DESKTOP PACKAGE PASS: ${basename(output)} with verified ${match[2]}`);

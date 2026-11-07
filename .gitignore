@@ -27,3 +27,5 @@ Thumbs.db
 .nearby-dev/
 
 .private-migration/
+.desktop-package/
+/downloads/*.zip

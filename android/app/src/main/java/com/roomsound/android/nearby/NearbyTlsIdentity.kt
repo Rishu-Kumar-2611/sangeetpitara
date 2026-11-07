@@ -16,6 +16,7 @@ import javax.security.auth.x500.X500Principal
 class NearbyTlsIdentity {
     val factory: SSLServerSocketFactory
     val fingerprint: String
+    val certificatePem: String
     init {
         val alias = "sangeetpitara-nearby-tls-v1"
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -34,6 +35,7 @@ class NearbyTlsIdentity {
             }
         }
         fingerprint = NearbyPairing.digest(store.getCertificate(alias) as X509Certificate)
+        certificatePem = "-----BEGIN CERTIFICATE-----\n" + java.util.Base64.getMimeEncoder(64,byteArrayOf(10)).encodeToString(store.getCertificate(alias).encoded) + "\n-----END CERTIFICATE-----\n"
         val managers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(store,null) }
         factory = SSLContext.getInstance("TLS").apply { init(managers.keyManagers,null,null) }.serverSocketFactory
     }

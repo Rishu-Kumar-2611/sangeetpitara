@@ -195,7 +195,7 @@ const securityHeaders = {
 // audit evidence, tests and future repository files are private by default.
 const publicFiles = new Set([
   'index.html', 'about.html', 'contact.html', 'privacy.html', 'terms.html',
-  'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css',
+  'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'themes.css', 'themes.js',
   'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
   'room-palette.js', 'media-relay.mjs', 'relay-pcm.js',
   'relay-capture-worklet.js', 'relay-playout-worklet.js', 'notifications-sw.js',
@@ -1580,6 +1580,10 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(302, { Location: ANDROID_APK_URL, 'Cache-Control': 'no-cache' });
     res.end();
     return;
+  }
+  if (requestPath === '/downloads/SangeetPitara-Desktop-Windows.zip') {
+    res.writeHead(302, { Location: 'https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/latest/download/SangeetPitara-Desktop-Windows.zip', 'Cache-Control': 'no-cache' });
+    res.end(); return;
   }
   if (requestPath === '/ads.txt') {
     const publisher = adsenseClient.replace(/^ca-/, '');

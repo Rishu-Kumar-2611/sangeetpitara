@@ -210,6 +210,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installUncaughtExceptionHandler()
+        AppThemes.apply(this)
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(0) {
@@ -218,7 +219,11 @@ class MainActivity : Activity() {
         }
         pendingCaptureId = savedInstanceState?.getString(STATE_PENDING_CAPTURE_ID)
         projectionConsentInFlight = savedInstanceState?.getBoolean(STATE_PROJECTION_IN_FLIGHT, false) == true
+        nativePage = savedInstanceState?.getString("native-page") ?: "home"
         setContentView(buildContentView())
+        savedInstanceState?.let { state ->
+            displayNameInput.setText(state.getString("entry-name", "")); roomNameInput.setText(state.getString("entry-room", "")); roomCodeInput.setText(state.getString("entry-code", ""))
+        }
         checkForAppUpdate()
         showPreviousCrashNotice()
         refreshCapability()
@@ -243,6 +248,8 @@ class MainActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(STATE_PENDING_CAPTURE_ID, pendingCaptureId)
         outState.putBoolean(STATE_PROJECTION_IN_FLIGHT, projectionConsentInFlight)
+        outState.putString("native-page", nativePage)
+        if (::displayNameInput.isInitialized) { outState.putString("entry-name",displayNameInput.text.toString()); outState.putString("entry-room",roomNameInput.text.toString()); outState.putString("entry-code",roomCodeInput.text.toString()) }
         super.onSaveInstanceState(outState)
     }
 
@@ -451,17 +458,23 @@ class MainActivity : Activity() {
             text = getString(R.string.header_eyebrow)
             textSize = 11f
             letterSpacing = 0.16f
-            setTextColor(getColor(R.color.roomsound_brass_bright))
+            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_brass_bright))
             setTypeface(labelTypeface)
         }, matchWrap())
         brandCopy.addView(TextView(this).apply {
             text = getString(R.string.header_title)
             textSize = 25f
-            setTextColor(getColor(R.color.roomsound_cream))
+            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream))
             setTypeface(headingTypeface)
             setPadding(0, dp(7), 0, dp(5))
         }, matchWrap())
         brandRow.addView(brandCopy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        brandRow.addView(button("Theme", ButtonTone.SECONDARY) {
+            android.app.AlertDialog.Builder(this).setTitle("Choose your theme")
+                .setSingleChoiceItems(AppThemes.names,AppThemes.selected(this)) { dialog,index ->
+                    if(index != AppThemes.selected(this)) { AppThemes.save(this,index); dialog.dismiss(); recreate() } else dialog.dismiss()
+                }.setNegativeButton("Cancel",null).show()
+        }, LinearLayout.LayoutParams(dp(88),LinearLayout.LayoutParams.WRAP_CONTENT))
         header.addView(brandRow, matchWrap())
         content.addView(header, panelLayout())
         nativeBack = button("← Welcome", ButtonTone.SECONDARY) { navigateNative("home") }
@@ -486,7 +499,7 @@ class MainActivity : Activity() {
 
         updatePanel = panelContainer().apply { visibility = View.GONE }
         updateText = labelText().apply {
-            setTextColor(getColor(R.color.roomsound_cream))
+            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream))
             setPadding(0, 0, 0, dp(8))
         }
         updatePanel.addView(updateText, matchWrap())
@@ -500,7 +513,7 @@ class MainActivity : Activity() {
         val accessPanel = panelContainer()
         accessPanel.visibility = View.GONE
         accessStatusText = labelText().apply {
-            setTextColor(getColor(R.color.roomsound_cream_soft))
+            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream_soft))
             setPadding(0, 0, 0, dp(8))
         }
         accessPanel.addView(accessStatusText, matchWrap())
@@ -625,7 +638,7 @@ class MainActivity : Activity() {
         val roomStatusPanel = statusPanel()
         roomConnectionText = labelText().apply {
             text = "Connection: not connected"
-            setTextColor(getColor(R.color.roomsound_brass_bright))
+            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_brass_bright))
             setTypeface(strongTypeface)
             setPadding(0, 0, 0, dp(4))
         }
@@ -650,7 +663,7 @@ class MainActivity : Activity() {
         roomCodePanel.addView(sectionLabel("Room code"), matchWrap())
         roomCodeText = TextView(this).apply {
             textSize = 30f
-            setTextColor(getColor(R.color.roomsound_cream))
+            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream))
             setTypeface(headingTypeface)
             letterSpacing = 0.12f
             gravity = Gravity.CENTER
@@ -975,7 +988,7 @@ class MainActivity : Activity() {
         rewardedAccessExpiryRunnable?.let(transportRenderHandler::removeCallbacks)
         rewardedAccessExpiryRunnable = null
         accessStatusText.text = "Free access — room creation, joining, and playback sharing are unrestricted on this device."
-        accessStatusText.setTextColor(getColor(R.color.roomsound_success))
+        accessStatusText.setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_success))
         accessButton.text = "Free access active"
         accessButton.isEnabled = false
         updateRoomEntryControls()
@@ -1907,8 +1920,8 @@ class MainActivity : Activity() {
         setHint(hint)
         setText(value ?: "")
         setSingleLine(true)
-        setTextColor(getColor(R.color.roomsound_cream))
-        setHintTextColor(getColor(R.color.roomsound_cream_muted))
+        setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream))
+        setHintTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream_muted))
         textSize = 15f
         minHeight = dp(48)
         setPadding(dp(13), dp(8), dp(13), dp(8))
@@ -1928,9 +1941,9 @@ class MainActivity : Activity() {
         gravity = Gravity.CENTER
         setTextColor(
             when (tone) {
-                ButtonTone.PRIMARY -> getColor(R.color.roomsound_on_accent)
-                ButtonTone.SECONDARY -> getColor(R.color.roomsound_cream)
-                ButtonTone.DANGER -> getColor(R.color.roomsound_danger)
+                ButtonTone.PRIMARY -> AppThemes.color(this@MainActivity, R.color.roomsound_on_accent)
+                ButtonTone.SECONDARY -> AppThemes.color(this@MainActivity, R.color.roomsound_cream)
+                ButtonTone.DANGER -> AppThemes.color(this@MainActivity, R.color.roomsound_danger)
             },
         )
         setBackgroundResource(
@@ -1946,7 +1959,7 @@ class MainActivity : Activity() {
     private fun sectionTitle(text: String): TextView = TextView(this).apply {
         this.text = text
         textSize = 18f
-        setTextColor(getColor(R.color.roomsound_cream))
+        setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream))
         setTypeface(headingTypeface)
         letterSpacing = 0.025f
         setPadding(0, 0, 0, dp(8))
@@ -1955,7 +1968,7 @@ class MainActivity : Activity() {
     private fun sectionLabel(text: String): TextView = TextView(this).apply {
         this.text = text
         textSize = 15f
-        setTextColor(getColor(R.color.roomsound_brass_bright))
+        setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_brass_bright))
         setTypeface(labelTypeface)
         setPadding(0, dp(3), 0, dp(6))
     }
@@ -1981,7 +1994,7 @@ class MainActivity : Activity() {
     }
 
     private fun diagnosticText(): TextView = labelText().apply {
-        setTextColor(getColor(R.color.roomsound_cream_soft))
+        setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream_soft))
         textSize = 12.5f
         setLineSpacing(0f, 1.15f)
         setBackgroundResource(R.drawable.bg_roomsound_inset)
@@ -1994,7 +2007,7 @@ class MainActivity : Activity() {
 
     private fun labelText(): TextView = TextView(this).apply {
         textSize = 13.5f
-        setTextColor(getColor(R.color.roomsound_cream_soft))
+        setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream_soft))
         setLineSpacing(0f, 1.12f)
     }
 

@@ -116,6 +116,12 @@ jobs:
           cp "$apk" "$RUNNER_TEMP/release/SangeetPitara-$TAG.apk"
           cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/release/SangeetPitara-$TAG.aab"
 
+      - name: Package offline Windows desktop companion
+        working-directory: .
+        run: |
+          node desktop/package-desktop.mjs
+          cp downloads/SangeetPitara-Desktop-Windows.zip "$RUNNER_TEMP/release/SangeetPitara-Desktop-Windows.zip"
+
       - name: Publish GitHub Release
         working-directory: .
         env:
@@ -128,7 +134,8 @@ jobs:
             --generate-notes \
             "$RUNNER_TEMP/release/SangeetPitara.apk" \
             "$RUNNER_TEMP/release/SangeetPitara-$TAG.apk" \
-            "$RUNNER_TEMP/release/SangeetPitara-$TAG.aab"
+            "$RUNNER_TEMP/release/SangeetPitara-$TAG.aab" \
+            "$RUNNER_TEMP/release/SangeetPitara-Desktop-Windows.zip"
 
       - name: Remove keystore
         if: always()

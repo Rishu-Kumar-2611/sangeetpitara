@@ -117,12 +117,14 @@ class NearbyRoomHostTest {
         val store=java.security.KeyStore.getInstance("PKCS12").apply{file.inputStream().use{load(it,"test-only-password".toCharArray())}}
         val managers=javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm()).apply{init(store,"test-only-password".toCharArray())}
         val tls=javax.net.ssl.SSLContext.getInstance("TLS").apply{init(managers.keyManagers,null,null)}
-        val host=NearbyRoomHost({"local".byteInputStream()},0,tls.serverSocketFactory);val clients=mutableListOf<OkHttpClient>();val sockets=mutableListOf<Client>()
+        val pem="-----BEGIN CERTIFICATE-----\n"+java.util.Base64.getMimeEncoder().encodeToString(store.getCertificate("nearby-test").encoded)+"\n-----END CERTIFICATE-----\n"
+        val host=NearbyRoomHost({"local".byteInputStream()},0,tls.serverSocketFactory,pem);val clients=mutableListOf<OkHttpClient>();val sockets=mutableListOf<Client>()
         try {
             host.startHosting()
             val pin=NearbyPairing.digest(store.getCertificate("nearby-test") as java.security.cert.X509Certificate)
             val pairing=NearbyPairing("127.0.0.1",host.securePort!!,host.invite,"ABC123",pin)
             val http=pairing.client().also{clients+=it}
+            http.newCall(Request.Builder().url("http://127.0.0.1:${host.listeningPort}/nearby-certificate").build()).execute().use{assertEquals(pem,it.body!!.string())}
             http.newCall(Request.Builder().url("https://127.0.0.1:${host.securePort}/config").build()).execute().use{assertTrue(it.isSuccessful)}
             val owner=Client(host.ownerEndpoint,OkHttpClient().also{clients+=it}).also{sockets+=it}
             owner.send("""{"type":"create-room","displayName":"Host","guestId":"owner"}""")
@@ -176,5 +178,13 @@ class NearbyRoomHostTest {
         repeat(400){if(budget.allow(1940,0))accepted++}
         assertTrue(accepted in 160..203)
         assertFalse(budget.allow(1940,0));assertTrue(budget.allow(1940,1000))
+    }
+
+    @Test fun localReconnectIdentityDoesNotExposeThePublicOrAnotherHostsCapability() {
+        val pair=NearbyPairing("192.168.43.1",8766,"test-invite","ABC234","a".repeat(64));val master="private-master-capability"
+        val secret=pair.reconnectSecret(master)
+        assertEquals(64,secret.length);assertNotEquals(master,secret);assertEquals(secret,pair.reconnectSecret(master))
+        assertNotEquals(secret,pair.copy(invite="another-invite").reconnectSecret(master))
+        assertNotEquals(secret,pair.copy(fingerprint="b".repeat(64)).reconnectSecret(master))
     }
 }

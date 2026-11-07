@@ -14,7 +14,7 @@ const controller = new AbortController();
 const budget = setTimeout(() => controller.abort(), 260_000);
 const normalize = (text) => text.replace(/\r\n/g, '\n');
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const assetVersion = '20261107-stability1';
+const assetVersion = '20261107-themes1';
 const releaseProperties = await readFile(new URL('../release.properties', import.meta.url), 'utf8');
 const expectedVersion = releaseProperties.match(/^VERSION_NAME=(.+)$/m)?.[1]?.trim();
 assert.match(expectedVersion || '', /^\d+\.\d+\.\d+$/, 'release.properties must define VERSION_NAME');
@@ -52,7 +52,7 @@ try {
   console.log('PASS PCM16 relay enabled');
 
   for (const file of [
-    'privacy.html', 'terms.html', 'styles.css', 'app.js', 'guest-id.js', 'room-palette.js',
+    'privacy.html', 'terms.html', 'styles.css', 'themes.css', 'themes.js', 'app.js', 'guest-id.js', 'room-palette.js',
     'capture-tracks.js', 'media-relay.mjs', 'relay-pcm.js',
     'relay-capture-worklet.js', 'relay-playout-worklet.js', 'ads.mjs', 'notifications-sw.js',
     'branding/sangeetpitara/05-diya-eighth-note.svg',
@@ -74,7 +74,11 @@ try {
     assert.match(location, /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/latest\/download\/SangeetPitara\.apk$/);
     console.log(`PASS /downloads/${file} -> ${location}`);
   }
-  console.log('RELEASE PASS: website assets match the local release and APK links redirect to GitHub Releases.');
+  const desktop = await fetch(new URL('/downloads/SangeetPitara-Desktop-Windows.zip', origin), { signal: controller.signal, redirect: 'manual' });
+  assert.equal(desktop.status,302,'Desktop download must redirect to the public release');
+  assert.match(desktop.headers.get('location') || '',/^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/latest\/download\/SangeetPitara-Desktop-Windows\.zip$/);
+  console.log('PASS Windows desktop companion download redirect');
+  console.log('RELEASE PASS: website assets match the release and downloads redirect to GitHub Releases.');
 } finally {
   clearTimeout(budget);
 }

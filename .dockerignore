@@ -16,3 +16,7 @@ android/local.properties
 android/artifacts/
 oracleJdk-*/
 .opencode/
+.private-migration/
+.desktop-package/
+downloads/*.zip
+android/.kotlin/

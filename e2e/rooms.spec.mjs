@@ -13,6 +13,8 @@ test('browser room creation, separate listener, chat, reconnect and leaving', as
   await page.getByLabel('Room name', { exact: true }).fill('Production check');
   await page.locator('#create-room').click();
   await expect(page.locator('#room-title')).toHaveText('Production check');
+  await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption('forest');
+  await expect(page.locator('#room-title')).toHaveText('Production check');
   const code = (await page.locator('#room-code-display').textContent()).trim();
   const listenerContext = await browser.newContext();
   try {
@@ -43,6 +45,21 @@ test('browser room creation, separate listener, chat, reconnect and leaving', as
     await expect(page.locator('#landing-view')).toBeVisible();
     expect(errors).toEqual([]);
   } finally { await listenerContext.close(); }
+});
+
+test('four themes persist across reload and keep the welcome layout usable', async ({ page }, info) => {
+  await page.goto('/');
+  const picker=page.getByRole('combobox',{name:'Theme',exact:true});
+  await expect(picker.locator('option')).toHaveCount(4);
+  const colors=[];
+  for(const key of ['brass','midnight','forest','rose']){
+    await picker.selectOption(key);await expect(page.locator('html')).toHaveAttribute('data-theme',key);
+    colors.push(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()));
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:info.outputPath(`theme-${key}.png`),fullPage:true});
+  }
+  expect(new Set(colors).size).toBe(4);
+  await page.reload();await expect(picker).toHaveValue('rose');await expect(page.locator('html')).toHaveAttribute('data-theme','rose');
 });
 
 test('room creation remains usable when localStorage is denied', async ({ page }) => {

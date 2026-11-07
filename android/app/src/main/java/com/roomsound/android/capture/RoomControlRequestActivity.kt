@@ -67,6 +67,7 @@ class RoomControlRequestActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        com.roomsound.android.AppThemes.apply(this,control=true)
         super.onCreate(savedInstanceState)
         configureWindow()
         requestId = intent.getStringExtra(RoomControlRequestNotifications.EXTRA_REQUEST_ID)
@@ -307,7 +308,7 @@ class RoomControlRequestActivity : Activity() {
     ): TextView = TextView(this).apply {
         text = value
         textSize = size
-        setTextColor(getColor(color))
+        setTextColor(com.roomsound.android.AppThemes.color(this@RoomControlRequestActivity, color))
         setTypeface(Typeface.create("sans-serif", style))
         setLineSpacing(0f, 1.12f)
     }
@@ -316,7 +317,7 @@ class RoomControlRequestActivity : Activity() {
         Button(this).apply {
             text = label
             isAllCaps = false
-            setTextColor(getColor(R.color.roomsound_cream))
+            setTextColor(com.roomsound.android.AppThemes.color(this@RoomControlRequestActivity, R.color.roomsound_cream))
             setTextSize(16f)
             setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL))
             background = getDrawable(backgroundResource)

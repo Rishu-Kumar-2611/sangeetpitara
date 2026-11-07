@@ -81,7 +81,7 @@ class RoomSessionCoordinator(
         check(canSelectRoom()) { "Leave the current room first." }
         nearbyHost?.close()
         val identity = prepareNearbyIdentity()
-        val host = com.roomsound.android.nearby.NearbyRoomHost({ appContext.assets.open("nearby/index.html") }, tlsFactory = identity.factory).also { it.startHosting(); nearbyHost = it }
+        val host = com.roomsound.android.nearby.NearbyRoomHost({ appContext.assets.open("nearby/index.html") }, tlsFactory = identity.factory, certificatePem = identity.certificatePem).also { it.startHosting(); nearbyHost = it }
         return host.ownerEndpoint
     }
     fun nearbyInvites(): List<String> {
@@ -144,12 +144,12 @@ class RoomSessionCoordinator(
     fun joinNearby(rawInvite: String, displayName: String, guestId: String): Boolean {
         if (!canSelectRoom()) return false
         val pairing = com.roomsound.android.nearby.NearbyPairing.parse(rawInvite)
-        if (!configureEndpoint(pairing.endpoint, pairing.client())) return false
+        if (!configureEndpoint(pairing.endpoint, pairing.client(), pairing.reconnectSecret(reconnectSecret))) return false
         joinRoom(pairing.code, displayName, guestId)
         return true
     }
 
-    fun configureEndpoint(rawEndpoint: String, localClient: okhttp3.OkHttpClient? = null): Boolean {
+    fun configureEndpoint(rawEndpoint: String, localClient: okhttp3.OkHttpClient? = null, localReconnectSecret: String? = null): Boolean {
         if (closed) return false
         val next = RoomEndpointValidator.normalize(rawEndpoint) ?: return false
         if (endpoint == next && client != null && localClient == null) return true
@@ -160,7 +160,7 @@ class RoomSessionCoordinator(
         disposeRoom(notifyStopped = false)
         pairedHttpClient = localClient
         val nextClient = if(localClient == null) RoomSoundWebSocketClient(next, reconnectSecret = reconnectSecret)
-            else RoomSoundWebSocketClient(next, okHttpClient = localClient, reconnectSecret = reconnectSecret)
+            else RoomSoundWebSocketClient(next, okHttpClient = localClient, reconnectSecret = requireNotNull(localReconnectSecret))
         client = nextClient
         endpoint = next
         val listener = object : RoomSoundWebSocketClient.Listener {
