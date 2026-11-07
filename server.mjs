@@ -1471,6 +1471,8 @@ function streamStaticFile(req, res, filePath, size, headers) {
   stream.pipe(res);
 }
 
+const databaseMaintenance = process.env.DATABASE_MAINTENANCE_MODE === '1';
+
 const server = http.createServer(async (req, res) => {
   try {
   for (const [k, v] of Object.entries(securityHeaders)) res.setHeader(k, v);
@@ -1480,6 +1482,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   const requestPath = url.pathname;
+  if (databaseMaintenance && requestPath.startsWith('/api/')) {
+    res.setHeader('Retry-After', '120');
+    sendJson(res, 503, { error: 'Database migration in progress. Please retry shortly.' });
+    return;
+  }
 
   const redirectLocation = canonicalPublicRedirect(req, url);
   const operationalPath = ['/health', '/ready', '/metrics'].includes(requestPath);
@@ -1663,6 +1670,7 @@ const wss = new WebSocketServer({
   perMessageDeflate: false,
   maxPayload: 512 * 1024,
   verifyClient: (info, cb) => {
+    if (databaseMaintenance) { cb(false, 503, 'Database migration in progress'); return; }
     const allowed = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean) : null;
     if (allowed && allowed.length) {
       const origin = info.origin || info.req.headers.origin || '';
@@ -1817,6 +1825,7 @@ const maintenance = setInterval(() => {
 }, 30_000);
 maintenance.unref();
 const sessionCleanup = setInterval(() => {
+  if (databaseMaintenance) return;
   void repository.deleteExpiredSessions().catch((error) => logger.error('Session cleanup failed', { error }));
 }, 60 * 60_000);
 sessionCleanup.unref();
@@ -1842,7 +1851,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 try {
-  await restorePersistedRooms();
+  if (!databaseMaintenance) await restorePersistedRooms();
   server.listen(port, host, () => {
     health.setReady(true);
     audit.record({ type: 'server.ready', severity: 'info', metadata: { repository: repository.kind, roomAuthRequired } });
