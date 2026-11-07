@@ -1,6 +1,6 @@
 {
-  "recordedAt": "2026-11-07T14:55:00.112Z",
-  "scope": "Isolated loopback synthetic PCM relay; no speaker, browser playout, WAN, production host or acoustic measurements.",
+  "recordedAt": "2026-11-07T15:34:53.182Z",
+  "scope": "Bounded latency sample reservoir; isolated loopback synthetic PCM relay; no speaker, browser playout, WAN, production host or acoustic measurements.",
   "results": [
     {
       "connections": 10,
@@ -10,53 +10,53 @@
       "baselineMissingPackets": 0,
       "unexpectedCloses": 0,
       "reconnectedListeners": 3,
-      "reconnectMs": 33,
-      "loopbackRelayP95Ms": 3,
+      "reconnectMs": 28,
+      "loopbackRelayP95Ms": 2,
       "maxEventLoopDelayMs": 1,
-      "maxRssMB": 78,
-      "averageOneCoreCpuPercent": 14
+      "maxRssMB": 80,
+      "averageOneCoreCpuPercent": 10
     },
     {
       "connections": 25,
       "rooms": 3,
       "durationMs": 10000,
-      "minListenerPackets": 499,
+      "minListenerPackets": 500,
       "baselineMissingPackets": 0,
       "unexpectedCloses": 0,
       "reconnectedListeners": 6,
-      "reconnectMs": 68,
-      "loopbackRelayP95Ms": 5,
-      "maxEventLoopDelayMs": 2,
-      "maxRssMB": 77,
-      "averageOneCoreCpuPercent": 22
+      "reconnectMs": 32,
+      "loopbackRelayP95Ms": 3,
+      "maxEventLoopDelayMs": 1,
+      "maxRssMB": 81,
+      "averageOneCoreCpuPercent": 13
     },
     {
       "connections": 50,
       "rooms": 5,
       "durationMs": 10000,
-      "minListenerPackets": 499,
+      "minListenerPackets": 500,
       "baselineMissingPackets": 0,
       "unexpectedCloses": 0,
       "reconnectedListeners": 13,
-      "reconnectMs": 101,
-      "loopbackRelayP95Ms": 6,
-      "maxEventLoopDelayMs": 1,
-      "maxRssMB": 79,
-      "averageOneCoreCpuPercent": 26
+      "reconnectMs": 40,
+      "loopbackRelayP95Ms": 3,
+      "maxEventLoopDelayMs": 2,
+      "maxRssMB": 82,
+      "averageOneCoreCpuPercent": 16
     },
     {
       "connections": 100,
       "rooms": 10,
       "durationMs": 10000,
-      "minListenerPackets": 499,
+      "minListenerPackets": 500,
       "baselineMissingPackets": 0,
       "unexpectedCloses": 0,
       "reconnectedListeners": 25,
-      "reconnectMs": 93,
-      "loopbackRelayP95Ms": 8,
-      "maxEventLoopDelayMs": 5,
-      "maxRssMB": 79,
-      "averageOneCoreCpuPercent": 33
+      "reconnectMs": 63,
+      "loopbackRelayP95Ms": 6,
+      "maxEventLoopDelayMs": 6,
+      "maxRssMB": 84,
+      "averageOneCoreCpuPercent": 30
     },
     {
       "connections": 200,
@@ -66,11 +66,12 @@
       "baselineMissingPackets": 0,
       "unexpectedCloses": 0,
       "reconnectedListeners": 50,
-      "reconnectMs": 134,
-      "loopbackRelayP95Ms": 8,
-      "maxEventLoopDelayMs": 10,
-      "maxRssMB": 81,
-      "averageOneCoreCpuPercent": 37
+      "reconnectMs": 122,
+      "loopbackRelayP95Ms": 6,
+      "maxEventLoopDelayMs": 4,
+      "maxRssMB": 83,
+      "averageOneCoreCpuPercent": 33
     }
-  ]
+  ],
+  "runtime": "Node 22.23.4"
 }
