@@ -531,3 +531,16 @@ test('participant can request browser audio while another participant is sharing
   assert.equal(request.requesterId, secondJoined.state.self.id);
   assert.equal(request.sourceType, 'DEVICE_AUDIO');
 });
+
+test('database migration maintenance blocks auth and sockets but retains health probes', async (t) => {
+  const {server,url,http:base}=await startServer({DATABASE_MAINTENANCE_MODE:'1'});
+  t.after(()=>server.kill());
+  assert.equal((await fetch(base+'/health')).status,200);
+  assert.equal((await fetch(base+'/ready')).status,200);
+  const blocked=await fetch(base+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'migration@example.test',password:'never-written-password'})});
+  assert.equal(blocked.status,503);
+  assert.equal(blocked.headers.get('retry-after'),'120');
+  const socket=new WebSocket(url);
+  t.after(()=>socket.terminate());
+  await assert.rejects(new Promise((resolve,reject)=>{socket.once('open',resolve);socket.once('error',reject)}),/503/);
+});

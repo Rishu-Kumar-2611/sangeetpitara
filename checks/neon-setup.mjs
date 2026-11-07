@@ -8,7 +8,7 @@ import { Pool } from 'pg';
 import { createRepositoryFromEnv } from '../persistence.mjs';
 process.loadEnvFile('.env');
 const branch = process.env.NEON_VERIFY_BRANCH;
-assert.ok(branch?.startsWith('codex-setup-verify-'), 'Set NEON_VERIFY_BRANCH to a disposable verification branch. Never test user creation on production.');
+assert.ok(/^(codex-setup-verify-|migration-rehearsal-)/.test(branch || ''), 'Set NEON_VERIFY_BRANCH to a disposable verification branch. Never test user creation on production.');
 const connection = (pooled) => execFileSync('neon.cmd', ['connection-string',branch,...(pooled?['--pooled']:[])], {shell:true,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
 const direct = connection(false), pooled = connection(true);
 assert.match(direct,/^postgres/); assert.match(pooled,/^postgres/);
@@ -22,7 +22,7 @@ async function start(url=pooled,unpooled=direct) {
  for(let n=0;n<100;n++){try{const r=await fetch(base+'/ready'); if(r.ok){assert.equal((await r.json()).checks.repository.kind,'postgres');return;}}catch{} await delay(200);}
  throw new Error('App readiness timeout');
 }
-async function stop(){if(child&&child.exitCode===null){const end=new Promise(r=>child.once('exit',r));child.kill();await end;}}
+async function stop(){const running=child;child=null;if(running&&running.exitCode===null&&running.signalCode===null){const end=new Promise(r=>running.once('exit',r));running.kill();await end;}}
 const sockets=[];
 try {
  await start(); console.log('PASS started app; /ready reports postgres');

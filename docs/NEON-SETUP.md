@@ -22,15 +22,11 @@ NEON_VERIFY_BRANCH=codex-setup-verify-<unique-suffix>, then run
 initializes the selected production schema and verifies readiness. Never point
 checks/postgres-integration.mjs at the production database.
 
-The public Render deployment still uses the original Render database. Existing
-Render user data has NOT been imported into Neon. Before switching production:
-export/securely back up the source database, restore into Neon, verify row counts
-and application compatibility, briefly stop writes for the final transfer, then
-update Render's database variables AND its Blueprint reference together. Keep
-rollback access to the source. Do not switch the live service to an empty Neon
-database. The currently available Render connector cannot provide source database
-connection credentials; an external source connection must be supplied securely
-for pg_dump/restore (never in chat).
+The production Render-to-Neon cutover is complete. The public website uses
+Neon's production branch; the 10 original room rows and migration history were
+verified after transfer. The old Render database and a private local snapshot
+are retained for rollback. See DATABASE-MIGRATION-2026-11-07.md for evidence and
+recovery precautions. No credentials are committed.
 
 Observed nonfatal setup warnings: Copilot CLI was absent (other Neon plugin
 installation succeeded); local system Node is 26 while the app pins 22; pg warns
