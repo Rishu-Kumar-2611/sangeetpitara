@@ -379,6 +379,7 @@ class MainActivity : Activity() {
     }
 
     private var nativePage = "home"
+    private var nearbyStarting = false
     private val nativePanels = mutableMapOf<String, View>()
     private var nativeScroll: ScrollView? = null
     private lateinit var nativeBack: Button
@@ -504,7 +505,7 @@ class MainActivity : Activity() {
 
         val nearbyPanel = panelContainer()
         nearbyPanel.addView(sectionTitle("Play Close"), matchWrap())
-        nearbyPanel.addView(sectionLabel("Offline music on the same hotspot or Wi-Fi. This Android phone shares audio; friends listen in their browser."), matchWrap())
+        nearbyPanel.addView(sectionLabel("Offline music on the same hotspot or Wi-Fi. Join in the Android app to request control and share device audio. Browser guests can listen and share local music files."), matchWrap())
         val nearbyName = inputText("Your name for Nearby Vibe", null)
         nearbyPanel.addView(nearbyName, marginLayout())
         nearbyPanel.addView(button("Open hotspot settings", ButtonTone.SECONDARY) {
@@ -513,16 +514,28 @@ class MainActivity : Activity() {
         nearbyPanel.addView(button("Host & create nearby room") {
             val session = roomSession
             if (session == null || !session.canSelectRoom()) appendRoomEvent("Leave your current room first.")
-            else runCatching {
+            else if (!nearbyStarting) runCatching {
                 val name = nearbyName.text.toString().trim().ifEmpty { displayNameInput.text.toString().trim() }
                 require(name.isNotEmpty()) { "Enter your name above before hosting." }
-                displayNameInput.setText(name)
-                nearbyEndpointOverride = session.startNearbyHost()
-                check(configureRoomSession(session))
-                if (roomNameInput.text.isBlank()) roomNameInput.setText("Nearby Vibe")
-                createRoom()
-                refreshNearbyInvite()
-                appendRoomEvent("Creating your local room. The offline invite appears in Nearby Vibe once joined.")
+                nearbyStarting = true
+                android.widget.Toast.makeText(this,"Preparing your local room…",android.widget.Toast.LENGTH_SHORT).show()
+                Thread({
+                    val prepared = runCatching { session.prepareNearbyIdentity() }
+                    runOnUiThread {
+                        nearbyStarting = false
+                        if (!isFinishing && !isDestroyed && roomSession === session) runCatching {
+                            prepared.getOrThrow()
+                            check(session.canSelectRoom()) { "Leave your current room first." }
+                            displayNameInput.setText(name)
+                            nearbyEndpointOverride = session.startNearbyHost()
+                            check(configureRoomSession(session))
+                            if (roomNameInput.text.isBlank()) roomNameInput.setText("Nearby Vibe")
+                            createRoom()
+                            refreshNearbyInvite()
+                            appendRoomEvent("Creating your local room. Open View local invite once joined.")
+                        }.onFailure { android.widget.Toast.makeText(this,"Nearby hosting failed: ${it.message}",android.widget.Toast.LENGTH_LONG).show() }
+                    }
+                },"Nearby-identity").apply { isDaemon = true; start() }
             }.onFailure { appendRoomEvent("Nearby hosting failed: ${it.message}") }
         }, marginLayout())
         nearbyInviteText = labelText().apply {
@@ -547,6 +560,21 @@ class MainActivity : Activity() {
         nearbyPanel.addView(inviteActions, marginLayout())
         nearbyPanel.addView(button("Refresh invite", ButtonTone.SECONDARY) { refreshNearbyInvite() }, marginLayout())
         refreshNearbyInvite()
+        nearbyPanel.addView(button("Join nearby room in app", ButtonTone.SECONDARY) {
+            val entry = inputText("Paste the host's local invite link", null)
+            android.app.AlertDialog.Builder(this).setTitle("Join Play Close").setView(entry)
+                .setPositiveButton("Join") { _, _ ->
+                    runCatching {
+                        val name = nearbyName.text.toString().trim()
+                        require(name.isNotEmpty()) { "Enter your name before joining." }
+                        val session = roomSession ?: error("Audio service is not ready yet.")
+                        check(session.joinNearby(entry.text.toString(),name,guestId)) { "Leave your current room first." }
+                        nearbyEndpointOverride = session.currentEndpoint()
+                        displayNameInput.setText(name)
+                        appendRoomEvent("Connecting securely over the local network…")
+                    }.onFailure { android.widget.Toast.makeText(this,it.message ?: "Check the invite",android.widget.Toast.LENGTH_LONG).show() }
+                }.setNegativeButton("Cancel", null).show()
+        }, marginLayout())
         nearbyPanel.addView(button("Join nearby invite in browser", ButtonTone.SECONDARY) {
             val entry = inputText("Paste the host's local invite link", null)
             android.app.AlertDialog.Builder(this).setTitle("Join Nearby Vibe").setView(entry)

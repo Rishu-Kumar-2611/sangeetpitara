@@ -13,7 +13,9 @@ external scripts, fonts, account login or internet audio relay is required.
 3. Open View local invite from the Room screen. Use Copy local invite or
    Share invite. If no address is shown, enable hotspot/Wi-Fi and Refresh invite.
 4. Friends connect to that same network and open the link in their browser.
-   Android guests can use Join nearby invite in browser inside the app.
+   Android guests use Play Close → Join nearby room in app and paste the complete
+   invite to listen and share device audio. Browser guests can listen or share
+   local music files.
 5. Friends enter their name and tap Join and listen. The host uses Share device
    audio and grants Android capture consent. Play an app that permits capture.
 6. Leave/end using room controls; keep the host phone and hotspot running.
@@ -24,8 +26,11 @@ Guests use the locally served page, not the public site's online room.
 
 ## Scope and limits
 
-This first version supports one Android host, at most nine guests, host audio
-and room chat. Guest source handoff/co-host controls are not supported locally.
+Rooms support one Android host and at most nine guests, audio handoff and chat.
+Participants request a turn; the host/co-host approves, rejects or directly grants
+control. The host can assign a co-host and take audio control back. Android
+publishers must still accept Android's capture consent; approval never starts
+capture automatically. Browser publishers choose a local music file and tap Play.
 The host enables hotspot manually; automatic hotspot provisioning and QR invites
 are not included. Interface addresses are listed because Android hotspot IPs vary.
 Some routers enable client isolation; use a network that permits local clients to
@@ -35,7 +40,9 @@ This is a trusted-local-network transport, not end-to-end encrypted media. Use a
 password-protected hotspot and share the invite privately. Native app cleartext
 is allowed only for 127.0.0.1/localhost; public internet connections remain HTTPS.
 An unguessable invitation gates guest WebSockets; a separate loopback-only owner
-capability gates creation/publication. Reconnect secrets never appear in rosters.
+capability gates creation and ending the room. The server checks the selected
+source and epoch again for every audio packet, including participant publishers.
+Reconnect secrets never appear in rosters.
 
 Per-peer writer queues prevent one slow guest from blocking the room. Audio is
 bounded to 200 packets per peer; the browser buffer adapts up to three seconds.
@@ -89,3 +96,34 @@ from selecting an unrelated private mobile-data address. Two JVM policy tests
 cover exclusion and ordering. Both the website and the offline listener retain
 the existing warm brass/teal theme; responsive previews were reviewed at 390px
 and 1440px. Hosting and sharing still require a real local network address.
+
+## Participant audio control (1.1.9)
+
+Update both host and Android guest apps, start a fresh room and copy a fresh
+invite. New invitations carry a local TLS port and a SHA-256 certificate pin.
+Android guests use that encrypted, pinned connection; public HTTPS trust and the
+loopback-only cleartext policy remain unchanged. The host's private key stays in
+[Android Keystore](https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec).
+Invites accept only literal private IPv4 addresses; hostname and certificate pin
+must both match. Redirects are disabled for the paired client. The original HTTP
+browser listener remains available on the trusted hotspot.
+
+Host/co-host audio requests and direct grants are available under People in the
+Android app. Use Room for sharing/stop/take-back controls. Pending requests expire
+after two minutes and an unused approved slot expires after one minute. Revocation,
+leaving, removal and source changes invalidate the previous source's audio.
+Browser guests can share audio files stored on their device after approval; they
+cannot capture audio from other phone apps through the HTTP browser page. Android
+app guests can share eligible device playback with system consent.
+
+Tests cover real local WebSocket request/rejection/approval, co-host takeover,
+direct grant, exact participant PCM delivery and rejected stale/revoked packets.
+A real TLS server is tested with the pinned client, including rejecting a wrong
+certificate; invite parsing rejects public/invalid addresses. Browser checks play
+a generated WAV through WebAudio, verify non-silent transmitted PCM and verify
+that host revocation stops the publisher, with external requests blocked.
+Physical Android-to-Android hotspot/TLS/consent testing is still required.
+Release checks: 86 Android JVM tests, debug APK assembly and lint passed;
+117 Node tests and the build check passed on Node 22.14.0; all ten desktop/phone
+Playwright checks passed. Host key preparation runs on a worker so first-use
+Android Keystore generation does not block the welcome screen.

@@ -72,10 +72,16 @@ class RoomSessionCoordinator(
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArraySet<Listener>()
     private var nearbyHost: com.roomsound.android.nearby.NearbyRoomHost? = null
+    @Volatile private var nearbyIdentity: com.roomsound.android.nearby.NearbyTlsIdentity? = null
+    /** Key generation may take seconds on older hardware; call on a worker. */
+    fun prepareNearbyIdentity() = synchronized(this) {
+        nearbyIdentity ?: com.roomsound.android.nearby.NearbyTlsIdentity().also { nearbyIdentity = it }
+    }
     fun startNearbyHost(): String {
         check(canSelectRoom()) { "Leave the current room first." }
         nearbyHost?.close()
-        val host = com.roomsound.android.nearby.NearbyRoomHost({ appContext.assets.open("nearby/index.html") }).also { it.startHosting(); nearbyHost = it }
+        val identity = prepareNearbyIdentity()
+        val host = com.roomsound.android.nearby.NearbyRoomHost({ appContext.assets.open("nearby/index.html") }, tlsFactory = identity.factory).also { it.startHosting(); nearbyHost = it }
         return host.ownerEndpoint
     }
     fun nearbyInvites(): List<String> {
@@ -87,10 +93,11 @@ class RoomSessionCoordinator(
             .sortedBy { com.roomsound.android.nearby.NearbyInviteAddressPolicy.priority(it.name) }
             .flatMap { it.inetAddresses.toList() }
             .filter { it is java.net.Inet4Address && it.isSiteLocalAddress && !it.isLoopbackAddress }
-            .map { "http://${it.hostAddress}:${host.listeningPort}/#invite=${host.invite}&code=$code" }
+            .map { "http://${it.hostAddress}:${host.listeningPort}/#invite=${host.invite}&code=$code&tls=${host.securePort}&pin=${nearbyIdentity!!.fingerprint}" }
     }
     private var endpoint: String? = null
     private var client: RoomSoundWebSocketClient? = null
+    private var pairedHttpClient: okhttp3.OkHttpClient? = null
     private var clientListener: RoomSoundWebSocketClient.Listener? = null
     private var publisher: Pcm16FramePublisher? = null
     private var relayPlayer: Pcm16RelayPlayer? = null
@@ -134,16 +141,26 @@ class RoomSessionCoordinator(
     fun hasMediaBackend(): Boolean = transport?.hasMediaBackend() == true
     fun transportSnapshot(): RoomAudioTransportSnapshot? = transport?.snapshot()
 
-    fun configureEndpoint(rawEndpoint: String): Boolean {
+    fun joinNearby(rawInvite: String, displayName: String, guestId: String): Boolean {
+        if (!canSelectRoom()) return false
+        val pairing = com.roomsound.android.nearby.NearbyPairing.parse(rawInvite)
+        if (!configureEndpoint(pairing.endpoint, pairing.client())) return false
+        joinRoom(pairing.code, displayName, guestId)
+        return true
+    }
+
+    fun configureEndpoint(rawEndpoint: String, localClient: okhttp3.OkHttpClient? = null): Boolean {
         if (closed) return false
         val next = RoomEndpointValidator.normalize(rawEndpoint) ?: return false
-        if (endpoint == next && client != null) return true
+        if (endpoint == next && client != null && localClient == null) return true
         if (client?.currentRoomState() != null || roomSelectionPending || attempt != null) {
             status("Leave the current room before changing its endpoint.")
             return false
         }
         disposeRoom(notifyStopped = false)
-        val nextClient = RoomSoundWebSocketClient(next, reconnectSecret = reconnectSecret)
+        pairedHttpClient = localClient
+        val nextClient = if(localClient == null) RoomSoundWebSocketClient(next, reconnectSecret = reconnectSecret)
+            else RoomSoundWebSocketClient(next, okHttpClient = localClient, reconnectSecret = reconnectSecret)
         client = nextClient
         endpoint = next
         val listener = object : RoomSoundWebSocketClient.Listener {
@@ -731,6 +748,8 @@ class RoomSessionCoordinator(
         clientListener = null
         transport?.close()
         client?.close()
+        pairedHttpClient?.let { it.connectionPool.evictAll(); it.dispatcher.executorService.shutdown() }
+        pairedHttpClient = null
         publisher = null
         relayPlayer = null
         transport = null

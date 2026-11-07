@@ -39,12 +39,13 @@ button:focus-visible,input:focus-visible{outline:3px solid #77cbbb;outline-offse
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  * #L%
  */ -->
-<h1>Nearby Vibe</h1><p>Music from the host's phone. Same Wi-Fi or hotspot. No internet required.</p><small>This local room uses your hotspot's network security. Join a trusted host; keep the hotspot password private. Your browser may pause audio when backgrounded.</small><p id="status" role="status">Enter your name and tap Listen.</p><label for="name">Your name</label><input id="name" maxlength="40" autocomplete="nickname"><button id="listen">Join and listen</button><button id="leave" hidden>Leave room</button><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step=".05" value=".8"><h2>Room chat</h2><ul id="chat"></ul><form id="form"><label for="message">Message</label><input id="message" maxlength="1000"><button>Send</button></form>
+<h1>Nearby Vibe</h1><p>Take turns playing music. Same Wi-Fi or hotspot. No internet required.</p><small>This local room uses your hotspot's network security. Join a trusted host; keep the hotspot password private. Your browser may pause audio when backgrounded.</small><p id="status" role="status">Enter your name and tap Listen.</p><label for="name">Your name</label><input id="name" maxlength="40" autocomplete="nickname"><button id="listen">Join and listen</button><button id="leave" hidden>Leave room</button><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step=".05" value=".8"><section id="controls" hidden><h2>Audio control</h2><p id="source-status"></p><p>To share sound from other Android apps, use Play Close → Join nearby room in app. In this browser, choose a music file stored on your device.</p><label for="track">Music file to share</label><input id="track" type="file" accept="audio/*"><button id="request">Ask to play music</button><button id="cancel-request" hidden>Cancel request</button><button id="share" hidden>Play selected music</button><button id="stop-source" hidden>Stop sharing</button><button id="takeover" hidden>Take back audio control</button><div id="moderation"></div></section><h2>Room chat</h2><ul id="chat"></ul><form id="form"><label for="message">Message</label><input id="message" maxlength="1000"><button>Send</button></form>
 <script>
 'use strict';
 const $=id=>document.getElementById(id),params=new URLSearchParams(location.hash.slice(1)),invite=params.get('invite'),code=params.get('code');
 let ws,ctx,gain,node,joining=false,ended=false,retry=0,timer,epoch=null,guest=crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random(),secret=null;
 try{guest=sessionStorage.getItem('nv-guest')||guest;sessionStorage.setItem('nv-guest',guest);secret=sessionStorage.getItem('nv-secret')}catch{}
+let roomState=null,trackUrl=null,trackPlayer=null,trackSource=null,publishNode=null,publishEpoch=null,packetSamples=[],sequence=0;
 let ring=new Float32Array(288000),write=0,read=0,fill=0,target=5760,playing=false,lastArrival=null;
 function status(t){$('status').textContent=t}
 function reset(){write=read=fill=0;playing=false;lastArrival=null;target=5760}
@@ -52,15 +53,69 @@ function send(data){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(da
 function append(name,text){const li=document.createElement('li');li.textContent=name+': '+text;$('chat').append(li);while($('chat').children.length>50)$('chat').firstChild.remove()}
 function connect(){if(!joining||ended)return;ws=new WebSocket('ws://'+location.host+'/?invite='+encodeURIComponent(invite));ws.binaryType='arraybuffer';
 ws.onopen=()=>send({type:'join-room',code,guestId:guest,reconnectSecret:secret,displayName:$('name').value.trim()});
-ws.onmessage=e=>{if(typeof e.data==='string'){const m=JSON.parse(e.data);if(m.type==='joined'){secret=m.reconnectSecret;try{sessionStorage.setItem('nv-secret',secret)}catch{}retry=0;status('Connected locally. Waiting for host music.');$('listen').hidden=true;$('leave').hidden=false}if(m.state){const r=m.state.room;if(epoch!==r.sourceEpoch){reset();epoch=r.sourceEpoch}if(r.sourceStatus!=='LIVE'){reset();status('Connected locally. Waiting for host music.')}}if(m.type==='chat')append(m.message.senderName,m.message.text);if(m.type==='room-ended'){ended=true;stop();status('The host ended this nearby room.')}if(m.type==='error')status(m.message);return}
+ws.onmessage=e=>{if(typeof e.data==='string'){const m=JSON.parse(e.data);if(m.type==='joined'){secret=m.reconnectSecret;try{sessionStorage.setItem('nv-secret',secret)}catch{}retry=0;status('Connected locally. Waiting for host music.');$('listen').hidden=true;$('leave').hidden=false}if(m.state){renderControls(m.state);const r=m.state.room;if(epoch!==r.sourceEpoch){reset();epoch=r.sourceEpoch}if(r.sourceStatus!=='LIVE'){reset();status('Connected locally. Waiting for host music.')}}if(m.type==='chat')append(m.message.senderName,m.message.text);if(m.type==='removed'){ended=true;stop();status('You were removed from this nearby room.')}if(m.type==='room-ended'){ended=true;stop();status('The host ended this nearby room.')}if(m.type==='error')status(m.message);return}
 const v=new DataView(e.data);if(v.byteLength<20||v.getUint32(0)!==0x52535231||v.getUint8(4)!==1||v.getUint8(5)!==1||v.getUint32(6,true)!==48000||v.getUint32(10,true)!==epoch)return;
 const n=v.getUint16(18,true);if(n<1||n>32768||20+n*2!==v.byteLength)return;const now=performance.now();if(lastArrival!==null&&now-lastArrival>80)target=Math.min(144000,Math.max(target,Math.ceil((now-lastArrival+100)*48)));lastArrival=now;
 if(fill+n>=ring.length){read=write;fill=0;playing=false}for(let i=0;i<n;i++){ring[write]=v.getInt16(20+i*2,true)/32768;write=(write+1)%ring.length}fill+=n;if(!playing&&fill>=target){playing=true;status('Listening over local Wi-Fi · '+Math.round(fill/48)+' ms buffered')}
 };
-ws.onclose=()=>{if(joining&&!ended){status('Local connection lost. Reconnecting to the host…');timer=setTimeout(connect,Math.min(10000,1000*2**retry++))}};
+ws.onclose=()=>{stopTrack();$('controls').hidden=true;if(joining&&!ended){status('Local connection lost. Reconnecting to the host…');timer=setTimeout(connect,Math.min(10000,1000*2**retry++))}};
 ws.onerror=()=>status('Cannot reach the host. Check that you joined the same hotspot and the host app is running.');}
 async function audio(){ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});await ctx.resume();gain=ctx.createGain();gain.gain.value=Number($('volume').value);gain.connect(ctx.destination);node=ctx.createScriptProcessor(2048,0,1);node.onaudioprocess=e=>{const out=e.outputBuffer.getChannelData(0),step=48000/ctx.sampleRate;for(let i=0;i<out.length;i++){if(!playing||fill<Math.ceil(step)+1){out[i]=0;if(playing){playing=false;target=Math.min(144000,Math.max(target+4800,target*1.5));status('Buffering local music…')}continue}const at=Math.floor(read),f=read-at;out[i]=ring[at]*(1-f)+ring[(at+1)%ring.length]*f;read=(read+step)%ring.length;fill-=step}};node.connect(gain)}
-function stop(){joining=false;clearTimeout(timer);send({type:'leave-room'});ws?.close();node?.disconnect();gain?.disconnect();ctx?.close();ctx=null;reset();$('listen').hidden=false;$('leave').hidden=true}
+function stop(){stopTrack();roomState=null;$('controls').hidden=true;joining=false;clearTimeout(timer);send({type:'leave-room'});ws?.close();node?.disconnect();gain?.disconnect();ctx?.close();ctx=null;reset();$('listen').hidden=false;$('leave').hidden=true}
+function stopTrack(){
+  trackPlayer?.pause();if(trackPlayer){trackPlayer.removeAttribute('src');trackPlayer.load()}
+  trackSource?.disconnect();publishNode?.disconnect();trackPlayer=trackSource=publishNode=null;
+  if(trackUrl)URL.revokeObjectURL(trackUrl);trackUrl=null;packetSamples=[];publishEpoch=null;
+}
+function renderControls(state){
+  roomState=state;const self=state.self,room=state.room;if(!self)return;
+  $('controls').hidden=false;const mine=room.activeSourceId===self.id,moderator=self.id===room.hostId||self.id===room.cohostId;
+  const pending=(state.requests||[]).find(r=>r.requesterId===self.id&&r.status==='PENDING');
+  const source=(state.members||[]).find(m=>m.id===room.activeSourceId);
+  $('source-status').textContent=mine?'You have audio control. Choose a music file and tap Play.':source?source.name+' has audio control.':'No music is being shared. Ask the host for control.';
+  $('request').hidden=mine||!!pending||moderator;$('cancel-request').hidden=!pending;
+  $('share').hidden=!(mine||moderator);$('stop-source').hidden=!mine;$('takeover').hidden=!moderator||mine;
+  if(publishNode&&(!mine||!((room.sourceStatus==='LIVE'&&publishEpoch===room.sourceEpoch)||(room.sourceStatus==='STARTING'&&publishEpoch===room.sourceEpoch+1))))stopTrack();
+  const area=$('moderation');area.replaceChildren();if(!moderator)return;
+  const action=(label,data)=>{const b=document.createElement('button');b.textContent=label;b.onclick=()=>send(data);area.append(b)};
+  for(const r of state.requests||[])if(r.status==='PENDING'){
+    action('Approve '+r.requesterName,{type:'approve-request',requestId:r.id});action('Reject '+r.requesterName,{type:'reject-request',requestId:r.id});
+  }
+  for(const m of state.members||[])if(m.online&&m.id!==self.id&&m.id!==room.hostId){
+    if(m.id!==room.activeSourceId)action('Allow '+m.name+' to play',{type:'grant-source',memberId:m.id});
+  }
+}
+function publishAudio(input){
+  const r=roomState?.room;if(!r||r.activeSourceId!==roomState.self?.id||r.sourceStatus!=='LIVE'||ws?.readyState!==1)return;
+  if(publishEpoch!==r.sourceEpoch){publishEpoch=r.sourceEpoch;sequence=0;packetSamples=[]}
+  const left=input.getChannelData(0),right=input.numberOfChannels>1?input.getChannelData(1):left;
+  for(let i=0;i<left.length;i++){
+    const sample=Math.max(-1,Math.min(1,(left[i]+right[i])/2));packetSamples.push(Math.round(sample*(sample<0?32768:32767)));
+    if(packetSamples.length===960){
+      if(ws.bufferedAmount<393216){const bytes=new ArrayBuffer(1940),v=new DataView(bytes);v.setUint32(0,0x52535231);v.setUint8(4,1);v.setUint8(5,1);v.setUint32(6,48000,true);v.setUint32(10,publishEpoch,true);v.setUint32(14,sequence++>>>0,true);v.setUint16(18,960,true);for(let j=0;j<960;j++)v.setInt16(20+j*2,packetSamples[j],true);ws.send(bytes)}
+      packetSamples=[];
+    }
+  }
+}
+$('request').onclick=()=>send({type:'request-control',sourceType:'DEVICE_AUDIO',note:'Share a local music file'});
+$('cancel-request').onclick=()=>{const r=roomState?.requests?.find(r=>r.requesterId===roomState.self?.id&&r.status==='PENDING');if(r)send({type:'cancel-request',requestId:r.id})};
+$('takeover').onclick=()=>send({type:'takeover',sourceType:'DEVICE_AUDIO'});
+$('stop-source').onclick=()=>{stopTrack();send({type:'stop-source'})};
+$('share').onclick=async()=>{
+  const file=$('track').files[0];if(!file){status('Choose a music file on your device first.');return}
+  try{
+    await ctx.resume();if(ctx.sampleRate!==48000)throw Error('This browser cannot publish at 48 kHz. Use the Android app.');
+    stopTrack();trackUrl=URL.createObjectURL(file);trackPlayer=new Audio(trackUrl);trackSource=ctx.createMediaElementSource(trackPlayer);
+    publishNode=ctx.createScriptProcessor(2048,2,1);publishNode.onaudioprocess=e=>{publishAudio(e.inputBuffer);const out=e.outputBuffer.getChannelData(0),left=e.inputBuffer.getChannelData(0),right=e.inputBuffer.numberOfChannels>1?e.inputBuffer.getChannelData(1):left;for(let i=0;i<out.length;i++)out[i]=(left[i]+right[i])/2};
+    trackSource.connect(publishNode);publishNode.connect(gain);
+    // No automatic playback on approval: the participant must choose Play.
+    // Reserve the expected LIVE epoch before the server acknowledges it.
+    publishEpoch=roomState.room.sourceEpoch+1;send({type:'start-source',sourceType:'DEVICE_AUDIO',sourceLabel:'local music file'});
+    trackPlayer.onended=()=>{stopTrack();if(roomState?.room.activeSourceId===roomState?.self?.id)send({type:'stop-source'})};
+    trackPlayer.onerror=()=>{stopTrack();if(roomState?.room.activeSourceId===roomState?.self?.id)send({type:'stop-source'});status('This file could not be played. Choose another audio file.')};
+    await trackPlayer.play();status('Sharing your music over local Wi-Fi.');
+  }catch(error){stopTrack();if(roomState?.room.activeSourceId===roomState?.self?.id)send({type:'stop-source'});status(error.message||'Could not play that music file.')}
+};
 $('listen').onclick=async()=>{if(joining)return;if(!invite||!code){status('Open the complete local invitation copied by your host.');return}if(!$('name').value.trim()){status('Enter your name first.');return}try{ended=false;await audio();joining=true;connect()}catch{status('Audio could not start. Try Chrome or another browser, then tap Listen again.')}};
 $('leave').onclick=()=>{stop();status('You left the nearby room.')};$('volume').oninput=()=>{if(gain)gain.gain.value=Number($('volume').value)};$('form').onsubmit=e=>{e.preventDefault();if($('message').value.trim()){send({type:'chat',text:$('message').value.trim()});$('message').value=''}};addEventListener('pagehide',stop);
 </script></html>

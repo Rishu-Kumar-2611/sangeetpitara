@@ -1,4 +1,4 @@
-import { createSafeStorage } from './guest-id.js?v=20261107-screens1';
+import { createSafeStorage } from './guest-id.js?v=20261107-handoff1';
 const browserStorage = createSafeStorage();
 
 /**
