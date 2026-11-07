@@ -108,6 +108,23 @@ function pcmFrame(sourceEpoch, sequence = 1) {
   return encodePcm16Frame({ sourceEpoch, sequence, samples });
 }
 
+test('generic laptop grant allows native phone promotion, reverse PCM and explicit leave', async t => {
+  const {server,url}=await startServer();const laptop=client(url),phone=client(url);
+  t.after(()=>{laptop.socket.terminate();phone.socket.terminate();server.kill()});
+  const {joined,epoch}=await createRoom(laptop,phone);
+  laptop.socket.send(JSON.stringify({type:'grant-source',memberId:joined.state.self.id,sourceType:'DEVICE_AUDIO'}));
+  const granted=await phone.waitJson(m=>m.type==='state'&&m.state.room.activeSourceId===joined.state.self.id&&m.state.room.sourceStatus==='STARTING');
+  assert.equal(granted.state.room.activeSourceType,'DEVICE_AUDIO');assert.ok(granted.state.room.sourceEpoch>epoch);
+  phone.socket.send(JSON.stringify({type:'start-source',sourceType:'ANDROID_DEVICE_AUDIO',sourceLabel:'Android device audio'}));
+  const live=await laptop.waitJson(m=>m.type==='state'&&m.state.room.activeSourceId===joined.state.self.id&&m.state.room.sourceStatus==='LIVE');
+  assert.equal(live.state.room.activeSourceType,'ANDROID_DEVICE_AUDIO');
+  const frame=pcmFrame(live.state.room.sourceEpoch,77);phone.socket.send(frame);
+  assert.deepEqual(await laptop.waitBinary(),Buffer.from(frame));
+  phone.socket.send(JSON.stringify({type:'leave-room'}));
+  const left=await laptop.waitJson(m=>m.type==='state'&&m.state.members.every(member=>member.id!==joined.state.self.id));
+  assert.notEqual(left.state.room.activeSourceId,joined.state.self.id);
+});
+
 test('PCM16 frame header uses the documented RSR1 little-endian layout', () => {
   const frame = encodePcm16Frame({
     sourceEpoch: 0x01020304,

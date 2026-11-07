@@ -389,8 +389,7 @@ class RoomSessionCoordinator(
         if (attempt != null || takeover != null || endPending || !hasMediaBackend()) return null
         val state = joinedState() ?: return null
         val self = state.self ?: return null
-        val ownSlot = self.id == state.room.activeSourceId && state.room.activeSourceType == DEVICE_AUDIO &&
-            state.room.sourceStatus in setOf("STARTING", "LIVE")
+        val ownSlot = DeviceCaptureGrantPolicy.ownsSlot(self.id,state.room.activeSourceId,state.room.activeSourceType,state.room.sourceStatus)
         if (!ownSlot && !isModerator(state)) return null
         val id = UUID.randomUUID().toString()
         attempt = Attempt(

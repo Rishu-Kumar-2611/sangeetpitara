@@ -1101,6 +1101,12 @@ class MainActivity : Activity() {
 
     private fun renderRoomState(state: RoomState?) {
         try {
+        if (roomSession != null && pendingCaptureId != null && roomSession?.pendingCapture()?.id != pendingCaptureId) {
+            pendingCaptureId = null
+            pendingCaptureStart = false
+            projectionConsentInFlight = false
+            pendingRoomSourceStart = false
+        }
         val previousRoomId = renderedRoomId
         latestRoomState = state
         if (state != null && state.room.id != previousRoomId && nativePage in setOf("home", "create", "join", "nearby")) navigateNative("room")
@@ -1122,7 +1128,8 @@ class MainActivity : Activity() {
             takeoverButton.isEnabled = false
             requestAudioButton.text = "Request to share device audio"
             requestAudioButton.isEnabled = false
-            leaveRoomButton.isEnabled = roomSession?.connectionState() !in setOf(null, RoomConnectionState.IDLE, RoomConnectionState.CLOSED)
+            // Leaving is local cleanup and must remain available during retries.
+            leaveRoomButton.isEnabled = roomSession?.currentEndpoint() != null || renderedRoomId != null
             endRoomButton.isEnabled = false
             runCatching {
                 approvalContainer.removeAllViews()
@@ -1160,6 +1167,7 @@ class MainActivity : Activity() {
             it.requesterId == self.id && it.status.equals("PENDING", ignoreCase = true)
         }
         requestAudioButton.text = if (ownPendingRequest) "Cancel audio request" else "Request to share device audio"
+        requestAudioButton.visibility = if (isModerator || self?.id == room.activeSourceId) View.GONE else View.VISIBLE
         val accessGranted = rewardedAccessGate.hasAccess()
         requestAudioButton.isEnabled = accessGranted && self != null && !isModerator && self.id != room.activeSourceId
         takeoverButton.isEnabled = accessGranted && isModerator && room.activeSourceId != null && self?.id != room.activeSourceId
@@ -1488,8 +1496,9 @@ class MainActivity : Activity() {
     }
 
     private fun handleSourceAction() {
-        val session = roomSession ?: return
-        val state = session.currentRoomState() ?: return
+        val session = roomSession ?: run { showRoomActionMessage("The audio service is reconnecting. Try again shortly."); return }
+        if (session.connectionState() != RoomConnectionState.JOINED) { showRoomActionMessage("Reconnecting to your room. Share after the connection returns; Leave room is still available."); return }
+        val state = session.currentRoomState() ?: run { showRoomActionMessage("Waiting for the room's current approval state."); return }
         val self = state.self ?: return
         val isModerator = self.id == state.room.hostId || self.id == state.room.cohostId
         val isSelfSource = self.id == state.room.activeSourceId
@@ -1531,7 +1540,7 @@ class MainActivity : Activity() {
         }
         if (session.requestControl("ANDROID_DEVICE_AUDIO", "I want to share Android playback audio.")) {
             appendRoomEvent("Requested device-audio control from the host.")
-        } else appendRoomEvent("The request could not be sent; join a room first.")
+        } else showRoomActionMessage("The request could not be sent. Wait for the room connection, then try again.")
     }
 
     private fun takeoverSource() {
@@ -1627,6 +1636,11 @@ class MainActivity : Activity() {
         appendRoomEvent("Left the room.")
     }
 
+    private fun showRoomActionMessage(message: String) {
+        appendRoomEvent(message)
+        android.widget.Toast.makeText(this,message,android.widget.Toast.LENGTH_LONG).show()
+    }
+
     private fun isCurrentModerator(state: RoomState): Boolean {
         val selfId = state.self?.id ?: return false
         return selfId == state.room.hostId || selfId == state.room.cohostId
@@ -1635,7 +1649,7 @@ class MainActivity : Activity() {
     private fun beginCapture(forRoomSource: Boolean) {
         if (!requireRewardedAccess()) return
         if (projectionConsentInFlight || pendingCaptureStart) {
-            appendRoomEvent("Android capture consent is already in progress.")
+            showRoomActionMessage("Android capture consent is already in progress. Finish or cancel that dialog first.")
             return
         }
         val session = roomSession ?: return
@@ -1645,7 +1659,7 @@ class MainActivity : Activity() {
         }
         val captureId = session.beginCapture()
         if (captureId == null) {
-            appendRoomEvent("The current room state does not authorize this phone to share.")
+            showRoomActionMessage("Cannot start phone audio yet. Check the room connection and ask the host to approve this phone again.")
             return
         }
         pendingCaptureId = captureId
