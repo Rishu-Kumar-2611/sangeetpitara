@@ -34,7 +34,7 @@ sessions remain compatible. It includes:
 
 ## Run it
 
-Requirements: Node.js 22.14.0 (the exact version is pinned in `.nvmrc`).
+Requirements: Node.js 22.23.4 (the exact version is pinned in `.nvmrc`).
 
 ```powershell
 npm ci
@@ -188,7 +188,7 @@ On macOS, Linux, or PowerShell 7+, use the same cross-platform start command:
 npm start
 ```
 
-The `.nvmrc` pins Node 22.14.0, which supports the optional env-file flag used by `npm start`. To restart on any platform, press `Ctrl+C`, wait for the process to exit, and run the same command again. If another program owns port `4173`, inspect it before stopping it rather than force-stopping an unrelated service.
+The `.nvmrc` pins Node 22.23.4, which supports the optional env-file flag used by `npm start`. To restart on any platform, press `Ctrl+C`, wait for the process to exit, and run the same command again. If another program owns port `4173`, inspect it before stopping it rather than force-stopping an unrelated service.
 
 With the server running, use this safe verification command to confirm whether `/config` is STUN-only or contains an explicitly enabled TURN relay. It prints only the relay status and count; it never prints the TURN credential:
 

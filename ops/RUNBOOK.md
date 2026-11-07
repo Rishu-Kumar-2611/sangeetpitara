@@ -1,6 +1,7 @@
 # Operations and release handoff
 
-These changes are prepared on `codex/production-hardening`. Public release remains
+These changes are prepared on `codex/production-hardening`. The server and CI
+now pin Node 22.23.4 within the existing Node 22 LTS line. Public release remains
 1.1.13 until the final UI pass and release checks. No paid resources were selected.
 
 ## Audio incident
