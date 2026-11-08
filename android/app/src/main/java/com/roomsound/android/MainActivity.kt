@@ -112,6 +112,10 @@ class MainActivity : Activity() {
     private lateinit var chatFeed: LinearLayout
     private lateinit var chatReplyText: TextView
     private lateinit var voiceRecordButton: Button
+    private lateinit var voiceStatusRow: LinearLayout
+    private lateinit var voiceStatusText: TextView
+    // The voice draft that was sent and awaits the server's echo (hides the retry row).
+    private var voiceSendingId: String? = null
     private lateinit var voicePreviewRow: LinearLayout
     private lateinit var voicePreviewPlayButton: Button
     private var chatReplyTarget: RoomChatMessage? = null
@@ -127,6 +131,12 @@ class MainActivity : Activity() {
     private lateinit var takeoverButton: Button
     private lateinit var requestAudioButton: Button
     private lateinit var listenToggleButton: Button
+    private lateinit var nowPlayingCassette: CassetteView
+    private lateinit var nowPlayingKicker: TextView
+    private lateinit var nowPlayingTitle: TextView
+    private lateinit var nowPlayingSubtitle: TextView
+    private lateinit var nowPlayingChip: TextView
+    private lateinit var nowPlayingCard: LinearLayout
     private lateinit var leaveRoomButton: Button
     private lateinit var endRoomButton: Button
     private lateinit var roomAccessRow: LinearLayout
@@ -720,6 +730,30 @@ class MainActivity : Activity() {
 
         nativeSessionControls = verticalContainer()
         roomPanel.addView(nativeSessionControls, matchWrap())
+        // Now playing: the website's cassette card, first on the Room screen.
+        nowPlayingCard = statusPanel().apply { setPadding(dp(16), dp(16), dp(16), dp(16)) }
+        nowPlayingCassette = CassetteView(this)
+        nowPlayingCard.addView(nowPlayingCassette, matchWrap())
+        nowPlayingKicker = sectionLabel("NOTHING PLAYING").apply { setPadding(0, dp(14), 0, 0) }
+        nowPlayingCard.addView(nowPlayingKicker, matchWrap())
+        nowPlayingTitle = TextView(this).apply {
+            textSize = 24f
+            setTypeface(headingTypeface)
+            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream))
+            setPadding(0, dp(4), 0, 0)
+            text = "The room is quiet"
+        }
+        nowPlayingCard.addView(nowPlayingTitle, matchWrap())
+        nowPlayingSubtitle = labelText().apply { setPadding(0, dp(4), 0, 0) }
+        nowPlayingCard.addView(nowPlayingSubtitle, matchWrap())
+        nowPlayingChip = TextView(this).apply {
+            textSize = 12f
+            setTypeface(monoTypeface)
+            letterSpacing = 0.08f
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+        }
+        nowPlayingCard.addView(nowPlayingChip, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
+        nativeSessionControls.addView(nowPlayingCard, marginLayout())
         nativeLocalInviteButton = button("View local invite", ButtonTone.SECONDARY) { navigateNative("nearby") }
         nativeSessionControls.addView(nativeLocalInviteButton, marginLayout())
         val roomStatusPanel = statusPanel()
@@ -784,7 +818,7 @@ class MainActivity : Activity() {
         nativeSessionControls.addView(sourceButton, marginLayout())
         listenToggleButton = button("Pause room audio", ButtonTone.SECONDARY) { toggleListening() }
         listenToggleButton.visibility = View.GONE
-        nativeSessionControls.addView(listenToggleButton, marginLayout())
+        nowPlayingCard.addView(listenToggleButton, marginLayout())
         takeoverButton = button("Take back control", ButtonTone.SECONDARY) { takeoverSource() }
         nativeSessionControls.addView(takeoverButton, marginLayout())
         requestAudioButton = button("Request to share device audio", ButtonTone.SECONDARY) { requestAudioControl() }
@@ -840,22 +874,26 @@ class MainActivity : Activity() {
         val chatRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         chatInput = inputText("Message", null)
         chatRow.addView(chatInput, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        // Voice notes work like Telegram: tap the mic to record, tap again to stop and send.
+        voiceRecordButton = button("\uD83C\uDFA4", ButtonTone.SECONDARY) { toggleVoiceRecording() }
+        chatRow.addView(voiceRecordButton, LinearLayout.LayoutParams(dp(56), LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) })
         chatRow.addView(
             button("Send") { sendChat() },
             LinearLayout.LayoutParams(dp(88), LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) },
         )
         chatPanel.addView(chatRow, marginLayout())
-        voiceRecordButton = button("Record voice", ButtonTone.SECONDARY) { toggleVoiceRecording() }
-        chatPanel.addView(voiceRecordButton, marginLayout())
+        voiceStatusRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
+        voiceStatusText = labelText()
+        voiceStatusRow.addView(voiceStatusText, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        voiceStatusRow.addView(button("Cancel", ButtonTone.SECONDARY) { voiceNotes.cancelRecording() }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)).apply { marginStart = dp(8) })
+        chatPanel.addView(voiceStatusRow, marginLayout())
+        voiceNotes.onDraftReady = { sendVoiceDraft() }
         voicePreviewRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
         voicePreviewPlayButton = button("Play", ButtonTone.SECONDARY) {
             if (voiceNotes.playing) voiceNotes.stopPlayback() else voiceNotes.draft?.let(voiceNotes::play)
         }
         voicePreviewRow.addView(voicePreviewPlayButton, LinearLayout.LayoutParams(0,dp(48),1f))
-        voicePreviewRow.addView(button("Send") {
-            val note = voiceNotes.draft ?: return@button
-            if (roomSession?.sendChat("", chatReplyTarget?.id, note, voiceNotes.draftId) != true) android.widget.Toast.makeText(this,"Reconnect before sending; your recording is still here.",android.widget.Toast.LENGTH_LONG).show()
-        }, LinearLayout.LayoutParams(0,dp(48),1f).apply { marginStart = dp(6) })
+        voicePreviewRow.addView(button("Send") { sendVoiceDraft() }, LinearLayout.LayoutParams(0,dp(48),1f).apply { marginStart = dp(6) })
         voicePreviewRow.addView(button("Discard", ButtonTone.SECONDARY) { voiceNotes.discard() }, LinearLayout.LayoutParams(0,dp(48),1f).apply { marginStart = dp(6) })
         chatPanel.addView(voicePreviewRow, marginLayout())
         if (compactLandscape) {
@@ -992,6 +1030,47 @@ class MainActivity : Activity() {
             return
         }
         android.widget.Toast.makeText(this, if (pause) "Paused on this phone. Others keep listening." else "Back to the live stream.", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    private fun renderNowPlaying(room: com.roomsound.android.room.RoomSummary, sourceName: String?, selfIsSource: Boolean) {
+        if (!::nowPlayingCard.isInitialized) return
+        val live = room.activeSourceId != null && room.sourceStatus.equals("LIVE", ignoreCase = true)
+        val starting = room.activeSourceId != null && !live
+        val paused = roomSession?.isListeningPaused() == true && !selfIsSource
+        val kind = room.activeSourceType.orEmpty().uppercase(Locale.US).let {
+            when {
+                "FILE" in it -> "AUDIO FILE"
+                "TAB" in it || "SCREEN" in it || "DISPLAY" in it -> "SCREEN AUDIO"
+                else -> "DEVICE AUDIO"
+            }
+        }
+        nowPlayingKicker.text = if (room.activeSourceId != null) "NOW PLAYING \u00B7 $kind" else "NOTHING PLAYING"
+        nowPlayingTitle.text = when {
+            room.activeSourceId == null -> "The room is quiet"
+            selfIsSource -> "You are sharing"
+            else -> "${sourceName ?: "Someone"} is sharing"
+        }
+        nowPlayingSubtitle.text = when {
+            room.activeSourceId == null -> "Share audio, or ask the host to play something for the room."
+            paused -> "Paused on this phone. Others keep listening."
+            selfIsSource -> "Everyone in the room hears this phone."
+            else -> "Everyone in the room can listen."
+        }
+        val (chip, color) = when {
+            paused -> "PAUSED" to R.color.roomsound_cream_muted
+            live -> "\u25CF LIVE" to R.color.roomsound_brass
+            starting -> "STARTING" to R.color.roomsound_warning
+            else -> "WAITING" to R.color.roomsound_cream_muted
+        }
+        nowPlayingChip.text = chip
+        nowPlayingChip.setTextColor(AppThemes.color(this, color))
+        nowPlayingChip.background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = dp(6).toFloat()
+            setColor(AppThemes.color(this@MainActivity, R.color.roomsound_accent_soft))
+        }
+        nowPlayingCassette.spinning = live && !paused
+        nowPlayingCassette.contentDescription = null
+        nowPlayingCard.contentDescription = "${nowPlayingKicker.text}. ${nowPlayingTitle.text}. $chip"
     }
 
     private fun renderListenToggle(canPause: Boolean) {
@@ -1307,6 +1386,7 @@ class MainActivity : Activity() {
             requestAudioButton.text = "Request to share device audio"
             requestAudioButton.isEnabled = false
             listenToggleButton.visibility = View.GONE
+            if (::nowPlayingCassette.isInitialized) nowPlayingCassette.spinning = false
             // Leaving is local cleanup and must remain available during retries.
             leaveRoomButton.isEnabled = roomSession?.currentEndpoint() != null || renderedRoomId != null
             endRoomButton.isEnabled = false
@@ -1357,6 +1437,7 @@ class MainActivity : Activity() {
         requestAudioButton.isEnabled = accessGranted && self != null && !isModerator && self.id != room.activeSourceId
         takeoverButton.isEnabled = accessGranted && isModerator && room.activeSourceId != null && self?.id != room.activeSourceId
         renderListenToggle(room.activeSourceId != null && self != null && self.id != room.activeSourceId)
+        renderNowPlaying(room, sourceMember?.name, self?.id == room.activeSourceId)
         leaveRoomButton.isEnabled = true
         endRoomButton.isEnabled = isHost
         runCatching { renderApprovalControls(state, isModerator) }
@@ -1908,6 +1989,26 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Sends the recorded draft. It stays for a retry if sending fails or is not confirmed. */
+    private fun sendVoiceDraft() {
+        val note = voiceNotes.draft ?: return
+        val id = voiceNotes.draftId
+        if (roomSession?.sendChat("", chatReplyTarget?.id, note, id) != true) {
+            voiceSendingId = null
+            android.widget.Toast.makeText(this, "Reconnect before sending; your recording is still here.", android.widget.Toast.LENGTH_LONG).show()
+        } else {
+            voiceSendingId = id
+            transportRenderHandler.postDelayed({
+                if (voiceSendingId == id && voiceNotes.draftId == id) {
+                    voiceSendingId = null
+                    android.widget.Toast.makeText(this, "Sending was not confirmed. Your recording is still here to retry.", android.widget.Toast.LENGTH_LONG).show()
+                    updateVoiceComposer()
+                }
+            }, 15_000)
+        }
+        updateVoiceComposer()
+    }
+
     private fun toggleVoiceRecording() {
         if (roomSession?.currentRoomState() == null) { appendRoomEvent("Join a room before recording."); return }
         if (voiceNotes.recording) { voiceNotes.stopRecording(); return }
@@ -1922,9 +2023,21 @@ class MainActivity : Activity() {
         if (!::voiceRecordButton.isInitialized) return
         val supported = roomSession?.supportsVoiceMessages() == true
         voiceRecordButton.isEnabled = supported || voiceNotes.recording || voiceNotes.draft != null
-        voiceRecordButton.text = if (voiceNotes.recording) "Stop recording · ${voiceNotes.elapsedSeconds} / 30 sec" else if (voiceNotes.draft != null) "Review voice message" else if (!supported) "Voice notes unavailable in this room" else "Record voice"
+        voiceRecordButton.text = if (voiceNotes.recording) "\u27A4" else "\uD83C\uDFA4"
+        voiceRecordButton.contentDescription = when {
+            voiceNotes.recording -> "Stop and send voice message"
+            !supported -> "Voice messages are unavailable in this room"
+            else -> "Record voice message"
+        }
+        val sending = voiceNotes.draft != null && voiceSendingId != null && voiceSendingId == voiceNotes.draftId
+        if (::voiceStatusRow.isInitialized) {
+            voiceStatusRow.visibility = if (voiceNotes.recording || sending) View.VISIBLE else View.GONE
+            voiceStatusText.text = if (voiceNotes.recording) "Recording ${voiceNotes.elapsedSeconds} / 30 sec - tap \u27A4 to send" else "Sending voice message..."
+            voiceStatusRow.getChildAt(1).visibility = if (voiceNotes.recording) View.VISIBLE else View.GONE
+        }
         if (::voicePreviewPlayButton.isInitialized) voicePreviewPlayButton.text = if (voiceNotes.playing) "Stop" else "Play"
-        if (::voicePreviewRow.isInitialized) voicePreviewRow.visibility = if (voiceNotes.draft != null) View.VISIBLE else View.GONE
+        // The draft row only appears when a send failed, for a retry or discard.
+        if (::voicePreviewRow.isInitialized) voicePreviewRow.visibility = if (voiceNotes.draft != null && !voiceNotes.recording && !sending) View.VISIBLE else View.GONE
         if (::chatReplyText.isInitialized) {
             chatReplyText.visibility = if (chatReplyTarget == null) View.GONE else View.VISIBLE
             chatReplyText.text = chatReplyTarget?.let { "Replying to ${it.senderName}: ${if (it.voice == null) it.text.take(100) else "Voice message"}  · Tap to cancel" }

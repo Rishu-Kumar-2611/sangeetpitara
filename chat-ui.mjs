@@ -5,7 +5,9 @@ export class RoomChatUI {
     Object.assign(this,{feed,input,form,send,getMessages,getSelfId,onError}); this.urls=new Map(); this.nodes=new Map(); this.generation=0;
     this.reply=make('div','chat-reply-composer');this.reply.hidden=true;form.before(this.reply);
     this.preview=make('div','chat-voice-preview');this.preview.hidden=true;form.before(this.preview);
-    this.tools=make('div','chat-tools');this.recordButton=button('Record voice',()=>this.toggleRecording(),'ghost-button');this.tools.append(this.recordButton);form.after(this.tools);
+    // Voice notes work like Telegram: tap the mic to record, tap again to stop and send.
+    this.tools=make('div','chat-tools');this.recordButton=button('🎤',()=>this.toggleRecording(),'mic-button');this.setMicState(false);
+    const submit=form.querySelector('[type="submit"]');if(submit)submit.before(this.recordButton);else this.tools.append(this.recordButton);form.after(this.tools);
     this.feed.addEventListener('play',e=>{if(e.target.tagName==='AUDIO')for(const audio of this.feed.querySelectorAll('audio'))if(audio!==e.target)audio.pause();},true);
     this.hideHandler=()=>{if(document.hidden)this.cancelRecording();};document.addEventListener('visibilitychange',this.hideHandler);
     this.pageHandler=()=>this.reset();addEventListener('pagehide',this.pageHandler);
@@ -46,6 +48,10 @@ export class RoomChatUI {
     if(near)this.feed.scrollTop=this.feed.scrollHeight;
   }
   releaseUrl(id){const url=this.urls.get(id);if(url){URL.revokeObjectURL(url);this.urls.delete(id);}}
+  setMicState(recording){
+    this.recordButton.classList.toggle('recording',recording);this.recordButton.textContent=recording?'➤':'🎤';
+    const label=recording?'Stop and send voice':'Record voice';this.recordButton.setAttribute('aria-label',label);if(!this.recordButton.disabled)this.recordButton.title=recording?'Tap to stop and send':'Tap to record a voice message';
+  }
   async toggleRecording(){
     if(this.recorder?.state==='recording'){this.recorder.stop();return;}
     if(this.draft){this.showDraft();return;}
@@ -60,34 +66,37 @@ export class RoomChatUI {
       this.recorder.ondataavailable=e=>{if(this.cancelled)return;if(e.data.size){this.bytes+=e.data.size;this.chunks.push(e.data);if(this.bytes>192*1024){this.cancelled=true;if(this.recorder.state==='recording')this.recorder.stop();this.onError('Recording is too large. Try a shorter voice note.');}}};
       this.recorder.onerror=()=>{this.cancelled=true;if(this.recorder.state==='recording')this.recorder.stop();this.onError('The microphone recording failed. Please try again.');};
       this.recorder.onstop=async()=>{
-        clearInterval(this.recordTimer);stream.getTracks().forEach(t=>t.stop());this.stream=null;this.recordButton.textContent='Record voice';this.preview.hidden=true;
+        clearInterval(this.recordTimer);stream.getTracks().forEach(t=>t.stop());this.stream=null;this.setMicState(false);this.preview.hidden=true;
         const chunks=this.chunks;this.chunks=[];
         if(this.cancelled||generation!==this.generation)return;
         const blob=new Blob(chunks,{type:mimeType}),durationMs=Math.min(30000,Math.round(performance.now()-this.started));
         if(durationMs<200||blob.size<12||blob.size>192*1024)return this.onError('Please record between 1 and 30 seconds.');
         const bytes=new Uint8Array(await blob.arrayBuffer());if(generation!==this.generation)return;
         let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
-        this.draft={data:btoa(binary),mimeType,durationMs};this.draftId=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');this.draftUrl=URL.createObjectURL(blob);this.showDraft();
+        this.draft={data:btoa(binary),mimeType,durationMs};this.draftId=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');this.draftUrl=URL.createObjectURL(blob);
+        // Stopping sends straight away. If sending fails, the recording stays for a retry.
+        this.preview.hidden=false;const sending=make('span','',`Sending voice message · ${Math.max(1,Math.round(durationMs/1000))} sec…`);sending.setAttribute('role','status');this.preview.replaceChildren(sending);
+        if(!this.sendDraft())this.showDraft();
       };
-      this.recorder.start(250);this.preview.hidden=false;const label=make('span');label.setAttribute('role','status');this.preview.replaceChildren(label,button('Discard',()=>this.cancelRecording()));
-      const tick=()=>{const elapsed=Math.round((performance.now()-this.started)/1000);label.textContent=`Recording ${Math.min(30,elapsed)} / 30 sec`;if(elapsed>=30&&this.recorder.state==='recording')this.recorder.stop();};
-      tick();this.recordTimer=setInterval(tick,250);this.recordButton.textContent='Stop recording';
+      this.recorder.start(250);this.preview.hidden=false;const label=make('span','chat-recording');label.setAttribute('role','status');this.preview.replaceChildren(label,button('Cancel',()=>this.cancelRecording()));
+      const tick=()=>{const elapsed=Math.round((performance.now()-this.started)/1000);label.textContent=`Recording ${Math.min(30,elapsed)} / 30 sec · tap ➤ to send`;if(elapsed>=30&&this.recorder.state==='recording')this.recorder.stop();};
+      tick();this.recordTimer=setInterval(tick,250);this.setMicState(true);
     }catch(error){this.stream?.getTracks().forEach(t=>t.stop());this.onError(error.name==='NotAllowedError'?'Microphone access was denied. You can still send text messages.':error.message||'The microphone is unavailable.');}
     finally {this.requesting=false;}
   }
   showDraft(){
     this.preview.hidden=false;const audio=make('audio','chat-voice-player');audio.controls=true;audio.src=this.draftUrl;audio.preload='metadata';
     this.preview.replaceChildren(audio,button('Send voice',()=>this.sendDraft(),'primary-button'),button('Discard',()=>this.discardDraft()));
-    this.recordButton.textContent='Review voice';
   }
   sendDraft(){
-    if(!this.draft||this.pendingId)return;
-    if(this.send(this.payload({type:'chat',voice:this.draft,clientMessageId:this.draftId}))===false)return;
-    this.pendingId=this.draftId;this.preview.querySelector('button').disabled=true;
+    if(!this.draft||this.pendingId)return false;
+    if(this.send(this.payload({type:'chat',voice:this.draft,clientMessageId:this.draftId}))===false)return false;
+    this.pendingId=this.draftId;const sendButton=this.preview.querySelector('button');if(sendButton)sendButton.disabled=true;
     this.ackTimer=setTimeout(()=>{this.pendingId=null;if(this.draft){this.showDraft();this.onError('Sending was not confirmed. Reconnect and retry; the recording is still here.');}},15000);
+    return true;
   }
   sendFailed(){if(this.pendingId){clearTimeout(this.ackTimer);this.pendingId=null;if(this.draft)this.showDraft();}}
-  cancelRecording(){++this.generation;this.cancelled=true;clearInterval(this.recordTimer);if(this.recorder?.state==='recording')this.recorder.stop();this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;if(!this.draft)this.preview.hidden=true;this.recordButton.textContent=this.draft?'Review voice':'Record voice';}
-  discardDraft(){if(this.draftUrl)URL.revokeObjectURL(this.draftUrl);this.draftUrl=null;this.draft=null;this.preview.hidden=true;this.preview.replaceChildren();this.recordButton.textContent='Record voice';}
+  cancelRecording(){++this.generation;this.cancelled=true;clearInterval(this.recordTimer);if(this.recorder?.state==='recording')this.recorder.stop();this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;if(!this.draft)this.preview.hidden=true;this.setMicState(false);}
+  discardDraft(){if(this.draftUrl)URL.revokeObjectURL(this.draftUrl);this.draftUrl=null;this.draft=null;this.preview.hidden=true;this.preview.replaceChildren();this.setMicState(false);}
   reset(){this.cancelRecording();clearTimeout(this.ackTimer);this.pendingId=null;this.discardDraft();this.clearReply();for(const id of this.urls.keys())this.releaseUrl(id);this.nodes.clear();this.feed.replaceChildren();}
 }

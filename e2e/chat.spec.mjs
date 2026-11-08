@@ -3,7 +3,7 @@ async function create(page) {
  await page.goto('/');await page.locator('[data-open-screen="create"]').click();await page.getByLabel('Your display name').fill('Voice host');await page.getByLabel('Room name',{exact:true}).fill('Voice and replies');await page.locator('#create-room').click();await expect(page.locator('#room-view')).toBeVisible();
  return (await page.locator('#room-code-display').textContent()).trim();
 }
-test('record, preview and send a playable voice note; replies and new messages preserve playback',async({page,browser},info)=>{
+test('tap to record and tap again to send a playable voice note; replies and new messages preserve playback',async({page,browser},info)=>{
  await page.addInitScript(()=>{
   navigator.mediaDevices.getUserMedia=async()=>{
    const context=new AudioContext(),osc=context.createOscillator(),dest=context.createMediaStreamDestination();osc.frequency.value=440;osc.connect(dest);osc.start();window.testMicStream=dest.stream;window.testMicContext=context;return dest.stream;
@@ -17,11 +17,14 @@ test('record, preview and send a playable voice note; replies and new messages p
   await expect(listener.locator('#chat-feed')).toContainText('A message to reply to');
   await listener.locator('#chat-feed').getByRole('button',{name:'Reply',exact:true}).first().click();await listener.getByLabel('Message the room').fill('This replies to you');await listener.getByRole('button',{name:'Send message',exact:true}).click();
   await expect(page.locator('.chat-quote')).toContainText('A message to reply to');
-  await page.getByRole('button',{name:'Record voice',exact:true}).click();await expect(page.getByRole('button',{name:'Stop recording',exact:true})).toBeVisible();
+  // Telegram-style: one tap starts recording, the next tap stops and sends.
+  await page.getByRole('button',{name:'Record voice',exact:true}).click();await expect(page.getByRole('button',{name:'Stop and send voice',exact:true})).toBeVisible();
   await expect(page.locator('.chat-voice-preview')).toContainText('Recording 4 / 30 sec',{timeout:7000});
-  await page.getByRole('button',{name:'Stop recording',exact:true}).click();await expect(page.getByRole('button',{name:'Send voice',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Stop and send voice',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Record voice',exact:true})).toBeVisible();
   expect(await page.evaluate(()=>window.testMicStream.getAudioTracks().every(t=>t.readyState==='ended'))).toBe(true);
-  await page.getByRole('button',{name:'Send voice',exact:true}).click();
+  await expect(page.locator('#chat-feed audio')).toHaveCount(1);
+  await expect(page.locator('.chat-voice-preview')).toBeHidden();
   const audio=listener.locator('#chat-feed audio');await expect(audio).toHaveCount(1);
   await audio.evaluate(async el=>{await el.play()});await expect.poll(()=>audio.evaluate(el=>el.currentTime)).toBeGreaterThan(.1);
   const before=await audio.evaluate(el=>el.currentTime);const src=await audio.getAttribute('src');
@@ -29,9 +32,13 @@ test('record, preview and send a playable voice note; replies and new messages p
   await page.getByLabel('Message the room').fill('Another message while listening');await page.getByRole('button',{name:'Send message',exact:true}).click();
   await expect(listener.locator('#chat-feed')).toContainText('Another message while listening');
   expect(await audio.getAttribute('src')).toBe(src);await expect.poll(()=>audio.evaluate(el=>el.currentTime)).toBeGreaterThan(before);
-  await page.getByRole('button',{name:'Record voice',exact:true}).click();await expect(page.getByRole('button',{name:'Stop recording',exact:true})).toBeVisible();await page.locator('#room-tab-health').click();
+  await page.getByRole('button',{name:'Record voice',exact:true}).click();await expect(page.getByRole('button',{name:'Stop and send voice',exact:true})).toBeVisible();await page.locator('#room-tab-health').click();
   expect(await page.evaluate(()=>window.testMicStream.getAudioTracks().every(t=>t.readyState==='ended'))).toBe(true);
   await page.locator('#room-tab-chat').click();await expect(page.getByRole('button',{name:'Send voice',exact:true})).toBeHidden();
+  // Cancel while recording sends nothing.
+  await page.getByRole('button',{name:'Record voice',exact:true}).click();await expect(page.getByRole('button',{name:'Stop and send voice',exact:true})).toBeVisible();
+  await page.locator('.chat-voice-preview').getByRole('button',{name:'Cancel',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Record voice',exact:true})).toBeVisible();await expect(page.locator('#chat-feed audio')).toHaveCount(1);
   await page.screenshot({path:info.outputPath('voice-and-replies.png'),fullPage:true});
  } finally {await other.close();}
 });

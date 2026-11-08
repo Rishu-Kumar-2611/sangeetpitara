@@ -2004,6 +2004,16 @@ wss.on('connection', (ws, req) => {
   });
   ws.on('message', (raw, isBinary) => {
     ws._lastActivityAt = Date.now();
+    // Liveness probe from the web app: answer at most twice a second, outside
+    // the JSON rate budget, so a frozen connection is noticed within seconds.
+    if (!isBinary && raw.length <= 32 && String(raw) === '{"type":"ping"}') {
+      const now = Date.now();
+      if (now - (ws._lastPongAt || 0) >= 500) {
+        ws._lastPongAt = now;
+        try { ws.send('{"type":"pong"}'); } catch {}
+      }
+      return;
+    }
     const byteLength = Buffer.byteLength(raw);
     const maxBytes = isBinary ? MEDIA_RELAY_MAX_FRAME_BYTES : MAX_CHAT_PAYLOAD_BYTES;
     if (byteLength > maxBytes) return sendError(ws, isBinary ? 'Media relay frame too large.' : 'Message too large.');

@@ -203,7 +203,8 @@ html[data-theme] .topbar .brand-mark span { display: none; }
 html[data-theme] .crumb-room-name { font-family: var(--font-body); font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
 html[data-theme] .crumb-separator { background: var(--line-strong); }
 html[data-theme] .room-code-small, html[data-theme] .room-code-display strong { font-family: var(--font-mono); font-weight: 500; }
-html[data-theme] .room-code-small { padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: transparent; color: var(--muted); font-size: 12.5px; letter-spacing: 0.14em; }
+/* The room code is what people read out to each other: make it easy to see. */
+html[data-theme] .room-code-small { padding: 6px 14px; border: 1px solid var(--accent-line); border-radius: 8px; background: var(--accent-soft); color: var(--text); font-size: clamp(20px, 2vw, 26px); font-weight: 600; letter-spacing: 0.16em; line-height: 1.2; user-select: all; }
 html[data-theme] .connection-chip { height: 32px; padding: 0 10px; border-radius: 6px; background: transparent; color: var(--muted); font: 500 11.5px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
 html[data-theme] .connection-dot { width: 7px; height: 7px; background: var(--teal); }
 html[data-theme] .connection-chip.bad { background: var(--danger-bg); color: var(--danger-text); }
@@ -219,7 +220,12 @@ html[data-theme] .room-banner, html[data-theme] .legal-warning { border: 1px sol
 
 /* ---------- Room: now playing ---------- */
 /* The Room tab is only the listening surface; people and chat have their own tabs. */
-html[data-theme] .room-view[data-room-tab="listen"] .room-layout { display: block; max-width: 920px; margin-inline: auto; }
+html[data-theme] .room-view[data-room-tab="listen"] .room-layout { display: block; max-width: none; margin-inline: 0; }
+/* Inside a room the page uses the full window width. */
+html[data-theme] .shell:has(> #room-view:not(.hidden)) { width: 100%; max-width: none; }
+@media (min-width: 1200px) {
+  html[data-theme] .room-view[data-room-tab="listen"] .source-card { grid-template-columns: minmax(240px, 340px) minmax(0, 1fr); gap: 40px; }
+}
 html[data-theme] .now-playing { padding: 28px; }
 html[data-theme] .source-card { grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 32px; align-items: center; }
 html[data-theme] .source-cover.cassette { width: 100%; aspect-ratio: 1.58; border: 0; border-radius: 14px; place-items: initial; animation: none; }

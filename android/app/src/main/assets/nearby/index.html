@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="app-version" content="1.1.19"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="app-version" content="1.1.20"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
 body{background:radial-gradient(ellipse at top left,#19322c 0,transparent 55%),#100d0b;color:#f7f1ea;max-width:640px;padding:clamp(20px,5vw,40px);line-height:1.55}
 h1{font-size:clamp(32px,8vw,44px);letter-spacing:-.045em;margin:12px 0 8px;color:#f5bd68}
 h2{font-size:21px;letter-spacing:-.02em;margin-top:28px}p{color:#d0c2b3}small{display:block;font-size:13px;color:#c4b6a7}
@@ -212,7 +212,8 @@ html[data-theme] .topbar .brand-mark span { display: none; }
 html[data-theme] .crumb-room-name { font-family: var(--font-body); font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
 html[data-theme] .crumb-separator { background: var(--line-strong); }
 html[data-theme] .room-code-small, html[data-theme] .room-code-display strong { font-family: var(--font-mono); font-weight: 500; }
-html[data-theme] .room-code-small { padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: transparent; color: var(--muted); font-size: 12.5px; letter-spacing: 0.14em; }
+/* The room code is what people read out to each other: make it easy to see. */
+html[data-theme] .room-code-small { padding: 6px 14px; border: 1px solid var(--accent-line); border-radius: 8px; background: var(--accent-soft); color: var(--text); font-size: clamp(20px, 2vw, 26px); font-weight: 600; letter-spacing: 0.16em; line-height: 1.2; user-select: all; }
 html[data-theme] .connection-chip { height: 32px; padding: 0 10px; border-radius: 6px; background: transparent; color: var(--muted); font: 500 11.5px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
 html[data-theme] .connection-dot { width: 7px; height: 7px; background: var(--teal); }
 html[data-theme] .connection-chip.bad { background: var(--danger-bg); color: var(--danger-text); }
@@ -228,7 +229,12 @@ html[data-theme] .room-banner, html[data-theme] .legal-warning { border: 1px sol
 
 /* ---------- Room: now playing ---------- */
 /* The Room tab is only the listening surface; people and chat have their own tabs. */
-html[data-theme] .room-view[data-room-tab="listen"] .room-layout { display: block; max-width: 920px; margin-inline: auto; }
+html[data-theme] .room-view[data-room-tab="listen"] .room-layout { display: block; max-width: none; margin-inline: 0; }
+/* Inside a room the page uses the full window width. */
+html[data-theme] .shell:has(> #room-view:not(.hidden)) { width: 100%; max-width: none; }
+@media (min-width: 1200px) {
+  html[data-theme] .room-view[data-room-tab="listen"] .source-card { grid-template-columns: minmax(240px, 340px) minmax(0, 1fr); gap: 40px; }
+}
 html[data-theme] .now-playing { padding: 28px; }
 html[data-theme] .source-card { grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 32px; align-items: center; }
 html[data-theme] .source-cover.cassette { width: 100%; aspect-ratio: 1.58; border: 0; border-radius: 14px; place-items: initial; animation: none; }
@@ -452,6 +458,14 @@ html[data-theme] body:has(#local-health) h2 { font-size:21px; }
 html[data-theme] body:has(#local-health) .chat-tools .ghost-button { background:transparent; color:var(--text); border:1px solid var(--line-strong); box-shadow:none; }
 html[data-theme] .local-panel #chat { border-block-color:var(--line); }
 
+/* Voice notes: tap the mic to record, tap ➤ to stop and send. */
+.mic-button { flex:0 0 auto; width:42px; height:42px; display:grid; place-items:center; padding:0; border:1px solid var(--line-strong); border-radius:var(--radius-control, 10px); background:var(--raised); color:var(--text); font-size:18px; line-height:1; cursor:pointer; }
+.mic-button:disabled { opacity:.45; cursor:not-allowed; }
+.mic-button.recording { border-color:transparent; background:var(--accent); color:var(--on-accent, #fff); animation:mic-pulse 1.2s ease-in-out infinite; }
+.chat-recording::before { content:''; display:inline-block; width:8px; height:8px; margin-right:8px; border-radius:50%; background:#e5484d; vertical-align:middle; animation:mic-pulse 1.2s ease-in-out infinite; }
+@keyframes mic-pulse { 50% { opacity:.55; } }
+@media (prefers-reduced-motion: reduce) { .mic-button.recording, .chat-recording::before { animation:none; } }
+
 :root{--bg:#100d0b;--surface:#211b15;--text:#f7f1ea;--muted:#c4b6a7;--accent:#efad48;--on-accent:#19150d;--room-color-1:#19322c;--room-color-2:#281b12}
 body{background:radial-gradient(ellipse at top left,var(--room-color-1),transparent 65%),var(--bg);color:var(--text)}h1,a{color:var(--accent)}p,small{color:var(--muted)}input{background:var(--bg);color:var(--text)}button{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}#status{background:var(--surface);color:var(--text)}#leave{color:var(--accent)}aside{border:1px solid #ffffff22;border-radius:16px;padding:16px;margin:16px 0;font-size:15px}.theme-bar{padding:8px 0;background:var(--surface)}
 </style><script data-shared-theme>(() => {
@@ -504,7 +518,9 @@ class RoomChatUI {
     Object.assign(this,{feed,input,form,send,getMessages,getSelfId,onError}); this.urls=new Map(); this.nodes=new Map(); this.generation=0;
     this.reply=make('div','chat-reply-composer');this.reply.hidden=true;form.before(this.reply);
     this.preview=make('div','chat-voice-preview');this.preview.hidden=true;form.before(this.preview);
-    this.tools=make('div','chat-tools');this.recordButton=button('Record voice',()=>this.toggleRecording(),'ghost-button');this.tools.append(this.recordButton);form.after(this.tools);
+    // Voice notes work like Telegram: tap the mic to record, tap again to stop and send.
+    this.tools=make('div','chat-tools');this.recordButton=button('🎤',()=>this.toggleRecording(),'mic-button');this.setMicState(false);
+    const submit=form.querySelector('[type="submit"]');if(submit)submit.before(this.recordButton);else this.tools.append(this.recordButton);form.after(this.tools);
     this.feed.addEventListener('play',e=>{if(e.target.tagName==='AUDIO')for(const audio of this.feed.querySelectorAll('audio'))if(audio!==e.target)audio.pause();},true);
     this.hideHandler=()=>{if(document.hidden)this.cancelRecording();};document.addEventListener('visibilitychange',this.hideHandler);
     this.pageHandler=()=>this.reset();addEventListener('pagehide',this.pageHandler);
@@ -545,6 +561,10 @@ class RoomChatUI {
     if(near)this.feed.scrollTop=this.feed.scrollHeight;
   }
   releaseUrl(id){const url=this.urls.get(id);if(url){URL.revokeObjectURL(url);this.urls.delete(id);}}
+  setMicState(recording){
+    this.recordButton.classList.toggle('recording',recording);this.recordButton.textContent=recording?'➤':'🎤';
+    const label=recording?'Stop and send voice':'Record voice';this.recordButton.setAttribute('aria-label',label);if(!this.recordButton.disabled)this.recordButton.title=recording?'Tap to stop and send':'Tap to record a voice message';
+  }
   async toggleRecording(){
     if(this.recorder?.state==='recording'){this.recorder.stop();return;}
     if(this.draft){this.showDraft();return;}
@@ -559,35 +579,38 @@ class RoomChatUI {
       this.recorder.ondataavailable=e=>{if(this.cancelled)return;if(e.data.size){this.bytes+=e.data.size;this.chunks.push(e.data);if(this.bytes>192*1024){this.cancelled=true;if(this.recorder.state==='recording')this.recorder.stop();this.onError('Recording is too large. Try a shorter voice note.');}}};
       this.recorder.onerror=()=>{this.cancelled=true;if(this.recorder.state==='recording')this.recorder.stop();this.onError('The microphone recording failed. Please try again.');};
       this.recorder.onstop=async()=>{
-        clearInterval(this.recordTimer);stream.getTracks().forEach(t=>t.stop());this.stream=null;this.recordButton.textContent='Record voice';this.preview.hidden=true;
+        clearInterval(this.recordTimer);stream.getTracks().forEach(t=>t.stop());this.stream=null;this.setMicState(false);this.preview.hidden=true;
         const chunks=this.chunks;this.chunks=[];
         if(this.cancelled||generation!==this.generation)return;
         const blob=new Blob(chunks,{type:mimeType}),durationMs=Math.min(30000,Math.round(performance.now()-this.started));
         if(durationMs<200||blob.size<12||blob.size>192*1024)return this.onError('Please record between 1 and 30 seconds.');
         const bytes=new Uint8Array(await blob.arrayBuffer());if(generation!==this.generation)return;
         let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
-        this.draft={data:btoa(binary),mimeType,durationMs};this.draftId=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');this.draftUrl=URL.createObjectURL(blob);this.showDraft();
+        this.draft={data:btoa(binary),mimeType,durationMs};this.draftId=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');this.draftUrl=URL.createObjectURL(blob);
+        // Stopping sends straight away. If sending fails, the recording stays for a retry.
+        this.preview.hidden=false;const sending=make('span','',`Sending voice message · ${Math.max(1,Math.round(durationMs/1000))} sec…`);sending.setAttribute('role','status');this.preview.replaceChildren(sending);
+        if(!this.sendDraft())this.showDraft();
       };
-      this.recorder.start(250);this.preview.hidden=false;const label=make('span');label.setAttribute('role','status');this.preview.replaceChildren(label,button('Discard',()=>this.cancelRecording()));
-      const tick=()=>{const elapsed=Math.round((performance.now()-this.started)/1000);label.textContent=`Recording ${Math.min(30,elapsed)} / 30 sec`;if(elapsed>=30&&this.recorder.state==='recording')this.recorder.stop();};
-      tick();this.recordTimer=setInterval(tick,250);this.recordButton.textContent='Stop recording';
+      this.recorder.start(250);this.preview.hidden=false;const label=make('span','chat-recording');label.setAttribute('role','status');this.preview.replaceChildren(label,button('Cancel',()=>this.cancelRecording()));
+      const tick=()=>{const elapsed=Math.round((performance.now()-this.started)/1000);label.textContent=`Recording ${Math.min(30,elapsed)} / 30 sec · tap ➤ to send`;if(elapsed>=30&&this.recorder.state==='recording')this.recorder.stop();};
+      tick();this.recordTimer=setInterval(tick,250);this.setMicState(true);
     }catch(error){this.stream?.getTracks().forEach(t=>t.stop());this.onError(error.name==='NotAllowedError'?'Microphone access was denied. You can still send text messages.':error.message||'The microphone is unavailable.');}
     finally {this.requesting=false;}
   }
   showDraft(){
     this.preview.hidden=false;const audio=make('audio','chat-voice-player');audio.controls=true;audio.src=this.draftUrl;audio.preload='metadata';
     this.preview.replaceChildren(audio,button('Send voice',()=>this.sendDraft(),'primary-button'),button('Discard',()=>this.discardDraft()));
-    this.recordButton.textContent='Review voice';
   }
   sendDraft(){
-    if(!this.draft||this.pendingId)return;
-    if(this.send(this.payload({type:'chat',voice:this.draft,clientMessageId:this.draftId}))===false)return;
-    this.pendingId=this.draftId;this.preview.querySelector('button').disabled=true;
+    if(!this.draft||this.pendingId)return false;
+    if(this.send(this.payload({type:'chat',voice:this.draft,clientMessageId:this.draftId}))===false)return false;
+    this.pendingId=this.draftId;const sendButton=this.preview.querySelector('button');if(sendButton)sendButton.disabled=true;
     this.ackTimer=setTimeout(()=>{this.pendingId=null;if(this.draft){this.showDraft();this.onError('Sending was not confirmed. Reconnect and retry; the recording is still here.');}},15000);
+    return true;
   }
   sendFailed(){if(this.pendingId){clearTimeout(this.ackTimer);this.pendingId=null;if(this.draft)this.showDraft();}}
-  cancelRecording(){++this.generation;this.cancelled=true;clearInterval(this.recordTimer);if(this.recorder?.state==='recording')this.recorder.stop();this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;if(!this.draft)this.preview.hidden=true;this.recordButton.textContent=this.draft?'Review voice':'Record voice';}
-  discardDraft(){if(this.draftUrl)URL.revokeObjectURL(this.draftUrl);this.draftUrl=null;this.draft=null;this.preview.hidden=true;this.preview.replaceChildren();this.recordButton.textContent='Record voice';}
+  cancelRecording(){++this.generation;this.cancelled=true;clearInterval(this.recordTimer);if(this.recorder?.state==='recording')this.recorder.stop();this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;if(!this.draft)this.preview.hidden=true;this.setMicState(false);}
+  discardDraft(){if(this.draftUrl)URL.revokeObjectURL(this.draftUrl);this.draftUrl=null;this.draft=null;this.preview.hidden=true;this.preview.replaceChildren();this.setMicState(false);}
   reset(){this.cancelRecording();clearTimeout(this.ackTimer);this.pendingId=null;this.discardDraft();this.clearReply();for(const id of this.urls.keys())this.releaseUrl(id);this.nodes.clear();this.feed.replaceChildren();}
 }
 </script><!-- SHARED CHAT END -->
@@ -599,7 +622,7 @@ const ENUMS = {
   connection: ['connected','connecting','offline'],
   output: ['running','suspended','closed','unavailable'],
 };
-const EVENTS = new Set(['started','connection_changed','source_changed','output_changed','underrun','sequence_gap','playback_trimmed','socket_closed','publisher_drop','exported','sequence_resync']);
+const EVENTS = new Set(['started','connection_changed','source_changed','output_changed','underrun','sequence_gap','playback_trimmed','socket_closed','publisher_drop','exported','sequence_resync','socket_stalled']);
 class AudioDiagnostics {
   constructor({ clock = Date.now, capacity = 300, eventCapacity = 120 } = {}) {
     this.clock = clock;

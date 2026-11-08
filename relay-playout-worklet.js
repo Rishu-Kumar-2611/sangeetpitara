@@ -46,7 +46,9 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.lastEnqueueTime = null;
     this.jitterSeconds = 0.002; // Do not invent network jitter before measuring it.
     this._smoothedRate = 1.0;
-    this.lastUnstableTime = -Infinity;
+    this.holdNeed = 0;
+    this.holdSince = -Infinity;
+    this.burstSamples = 0;
     this.excessRendered = 0;
 
     this.port.onmessage = ({ data }) => {
@@ -87,11 +89,27 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.adaptiveExtraFill = 0;
     this.lastEnqueueTime = null;
     this.jitterSeconds = 0.002;
-    this.lastUnstableTime = -Infinity;
+    this.holdNeed = 0;
+    this.holdSince = -Infinity;
+    this.burstSamples = 0;
     this.excessRendered = 0;
     this._smoothedRate = 1;
     this.updateTargetFill();
     this.avgFill = this.targetFill;
+  }
+
+  // A late packet, burst or underrun needs `need` samples of extra cushion.
+  // The largest recent need is held for STABLE_BEFORE_DECAY_SECONDS. A smaller
+  // hiccup does not restart that wait, so ordinary internet jitter no longer
+  // keeps a 2 s cushion (and a 2 s delay) for the rest of the session.
+  noteInstability(need, now) {
+    const bounded = Math.max(0, Math.min(MAX_TARGET_FILL - this.baseTargetFill, Math.ceil(need)));
+    this.adaptiveExtraFill = Math.max(this.adaptiveExtraFill, bounded);
+    if (bounded >= this.holdNeed || now - this.holdSince > STABLE_BEFORE_DECAY_SECONDS) {
+      this.holdNeed = bounded;
+      this.holdSince = now;
+    }
+    this.updateTargetFill();
   }
 
   enqueuePcm16(int16Samples, channels) {
@@ -104,14 +122,15 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     const expectedInterval = frameCount / 48_000;
     // Frames that land in the same audio tick as the previous ones are a burst.
     const arrivedInBurst = this.lastEnqueueTime !== null && now - this.lastEnqueueTime < expectedInterval * 0.25;
+    // Audio delivered together in one burst: its size is how late it arrived.
+    this.burstSamples = arrivedInBurst ? this.burstSamples + frameCount : frameCount;
     if (this.lastEnqueueTime !== null) {
       const actualInterval = Math.max(0, now - this.lastEnqueueTime);
       // Only update jitter when packets arrive in distinct audio blocks (not same-tick TCP burst tail)
       if (actualInterval >= expectedInterval * 0.25) {
         const deviation = Math.abs(actualInterval - expectedInterval);
         if (actualInterval > 0.08 && actualInterval <= PAUSE_GAP_SECONDS) {
-          this.adaptiveExtraFill = Math.max(this.adaptiveExtraFill, Math.min(MAX_TARGET_FILL - this.baseTargetFill, Math.ceil((actualInterval + 0.08) * 48_000) - this.baseTargetFill));
-          this.lastUnstableTime = now;
+          this.noteInstability((actualInterval + 0.08) * 48_000 - this.baseTargetFill, now);
         }
         // Ignore multi-second pauses (e.g., track change), track WAN burst jitter up to 1.5s
         if (deviation < 1.5) {
@@ -126,11 +145,11 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
 
     // A TCP burst can reveal jitter before the smoothed estimator catches up.
     // Preserve it and earn enough cushion for the next similar burst.
-    if (arrivedInBurst && this.available + frameCount > this.targetFill + EXCESS_HEADROOM_SAMPLES) {
-      this.adaptiveExtraFill = Math.max(this.adaptiveExtraFill,
-        Math.min(MAX_TARGET_FILL - this.baseTargetFill, this.available + frameCount + 1_920 - this.baseTargetFill));
-      this.lastUnstableTime = now;
-      this.updateTargetFill();
+    // The need is the burst itself, not the whole buffer: counting the cushion
+    // already held would re-confirm that cushion on every small burst.
+    if (arrivedInBurst && this.burstSamples > EXCESS_HEADROOM_SAMPLES
+      && this.available + frameCount > this.targetFill + EXCESS_HEADROOM_SAMPLES) {
+      this.noteInstability(this.burstSamples + 1_920 - this.baseTargetFill, now);
     }
 
     // A burst is delayed music, not permission to throw it away. Trim only at
@@ -194,8 +213,9 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     }
 
     // Keep the cushion through repeated stalls; release it within seconds once stable.
-    if (this.adaptiveExtraFill > 0 && currentTime - this.lastUnstableTime > STABLE_BEFORE_DECAY_SECONDS && this.available >= MIN_PREFILL_SAMPLES) {
-      this.adaptiveExtraFill = Math.max(0, this.adaptiveExtraFill - DECAY_SAMPLES_PER_BLOCK);
+    const holdFloor = currentTime - this.holdSince <= STABLE_BEFORE_DECAY_SECONDS ? this.holdNeed : 0;
+    if (this.adaptiveExtraFill > holdFloor && this.available >= MIN_PREFILL_SAMPLES) {
+      this.adaptiveExtraFill = Math.max(holdFloor, this.adaptiveExtraFill - DECAY_SAMPLES_PER_BLOCK);
       this.updateTargetFill();
     }
 
@@ -249,9 +269,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
           this.refilling = true;
           this.underruns += 1;
           // Grow the cushion after an underrun; measured gaps can grow it further.
-          this.adaptiveExtraFill = Math.min(MAX_TARGET_FILL - this.baseTargetFill, Math.max(4_800, this.adaptiveExtraFill * 1.5));
-          this.lastUnstableTime = currentTime;
-          this.updateTargetFill();
+          this.noteInstability(Math.max(4_800, this.adaptiveExtraFill * 1.5), currentTime);
         }
         if (this.concealedSamples < PLC_HOLD_SAMPLES) {
           const plcIndex = (Math.floor(this.readPos) - PLC_PERIOD_SAMPLES + (this.concealedSamples % PLC_PERIOD_SAMPLES) + CAPACITY_SAMPLES) % CAPACITY_SAMPLES;

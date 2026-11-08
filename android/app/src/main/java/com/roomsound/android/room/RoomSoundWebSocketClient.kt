@@ -762,7 +762,10 @@ class RoomSoundWebSocketClient(
         private const val MAX_RELAY_QUEUED_BYTES = 1_048_576L // ~10 s mono; healthy sends remain immediate
 
         private fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
-            .pingInterval(0, TimeUnit.SECONDS) // Server pings own liveness; avoid a second 15 s failure timer.
+            // A frozen connection can take 10+ s to fail on its own. OkHttp fails
+            // the socket when a ping goes unanswered until the next one is due,
+            // so a stall is noticed within about 10 s and the client reconnects.
+            .pingInterval(5, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
     }

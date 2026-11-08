@@ -601,6 +601,39 @@ class Pcm16RelayPlayerTest {
     }
 
     @Test
+    fun smallLatePacketsDoNotPinALargeCushionAfterAStall() {
+        // Recorded on a real session: after one long stall the delay stayed at
+        // 2 s because every later ~120 ms hiccup restarted the release wait.
+        val clock = java.util.concurrent.atomic.AtomicLong(0)
+        val output = Output(capacity = 1_920)
+        Pcm16RelayPlayer(
+            outputFactory = { output }, audioThreadPriority = {},
+            maxQueuedFrames = 4_000, maxQueuedBytes = 1_000_000,
+            nanoTime = clock::get, adaptiveBuffering = true,
+        ).use { player ->
+            player.start(Pcm16RelayPlayer.FORMAT, EPOCH)
+            var sequence = 0L
+            var nowMs = 0L
+            fun arrive(afterMs: Long) {
+                nowMs += afterMs
+                clock.set(TimeUnit.MILLISECONDS.toNanos(nowMs))
+                player.play(packet(sequence++, 960))
+            }
+            repeat(50) { arrive(20) }
+            arrive(1_500) // a long stall
+            assertTrue(player.cushionMillis() >= 1_500.0)
+            repeat(10) {
+                arrive(120) // a small hiccup...
+                repeat(94) { arrive(20) } // ...then steady arrivals
+            }
+            val cushion = player.cushionMillis()
+            assertTrue("cushion follows the small hiccups ($cushion ms)", cushion <= 250.0)
+            assertTrue("but still covers them ($cushion ms)", cushion >= 190.0)
+            player.stop()
+        }
+    }
+
+    @Test
     fun weakNetworkEarnsCushionAndPreservesBufferedPacketOrder() {
         val clock = java.util.concurrent.atomic.AtomicLong(0)
         val output = Output(capacity = 1_920)
