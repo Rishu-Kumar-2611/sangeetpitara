@@ -167,7 +167,9 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
 }
 
 .shell { width: min(1360px, 100%); margin: 0 auto; padding: 24px 32px 40px; }
-.landing-view:not(.hidden), .room-view:not(.hidden) { animation: view-in 0.5s var(--ease) both; }
+.landing-view:not(.hidden) { animation: view-in 0.5s var(--ease) both; }
+/* A transformed animated ancestor traps fixed phone navigation inside the room. */
+.room-view:not(.hidden) { animation:none; }
 @keyframes view-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
 /* ---------- Shared pieces ---------- */
