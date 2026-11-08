@@ -41,9 +41,9 @@ val configuredDefaultEndpoint = configuredValue("ROOMSOUND_DEFAULT_ENDPOINT")
     ?: "wss://sangeet-pitaraa.onrender.com"
 // The release workflow derives both from the pushed v<major>.<minor>.<patch> tag.
 val configuredVersionName = configuredValue("ROOMSOUND_VERSION_NAME")
-    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.16")
+    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.17")
 val configuredVersionCode = configuredValue("ROOMSOUND_VERSION_CODE")?.toInt()
-    ?: releaseProperties.getProperty("VERSION_CODE", "10116").toInt()
+    ?: releaseProperties.getProperty("VERSION_CODE", "10117").toInt()
 // GitHub repository whose latest release the app checks for an update notice.
 val configuredReleasesRepository = configuredValue("ROOMSOUND_RELEASES_REPOSITORY")
     ?: "Rishu-Kumar-2611/sangeetpitara"

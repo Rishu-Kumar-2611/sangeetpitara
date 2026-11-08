@@ -286,6 +286,13 @@ class RoomSoundWebSocketClient(
 
     fun endRoom(): Boolean = sendRoomCommand(JSONObject().put("type", "end-room"))
 
+    /** Host or co-host: stop new people joining while members can still reconnect. */
+    fun setRoomLock(locked: Boolean): Boolean =
+        sendRoomCommand(JSONObject().put("type", "set-room-lock").put("locked", locked))
+
+    /** Host or co-host: replace the room code so earlier invites admit no one new. */
+    fun rotateRoomCode(): Boolean = sendRoomCommand(JSONObject().put("type", "rotate-room-code"))
+
     /**
      * Sends an RTC signaling envelope tagged with the room's current source
      * epoch. The optional explicit epoch is used by a media backend that has

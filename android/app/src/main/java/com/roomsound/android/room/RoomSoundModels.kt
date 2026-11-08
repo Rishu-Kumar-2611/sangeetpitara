@@ -24,6 +24,8 @@ data class RoomSummary(
     val sourceEpoch: Long,
     val resumeSourceId: String?,
     val createdAt: Long,
+    /** A locked room admits only reconnecting members; older servers omit it. */
+    val locked: Boolean = false,
 )
 
 data class RoomMember(
@@ -217,6 +219,7 @@ internal fun parseRoomSummary(json: JSONObject): RoomSummary = RoomSummary(
     sourceEpoch = json.optLong("sourceEpoch", 0L),
     resumeSourceId = json.stringOrNull("resumeSourceId"),
     createdAt = json.optLong("createdAt", 0L),
+    locked = json.optBoolean("locked", false),
 )
 
 internal fun parseRoomMember(json: JSONObject): RoomMember = RoomMember(
