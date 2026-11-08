@@ -196,16 +196,16 @@ html[data-theme] .source-waveform { color:var(--accent); caret-color:var(--accen
 .mini-player-copy strong { font:600 15px var(--font-body); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mini-player-copy > span { font:13px var(--font-body); color:var(--muted); }
 .mini-player-arrow { margin-left:auto; color:var(--accent); }
+html[data-theme] .room-theme-bar { padding:4px 0 12px; min-height:40px; }
 html[data-theme] .room-heading-row h1 { font-size:clamp(24px,3vw,34px); }
 html[data-theme] .room-tabs { background:var(--bg); border-bottom:1px solid var(--line); border-radius:0; padding:0; gap:16px; }
 html[data-theme] .room-tab { border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; }
 html[data-theme] .room-tab.active { color:var(--text); border-bottom-color:var(--accent); background:transparent; }
 @media(max-width:600px) and (min-height:500px) {
-  html[data-theme] .room-view { padding-bottom:84px; }
-  html[data-theme] .room-tabs { position:fixed; z-index:30; left:0; right:0; bottom:0; margin:0; padding:6px 12px calc(6px + env(safe-area-inset-bottom)); gap:4px; border-top:1px solid var(--line); border-bottom:0; background:var(--surface); }
-  html[data-theme] .room-tab { min-height:48px; border-bottom:0; border-top:2px solid transparent; }
-  html[data-theme] .room-tab.active { border-top-color:var(--accent); background:var(--accent-soft); border-radius:6px; }
+  html[data-theme] .room-tabs { position:sticky; z-index:20; top:0; margin:0 0 16px; padding:6px 0; gap:4px; background:var(--bg); }
+  html[data-theme] .room-tab { min-height:48px; }
+  html[data-theme] .room-tab.active { background:var(--accent-soft); border-radius:6px 6px 0 0; }
   .mini-player { padding:10px 12px; margin-bottom:16px; }
-  html[data-theme] body:has(.room-view:not(.hidden)) .toast-stack { bottom:90px; }
+  html[data-theme] body:has(.room-view:not(.hidden)) .toast-stack { bottom:16px; }
 }
 @media(prefers-reduced-motion:reduce) { .source-waveform,.mini-player canvas { opacity:.7; } }

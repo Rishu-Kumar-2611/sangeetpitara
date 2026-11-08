@@ -84,20 +84,32 @@ for (const bunchMs of [100, 500, 1_000]) {
     p.run(15_000, { bunch: bunchMs / 20 });
     assert.equal(p.node.underruns, underrunsAfterLearning, 'must stop repeatedly rebuffering after learning the network');
     assert.equal(p.skips, skipsAfterLearning, 'must preserve delayed music after adaptation');
-    assert.ok(p.node.targetFill <= 144_000);
+    assert.ok(p.node.targetFill <= 384_000);
   });
 }
 
 test('very long outages retain bounded memory and recover with fresh audio', async () => {
   const p = await playout();
   p.run(2_000);
-  p.run(8_000, { connected: false });
-  p.flush(400);
+  p.run(14_000, { connected: false });
+  p.flush(700);
   assert.ok(p.skips > 0);
-  assert.ok(p.node.available < 288_000);
-  assert.ok(p.node.targetFill <= 144_000);
+  assert.ok(p.node.available < 576_000);
+  assert.ok(p.node.targetFill <= 384_000);
   p.run(5_000);
   assert.equal(p.node.playing, true);
+});
+
+test('five-second delayed capture burst preserves every delivered sample before the hard bound', async () => {
+ const p=await playout();p.run(2000);p.run(5000,{connected:false});p.flush(250);
+ assert.equal(p.skips,0);assert.equal(p.node.skippedSamples,0);
+ assert.ok(p.node.targetFill>=5000*48);
+ p.run(8000);assert.equal(p.skips,0);assert.equal(p.node.playing,true);
+});
+
+test('an immediate burst above the current target is retained even before jitter adaptation', async () => {
+ const p=await playout();p.flush(150);
+ assert.equal(p.skips,0);assert.equal(p.node.available,150*960);assert.equal(p.node.skippedSamples,0);
 });
 
 for (const bunchMs of [40, 60, 80]) {

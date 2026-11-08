@@ -16,7 +16,7 @@ export const MEDIA_RELAY_MAX_FRAME_BYTES = MEDIA_RELAY_HEADER_BYTES + MEDIA_RELA
 // Healthy sockets send immediately; this ceiling permits brief congestion
 // without dropping audio. It is a memory limit, not a fixed playback delay.
 // Android mirrors this bound in RoomSoundWebSocketClient.
-export const MEDIA_RELAY_MAX_BACKLOG_BYTES = 384 * 1024; // ~4 s mono / 2 s stereo; bounded weak-network recovery
+export const MEDIA_RELAY_MAX_BACKLOG_BYTES = 1024 * 1024; // ~10 s mono / 5 s stereo; bounded recovery of capture bursts
 
 function asBytes(value) {
   if (value instanceof Uint8Array) return value;

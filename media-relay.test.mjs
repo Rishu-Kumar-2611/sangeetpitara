@@ -256,11 +256,11 @@ test('PCM16 relay bounds binary bytes per window, not only frame count', async (
   });
 
   await source.open();
-  // Forty maximum-size frames exceed the real-time plus recovery byte budget
+  // Sixty-four maximum-size frames exceed the real-time plus recovery byte budget
   // while remaining far below the independent frame-count cap.
   const maxSizeFrame = new Uint8Array(20 + 64 * 1024);
   const tooFast = source.waitJson((message) => message.type === 'error' && /too quickly/i.test(message.message));
-  for (let i = 0; i < 40; i += 1) source.socket.send(maxSizeFrame);
+  for (let i = 0; i < 64; i += 1) source.socket.send(maxSizeFrame);
   assert.match((await tooFast).message, /too quickly/i);
 });
 

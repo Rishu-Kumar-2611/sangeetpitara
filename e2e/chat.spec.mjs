@@ -55,10 +55,14 @@ test('all public sections and room tabs reflow at phone portrait, landscape and 
  for(const viewport of [{width:320,height:720},{width:390,height:844},{width:844,height:390},{width:1440,height:1000}]){
   await page.setViewportSize(viewport);
   for(const tab of ['listen','chat','people','health']){
+   await page.evaluate(()=>scrollTo(0,0));
    await page.locator(`#room-tab-${tab}`).click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tab}/${viewport.width}`).toBe(true);
    if(viewport.width<=600&&viewport.height>=500){
-    const bottom=await page.locator('#room-tabs').evaluate(e=>e.getBoundingClientRect().bottom);
-    expect(Math.abs(bottom-viewport.height),'Phone navigation stays at the viewport bottom').toBeLessThanOrEqual(1);
+    const nav=await page.locator('#room-tabs').boundingBox();
+    const content=await page.locator('.room-layout').boundingBox();
+    expect(nav.y+nav.height,'Phone navigation comes before room content').toBeLessThanOrEqual(content.y);
+    const theme=await page.locator('.theme-bar').boundingBox();
+    expect(theme.y,'Theme comes below section navigation').toBeGreaterThanOrEqual(nav.y+nav.height);
    }
   }
   await expect(page.locator('#mini-player')).toBeVisible();

@@ -1,12 +1,12 @@
 // Explicit allowlists: diagnostics never accept names, URLs, identifiers, audio,
 // chat, arbitrary errors, or capture content. Nothing is sent to a server.
-const NUMBERS = new Set(['epoch','sentPackets','receivedPackets','missingPackets','underruns','bufferMs','targetMs','jitterMs','queueMs','packetAgeMs','rms','peak','reconnects','closeCode','captureDrops','staleCaptureDrops','socketDrops','acceptedCaptureFrames','rejectedCaptureFrames']);
+const NUMBERS = new Set(['epoch','sentPackets','receivedPackets','missingPackets','playbackSkippedMs','underruns','bufferMs','targetMs','jitterMs','queueMs','packetAgeMs','rms','peak','reconnects','closeCode','captureDrops','staleCaptureDrops','socketDrops','acceptedCaptureFrames','rejectedCaptureFrames']);
 const ENUMS = {
   mode: ['internet','nearby'], direction: ['sender','listener','idle'],
   connection: ['connected','connecting','offline'],
   output: ['running','suspended','closed','unavailable'],
 };
-const EVENTS = new Set(['started','connection_changed','source_changed','output_changed','underrun','sequence_gap','socket_closed','publisher_drop','exported']);
+const EVENTS = new Set(['started','connection_changed','source_changed','output_changed','underrun','sequence_gap','playback_trimmed','socket_closed','publisher_drop','exported']);
 export class AudioDiagnostics {
   constructor({ clock = Date.now, capacity = 300, eventCapacity = 120 } = {}) {
     this.clock = clock;
@@ -33,7 +33,7 @@ export class AudioDiagnostics {
       if (sample.connection !== previous.connection) this.event('connection_changed');
       if (sample.direction !== previous.direction || sample.epoch !== previous.epoch) this.event('source_changed');
       if (sample.output !== previous.output) this.event('output_changed');
-      for (const [key, type] of [['underruns','underrun'],['missingPackets','sequence_gap'],['captureDrops','publisher_drop'],['socketDrops','publisher_drop'],['staleCaptureDrops','publisher_drop']]) {
+      for (const [key, type] of [['underruns','underrun'],['missingPackets','sequence_gap'],['playbackSkippedMs','playback_trimmed'],['captureDrops','publisher_drop'],['socketDrops','publisher_drop'],['staleCaptureDrops','publisher_drop']]) {
         if (Number.isFinite(previous[key]) && sample[key] > previous[key]) this.event(type, { count: sample[key] - previous[key] });
       }
     }

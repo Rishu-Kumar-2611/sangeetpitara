@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="app-version" content="1.1.15"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="app-version" content="1.1.16"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
 body{background:radial-gradient(ellipse at top left,#19322c 0,transparent 55%),#100d0b;color:#f7f1ea;max-width:640px;padding:clamp(20px,5vw,40px);line-height:1.55}
 h1{font-size:clamp(32px,8vw,44px);letter-spacing:-.045em;margin:12px 0 8px;color:#f5bd68}
 h2{font-size:21px;letter-spacing:-.02em;margin-top:28px}p{color:#d0c2b3}small{display:block;font-size:13px;color:#c4b6a7}
@@ -205,17 +205,17 @@ html[data-theme] .source-waveform { color:var(--accent); caret-color:var(--accen
 .mini-player-copy strong { font:600 15px var(--font-body); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mini-player-copy > span { font:13px var(--font-body); color:var(--muted); }
 .mini-player-arrow { margin-left:auto; color:var(--accent); }
+html[data-theme] .room-theme-bar { padding:4px 0 12px; min-height:40px; }
 html[data-theme] .room-heading-row h1 { font-size:clamp(24px,3vw,34px); }
 html[data-theme] .room-tabs { background:var(--bg); border-bottom:1px solid var(--line); border-radius:0; padding:0; gap:16px; }
 html[data-theme] .room-tab { border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; }
 html[data-theme] .room-tab.active { color:var(--text); border-bottom-color:var(--accent); background:transparent; }
 @media(max-width:600px) and (min-height:500px) {
-  html[data-theme] .room-view { padding-bottom:84px; }
-  html[data-theme] .room-tabs { position:fixed; z-index:30; left:0; right:0; bottom:0; margin:0; padding:6px 12px calc(6px + env(safe-area-inset-bottom)); gap:4px; border-top:1px solid var(--line); border-bottom:0; background:var(--surface); }
-  html[data-theme] .room-tab { min-height:48px; border-bottom:0; border-top:2px solid transparent; }
-  html[data-theme] .room-tab.active { border-top-color:var(--accent); background:var(--accent-soft); border-radius:6px; }
+  html[data-theme] .room-tabs { position:sticky; z-index:20; top:0; margin:0 0 16px; padding:6px 0; gap:4px; background:var(--bg); }
+  html[data-theme] .room-tab { min-height:48px; }
+  html[data-theme] .room-tab.active { background:var(--accent-soft); border-radius:6px 6px 0 0; }
   .mini-player { padding:10px 12px; margin-bottom:16px; }
-  html[data-theme] body:has(.room-view:not(.hidden)) .toast-stack { bottom:90px; }
+  html[data-theme] body:has(.room-view:not(.hidden)) .toast-stack { bottom:16px; }
 }
 @media(prefers-reduced-motion:reduce) { .source-waveform,.mini-player canvas { opacity:.7; } }
 /* Shared room chat controls, including the offline guest page. */
@@ -290,6 +290,20 @@ body{background:radial-gradient(ellipse at top left,var(--room-color-1),transpar
       try { localStorage.setItem('sangeetpitara-theme',picker.value); } catch {}
     });
     label.append(picker); bar.append(label); document.body.prepend(bar);
+    const homePosition = document.createComment('Theme control home position');
+    bar.before(homePosition);
+    const room = document.getElementById('room-view');
+    const tabs = document.getElementById('room-tabs');
+    if (room && tabs) {
+      const place = () => {
+        const inRoom = !room.classList.contains('hidden');
+        bar.classList.toggle('room-theme-bar', inRoom);
+        if (inRoom && tabs.nextElementSibling !== bar) tabs.after(bar);
+        else if (!inRoom && homePosition.nextSibling !== bar) homePosition.after(bar);
+      };
+      new MutationObserver(place).observe(room, { attributes:true, attributeFilter:['class'] });
+      place();
+    }
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',attach,{once:true}); else attach();
 })();
@@ -390,13 +404,13 @@ class RoomChatUI {
 </script><!-- SHARED CHAT END -->
 <script data-shared-diagnostics>// Explicit allowlists: diagnostics never accept names, URLs, identifiers, audio,
 // chat, arbitrary errors, or capture content. Nothing is sent to a server.
-const NUMBERS = new Set(['epoch','sentPackets','receivedPackets','missingPackets','underruns','bufferMs','targetMs','jitterMs','queueMs','packetAgeMs','rms','peak','reconnects','closeCode','captureDrops','staleCaptureDrops','socketDrops','acceptedCaptureFrames','rejectedCaptureFrames']);
+const NUMBERS = new Set(['epoch','sentPackets','receivedPackets','missingPackets','playbackSkippedMs','underruns','bufferMs','targetMs','jitterMs','queueMs','packetAgeMs','rms','peak','reconnects','closeCode','captureDrops','staleCaptureDrops','socketDrops','acceptedCaptureFrames','rejectedCaptureFrames']);
 const ENUMS = {
   mode: ['internet','nearby'], direction: ['sender','listener','idle'],
   connection: ['connected','connecting','offline'],
   output: ['running','suspended','closed','unavailable'],
 };
-const EVENTS = new Set(['started','connection_changed','source_changed','output_changed','underrun','sequence_gap','socket_closed','publisher_drop','exported']);
+const EVENTS = new Set(['started','connection_changed','source_changed','output_changed','underrun','sequence_gap','playback_trimmed','socket_closed','publisher_drop','exported']);
 class AudioDiagnostics {
   constructor({ clock = Date.now, capacity = 300, eventCapacity = 120 } = {}) {
     this.clock = clock;
@@ -423,7 +437,7 @@ class AudioDiagnostics {
       if (sample.connection !== previous.connection) this.event('connection_changed');
       if (sample.direction !== previous.direction || sample.epoch !== previous.epoch) this.event('source_changed');
       if (sample.output !== previous.output) this.event('output_changed');
-      for (const [key, type] of [['underruns','underrun'],['missingPackets','sequence_gap'],['captureDrops','publisher_drop'],['socketDrops','publisher_drop'],['staleCaptureDrops','publisher_drop']]) {
+      for (const [key, type] of [['underruns','underrun'],['missingPackets','sequence_gap'],['playbackSkippedMs','playback_trimmed'],['captureDrops','publisher_drop'],['socketDrops','publisher_drop'],['staleCaptureDrops','publisher_drop']]) {
         if (Number.isFinite(previous[key]) && sample[key] > previous[key]) this.event(type, { count: sample[key] - previous[key] });
       }
     }

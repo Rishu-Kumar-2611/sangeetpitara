@@ -84,14 +84,14 @@ const RATE_LIMIT_MAX = 120;
 const STATIC_RATE_LIMIT_MAX = 600;
 const BINARY_FRAME_WINDOW_MS = 5_000;
 // Android playback capture emits 10 ms PCM frames (100 frames/sec, 500 per
-// window). The cap leaves 2x headroom so a sender can flush a post-stall
+// window). The cap leaves room for a bounded post-stall flush alongside live
 // backlog; browser packetizers use 20 ms frames and remain well below it.
-const BINARY_FRAME_RATE_MAX = 1200;
+const BINARY_FRAME_RATE_MAX = 2000;
 // Bound bytes as well as frames: a frame may carry up to 64 KiB, so the frame
-// cap alone would admit ~15 MB/s before fan-out. Real-time 48 kHz mono PCM16
-// is 96,000 B/s; allow stereo real time plus a bounded four-second
+// cap alone would admit ~25 MiB/s before fan-out. Real-time 48 kHz mono PCM16
+// is 96,000 B/s; allow stereo real time plus a bounded ten-second
 // recovery burst and per-frame headers.
-const BINARY_BYTES_PER_WINDOW_MAX = 2 * 96_000 * (BINARY_FRAME_WINDOW_MS / 1_000 + 4) + BINARY_FRAME_RATE_MAX * 20;
+const BINARY_BYTES_PER_WINDOW_MAX = 2 * 96_000 * (BINARY_FRAME_WINDOW_MS / 1_000 + 10) + BINARY_FRAME_RATE_MAX * 20;
 const STREAMING_STATIC_THRESHOLD_BYTES = 256 * 1024;
 // The Android app ships through GitHub Releases (.github/workflows/release.yml).
 // Every /downloads/*.apk link, including legacy names already shared in the

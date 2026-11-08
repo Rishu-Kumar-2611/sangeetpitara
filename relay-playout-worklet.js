@@ -3,12 +3,12 @@
 // cubic interpolation, raised-cosine crossfading, and short loop-based Packet
 // Loss Concealment (PLC) for long-distance (500–10,000+ km) streaming.
 const DEFAULT_TARGET_FILL = 1_920; // 40 ms base on a healthy path
-const MAX_TARGET_FILL = 144_000; // 3,000 ms adaptive ceiling on weak networks
+const MAX_TARGET_FILL = 384_000; // 8,000 ms adaptive ceiling after measured stalls
 const MIN_PREFILL_SAMPLES = 1_920; // 40 ms initial prefill
-const EXCESS_HEADROOM_SAMPLES = 3_840; // Catch up once 80 ms above target
-const CATCH_UP_LANDING_SAMPLES = 960; // Land 20 ms above target
-// Six-second bounded ring: adaptive cushion plus in-flight network bursts.
-const CAPACITY_SAMPLES = 288_000;
+const EXCESS_HEADROOM_SAMPLES = 3_840; // Detect a burst 80 ms above the learned target
+const CATCH_UP_LANDING_SAMPLES = 48_000; // Retain one second of headroom after hard overflow
+// Twelve-second bounded ring: preserve a delayed burst instead of trimming at target + 80 ms.
+const CAPACITY_SAMPLES = 576_000;
 const FADE_SAMPLES = 960; // 20 ms cosine fade-in / crossfade for inaudible transitions
 const PLC_HOLD_SAMPLES = 8_640; // Up to 180 ms of looped waveform continuation before silence decay
 const PLC_PERIOD_SAMPLES = 960; // Smooth 20 ms loop of the most recent audio
@@ -31,6 +31,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.lastL = 0;
     this.lastR = 0;
     this.underruns = 0;
+    this.skippedSamples = 0;
     this.concealedSamples = 0;
     this.framesPlayed = 0;
     this.reportCountdown = 0;
@@ -120,8 +121,9 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       this.updateTargetFill();
     }
 
-    // Only overflow beyond the maximum earned cushion skips old samples.
-    const maxAllowedSamples = Math.min(CAPACITY_SAMPLES - 16, this.targetFill + EXCESS_HEADROOM_SAMPLES);
+    // A burst is delayed music, not permission to throw it away. Trim only at
+    // the hard memory bound, independently of the current adaptive target.
+    const maxAllowedSamples = CAPACITY_SAMPLES - 16;
     if (this.available + frameCount > maxAllowedSamples) {
       // Never skip past buffered audio: an oversized frame would otherwise move
       // readPos beyond writePos and play stale ring contents.
@@ -129,6 +131,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       if (dropSamples > 0) {
         this.readPos = (this.readPos + dropSamples) % CAPACITY_SAMPLES;
         this.available -= dropSamples;
+        this.skippedSamples += dropSamples;
         this.fadeProgress = 0;
       }
     }
@@ -292,6 +295,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
         targetMs: Math.round((this.targetFill / 48_000) * 1000),
         jitterMs: Math.round(this.jitterSeconds * 1000),
         underruns: this.underruns,
+        skippedMs: Math.round(this.skippedSamples / 48),
         playing: this.playing,
         refilling: this.refilling,
       });

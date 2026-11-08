@@ -1,23 +1,23 @@
-import { RoomChatUI } from './chat-ui.mjs?v=20261108-mehfil2';
+import { RoomChatUI } from './chat-ui.mjs?v=20261108-continuity1';
 let roomChatUI = null;
-import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261108-mehfil2';
-import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261108-mehfil2';
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261108-mehfil2';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261108-mehfil2';
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261108-continuity1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261108-continuity1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261108-continuity1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261108-continuity1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261108-mehfil2';
+} from './capture-tracks.js?v=20261108-continuity1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261108-mehfil2';
+} from './media-relay.mjs?v=20261108-continuity1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -29,8 +29,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261108-mehfil2';
-import { roomPalette } from './room-palette.js?v=20261108-mehfil2';
+} from './ads.mjs?v=20261108-continuity1';
+import { roomPalette } from './room-palette.js?v=20261108-continuity1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -57,7 +57,7 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
 };
 const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
 const SYNC_OFFSET_MAX_MS = 1000; // Matches the #sync-offset slider max and the worklet's target ceiling.
-const RELAY_CAPTURE_MAX_AGE_SECONDS = 3; // Bounded recovery for a busy/background main thread.
+const RELAY_CAPTURE_MAX_AGE_SECONDS = 9; // Retain a eight-second capture stall without discarding its music.
 
 function clampVolume(v) {
   const n = Number(v);
@@ -122,6 +122,7 @@ const state = {
   relayDroppedSequenceFrames: 0,
   relayWorkletBufferedMs: 0,
   relayWorkletUnderruns: 0,
+  relayWorkletSkippedMs: 0,
   relayPlaybackContext: null,
   relayPlaybackGain: null,
   relayPlaybackAnalyser: null,
@@ -843,13 +844,13 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261108-mehfil2');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261108-continuity1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
           channelCount: 2, channelCountMode: 'max', channelInterpretation: 'speakers',
         });
-        processor.port.postMessage({ type: 'config', maxInFlight: 128 });
+        processor.port.postMessage({ type: 'config', maxInFlight: 400 });
         const node = processor;
         let observedCaptureDrops = 0;
         node.port.onmessage = ({ data }) => {
@@ -921,7 +922,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261108-mehfil2')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261108-continuity1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -935,6 +936,7 @@ function setupRelayPlaybackWorklet(context, gain) {
           state.relayWorkletBufferedMs = data.bufferedMs ?? 0;
           state.relayWorkletTargetMs = data.targetMs ?? state.syncOffsetMs;
           state.relayWorkletJitterMs = data.jitterMs ?? 0;
+          state.relayWorkletSkippedMs = data.skippedMs ?? 0;
           recordUnderruns(data.underruns ?? 0);
           state.relayWorkletUnderruns = data.underruns ?? 0;
           state.relayWorkletRefilling = Boolean(data.refilling);
@@ -1089,7 +1091,11 @@ function handleRelayFrame(data) {
     if (distance === 0 || distance > 0x80000000) return;
     if (distance > 1) state.relayDroppedSequenceFrames += (distance - 1);
   }
+  // Receipt accounting is independent of audio-output availability. Otherwise
+  // repeated output-init failures can count the same sequence gap repeatedly.
+  state.relayLastSequence = frame.sequence;
   state.relayReceivedFrames += 1;
+  state.relayPacketDurationMs = frame.sampleCount * 1000 / frame.sampleRate;
   state.relayPacketProgress = { at: Date.now(), epoch: frame.sourceEpoch, sender: false };
 
   const context = ensureRelayPlaybackContext();
@@ -1269,6 +1275,7 @@ function resetToLanding(reason = '') {
   state.relayPacketProgress = null;
   recentUnderruns.reset();
   recentMissing.reset();
+  recentSkipped.reset();
   recentPublisherDrops.reset();
   state.relayCaptureDrops = state.relayStaleCaptureDrops = state.relaySocketDrops = 0;
   recentReconnects.reset();
@@ -1949,6 +1956,7 @@ function removePeerTelemetry(peerId, entry) {
 
 const recentUnderruns = new RecentCounter();
 const recentMissing = new RecentCounter();
+const recentSkipped = new RecentCounter();
 const recentPublisherDrops = new RecentCounter();
 const recentReconnects = new RecentCounter();
 let reconnectTotal = 0;
@@ -1975,6 +1983,7 @@ function diagnosticSnapshot() {
     connection: state.ws?.readyState === WebSocket.OPEN ? 'connected' : 'offline',
     epoch: state.room?.sourceEpoch, sentPackets: state.relaySentFrames, receivedPackets: state.relayReceivedFrames,
     missingPackets: sender ? undefined : state.relayDroppedSequenceFrames,
+    playbackSkippedMs: !sender && state.relayPlaybackWorkletReady ? state.relayWorkletSkippedMs : undefined,
     underruns: !sender && state.relayPlaybackWorkletReady ? state.relayWorkletUnderruns : undefined,
     bufferMs: !sender && state.relayPlaybackWorkletReady ? state.relayWorkletBufferedMs : undefined,
     targetMs: !sender && state.relayPlaybackWorkletReady ? state.relayWorkletTargetMs : undefined,
@@ -2057,9 +2066,11 @@ function renderTelemetry() {
     metrics.push(healthMetric('Last audio packet', Number.isFinite(snapshot.packetAgeMs) ? `${Math.round(snapshot.packetAgeMs)} ms ago` : 'Waiting', 'Ideal: ≤100 ms · watch: ≤1000 ms · transport only', Number.isFinite(snapshot.packetAgeMs) ? upperHealth(snapshot.packetAgeMs,100,1000) : 'pending'));
     if (!isSender) {
       const missing = recentMissing.update(state.relayDroppedSequenceFrames || 0);
-      metrics.push(healthMetric('Missing packets / 60 s', String(missing), 'Ideal: 0 · watch: 1 · source or transport gaps', upperHealth(missing,0,1)));
+      metrics.push(healthMetric('Missing packets / 60 s', String(missing), 'Ideal: 0 · watch: 1 · sequence gaps, including sender capture or queue drops; not a speed-test result', upperHealth(missing,0,1)));
+      const skipped = recentSkipped.update(state.relayWorkletSkippedMs || 0);
+      metrics.push(healthMetric('Playback skipped / 60 s', `${skipped} ms`, 'Ideal: 0 ms · watch: ≤20 ms · audio trimmed only at the hard buffer limit', measured ? upperHealth(skipped,0,20) : 'pending'));
     }
-    metrics.push(healthMetric('Audio packets', formatTelemetryCount(isSender ? state.relaySentFrames : state.relayReceivedFrames), 'Informational: 20 ms each · should increase while streaming', 'pending'));
+    metrics.push(healthMetric('Audio packets', formatTelemetryCount(isSender ? state.relaySentFrames : state.relayReceivedFrames), `Informational: ${isSender ? 20 : (state.relayPacketDurationMs || 20).toFixed(1)} ms per latest packet · should increase while streaming`, 'pending'));
     const analyser = isSender ? state.relayPublisherAnalyser : state.relayPlaybackAnalyser;
     if (analyser) {
       const samples = new Float32Array(analyser.fftSize);

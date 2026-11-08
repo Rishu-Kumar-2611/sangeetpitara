@@ -215,7 +215,7 @@ class Pcm16RelayPlayer internal constructor(
         if (adaptiveBuffering) session.lastPacketAt?.let { previous ->
             val gapMs = TimeUnit.NANOSECONDS.toMillis((now - previous).coerceAtLeast(0))
             if (gapMs > 80) session.cushionBytes = maxOf(session.cushionBytes,
-                (minOf(3_000L, gapMs + 80) * 96).toInt().coerceAtMost(maxQueuedBytes - 1_920).coerceAtLeast(0))
+                (minOf(8_000L, gapMs + 80) * 96).toInt().coerceAtMost(maxQueuedBytes - 1_920).coerceAtLeast(0))
         }
         session.lastPacketAt = now
         if (session.firstPacketAt == null) session.firstPacketAt = now
@@ -431,11 +431,11 @@ class Pcm16RelayPlayer internal constructor(
 
     companion object {
         const val DEFAULT_MAX_QUEUED_FRAMES = 12
-        const val PRODUCTION_MAX_QUEUED_FRAMES = 400
-        const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 4_000 / 1_000
-        // Preserve recoverable bursts; skip only at the hard four-second bound.
-        const val PRODUCTION_CATCH_UP_QUEUED_BYTES = 48_000 * 2 * 3_800 / 1_000
-        const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 3_000 / 1_000
+        const val PRODUCTION_MAX_QUEUED_FRAMES = 1000
+        const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 10_000 / 1_000
+        // Preserve recoverable bursts; skip only near the hard ten-second bound.
+        const val PRODUCTION_CATCH_UP_QUEUED_BYTES = 48_000 * 2 * 9_800 / 1_000
+        const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 8_000 / 1_000
         private const val CATCH_UP_CROSSFADE_SAMPLES = 240 // 5 ms at 48 kHz
         val FORMAT = Pcm16AudioFormat(48_000, 1)
         private const val UINT32_MAX = Pcm16RelayPacketCodec.UINT32_MAX

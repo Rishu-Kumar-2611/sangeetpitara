@@ -183,3 +183,22 @@ test('configured capture cushion survives a two second main-thread stall with bo
  for(let i=0;i<100;i++)w.process(new Float32Array(960));
  assert.equal(w.sent.length,128);
 });
+
+test('five-second browser main-thread stall retains ordered capture and still bounds overload', async () => {
+ const w=await worklet();w.message({type:'lease',epoch:1});w.message({type:'config',maxInFlight:256});
+ for(let i=0;i<250;i++)w.process(new Float32Array(960));
+ assert.equal(w.sent.length,250);assert.equal(w.sent[249].sequence,249);assert.equal(w.sent[249].droppedPackets,0);
+ for(let i=0;i<100;i++)w.process(new Float32Array(960));
+ assert.equal(w.sent.length,256);
+ for(let i=0;i<256;i++)w.message({type:'ack'});
+ w.process(new Float32Array(960));
+ assert.equal(w.sent.at(-1).sequence,350);assert.equal(w.sent.at(-1).droppedPackets,94);
+});
+
+test('production capture cushion retains seven seconds of music during a busy browser thread', async () => {
+ const w=await worklet();w.message({type:'lease',epoch:7});w.message({type:'config',maxInFlight:400});
+ for(let i=0;i<350;i++)w.process(new Float32Array(960));
+ assert.equal(w.sent.length,350);assert.equal(w.sent.at(-1).droppedPackets,0);
+ for(let i=0;i<100;i++)w.process(new Float32Array(960));
+ assert.equal(w.sent.length,400);
+});

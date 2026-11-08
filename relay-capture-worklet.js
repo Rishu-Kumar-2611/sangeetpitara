@@ -1,4 +1,4 @@
-import { RelayPcmPacketizer } from './relay-pcm.js?v=20261108-mehfil2';
+import { RelayPcmPacketizer } from './relay-pcm.js?v=20261108-continuity1';
 
 // This processor only captures playback already selected by getDisplayMedia or
 // the in-app audio file player. No microphone, AGC, timers, or local echo are
@@ -19,7 +19,7 @@ class RelayCaptureProcessor extends AudioWorkletProcessor {
       if (data?.type === 'ack') this.inFlight = Math.max(0, this.inFlight - 1);
       if (data?.type === 'stop') this.stopped = true;
       if (data?.type === 'config' && Number.isInteger(data.maxInFlight) && data.maxInFlight >= 8) {
-        this.maxInFlight = Math.min(128, data.maxInFlight);
+        this.maxInFlight = Math.min(400, data.maxInFlight);
       }
       if (data?.type === 'lease' && data.epoch !== this.epoch) {
         this.epoch = Number.isInteger(data.epoch) ? data.epoch : null;

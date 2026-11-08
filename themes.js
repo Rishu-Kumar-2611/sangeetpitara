@@ -23,6 +23,20 @@
       try { localStorage.setItem('sangeetpitara-theme',picker.value); } catch {}
     });
     label.append(picker); bar.append(label); document.body.prepend(bar);
+    const homePosition = document.createComment('Theme control home position');
+    bar.before(homePosition);
+    const room = document.getElementById('room-view');
+    const tabs = document.getElementById('room-tabs');
+    if (room && tabs) {
+      const place = () => {
+        const inRoom = !room.classList.contains('hidden');
+        bar.classList.toggle('room-theme-bar', inRoom);
+        if (inRoom && tabs.nextElementSibling !== bar) tabs.after(bar);
+        else if (!inRoom && homePosition.nextSibling !== bar) homePosition.after(bar);
+      };
+      new MutationObserver(place).observe(room, { attributes:true, attributeFilter:['class'] });
+      place();
+    }
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',attach,{once:true}); else attach();
 })();

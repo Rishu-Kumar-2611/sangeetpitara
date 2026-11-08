@@ -27,3 +27,10 @@ test('publisher loss provenance remains numeric and produces bounded incident ev
  const report=d.export();assert.equal(report.samples.at(-1).socketDrops,3);
  assert.deepEqual(report.events.filter(e=>e.type==='publisher_drop').map(e=>e.count),[2,3,1]);
 });
+
+test('playback trimming is recorded separately from incoming sequence gaps',()=>{
+ let now=0;const d=new AudioDiagnostics({clock:()=>now});d.record({direction:'listener',missingPackets:0,playbackSkippedMs:0});now=1000;
+ d.record({direction:'listener',missingPackets:0,playbackSkippedMs:120});
+ const report=d.export();assert.equal(report.samples.at(-1).missingPackets,0);assert.equal(report.samples.at(-1).playbackSkippedMs,120);
+ assert.equal(report.events.find(e=>e.type==='playback_trimmed').count,120);assert.equal(report.events.some(e=>e.type==='sequence_gap'),false);
+});

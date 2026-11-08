@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261108-mehfil2';
+const assetVersion = '20261108-continuity1';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
