@@ -159,3 +159,121 @@ export function decodePcm16Frame(input, { maxPayloadBytes = MEDIA_RELAY_MAX_PAYL
     samples,
   };
 }
+
+/*
+ * Opus relay frames (version 2). Same 20-byte RSR1 header; the payload is one
+ * raw Opus packet (no Ogg container) and sampleCount is the number of 48 kHz
+ * samples it decodes to. Rooms negotiate Opus only when every listener can
+ * decode it, so version 1 PCM16 remains the universal fallback.
+ */
+export const MEDIA_RELAY_VERSION_OPUS = 2;
+export const MEDIA_RELAY_OPUS_MAX_PAYLOAD_BYTES = 4000;
+export const MEDIA_RELAY_OPUS_MAX_SAMPLES = 5760; // 120 ms, the longest Opus packet
+export const MEDIA_RELAY_CODECS = Object.freeze(['pcm16', 'opus']);
+
+/** Samples at 48 kHz in one Opus packet, from its TOC byte (RFC 6716 §3.1). */
+export function opusPacketSampleCount(packet) {
+  const bytes = asBytes(packet);
+  if (bytes.byteLength < 1) return 0;
+  const toc = bytes[0];
+  const config = toc >> 3;
+  let frameSamples;
+  if (config < 12) frameSamples = [480, 960, 1920, 2880][config & 3]; // SILK: 10/20/40/60 ms
+  else if (config < 16) frameSamples = [480, 960][config & 1]; // Hybrid: 10/20 ms
+  else frameSamples = [120, 240, 480, 960][config & 3]; // CELT: 2.5/5/10/20 ms
+  const code = toc & 3;
+  let frames;
+  if (code === 0) frames = 1;
+  else if (code === 1 || code === 2) frames = 2;
+  else {
+    if (bytes.byteLength < 2) return 0;
+    frames = bytes[1] & 0x3F;
+  }
+  const total = frameSamples * frames;
+  return frames > 0 && total <= MEDIA_RELAY_OPUS_MAX_SAMPLES ? total : 0;
+}
+
+export function encodeOpusFrame({ sourceEpoch, sequence, payload, sampleCount = null }) {
+  assertUint32(sourceEpoch, 'sourceEpoch');
+  assertUint32(sequence, 'sequence');
+  const packet = asBytes(payload);
+  if (packet.byteLength < 1 || packet.byteLength > MEDIA_RELAY_OPUS_MAX_PAYLOAD_BYTES) {
+    throw invalidFrame('Opus packet size is outside the relay bound.', 'MEDIA_FRAME_TOO_LARGE');
+  }
+  const samples = sampleCount ?? opusPacketSampleCount(packet);
+  if (!Number.isInteger(samples) || samples < 120 || samples > MEDIA_RELAY_OPUS_MAX_SAMPLES || samples % 120 !== 0) {
+    throw invalidFrame('Opus sampleCount must be a multiple of 120 up to 5760.', 'INVALID_SAMPLE_COUNT');
+  }
+  const frame = new Uint8Array(MEDIA_RELAY_HEADER_BYTES + packet.byteLength);
+  frame.set(MEDIA_RELAY_MAGIC_BYTES, 0);
+  frame[4] = MEDIA_RELAY_VERSION_OPUS;
+  frame[5] = MEDIA_RELAY_CHANNELS;
+  const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+  view.setUint32(6, MEDIA_RELAY_SAMPLE_RATE, true);
+  view.setUint32(10, sourceEpoch, true);
+  view.setUint32(14, sequence, true);
+  view.setUint16(18, samples, true);
+  frame.set(packet, MEDIA_RELAY_HEADER_BYTES);
+  return frame;
+}
+
+/** Version 1 or 2 header check for the server; O(1), no payload copy. */
+export function validateRelayFrameHeader(input, { maxPayloadBytes = MEDIA_RELAY_MAX_PAYLOAD_BYTES } = {}) {
+  const bytes = asBytes(input);
+  if (bytes.byteLength >= 5 && bytes[4] === MEDIA_RELAY_VERSION) {
+    return { codec: 'pcm16', ...validatePcm16FrameHeader(bytes, { maxPayloadBytes }) };
+  }
+  if (bytes.byteLength < MEDIA_RELAY_HEADER_BYTES) {
+    throw invalidFrame('Media relay frame is shorter than its header.', 'MEDIA_FRAME_TOO_SHORT');
+  }
+  for (let index = 0; index < MEDIA_RELAY_MAGIC_BYTES.length; index += 1) {
+    if (bytes[index] !== MEDIA_RELAY_MAGIC_BYTES[index]) {
+      throw invalidFrame('Media relay frame has an invalid magic header.', 'MEDIA_FRAME_BAD_MAGIC');
+    }
+  }
+  if (bytes[4] !== MEDIA_RELAY_VERSION_OPUS) {
+    throw invalidFrame('Media relay frame has an unsupported version.', 'MEDIA_FRAME_BAD_VERSION');
+  }
+  if (bytes[5] !== MEDIA_RELAY_CHANNELS) {
+    throw invalidFrame('Opus relay frames must contain one channel.', 'MEDIA_FRAME_BAD_CHANNELS');
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint32(6, true) !== MEDIA_RELAY_SAMPLE_RATE) {
+    throw invalidFrame('Media relay frame must use a 48000 Hz sample rate.', 'MEDIA_FRAME_BAD_SAMPLE_RATE');
+  }
+  const sampleCount = view.getUint16(18, true);
+  const payloadBytes = bytes.byteLength - MEDIA_RELAY_HEADER_BYTES;
+  if (payloadBytes < 1 || payloadBytes > MEDIA_RELAY_OPUS_MAX_PAYLOAD_BYTES) {
+    throw invalidFrame('Opus relay payload size is outside the relay bound.', 'MEDIA_FRAME_TOO_LARGE');
+  }
+  if (sampleCount < 120 || sampleCount > MEDIA_RELAY_OPUS_MAX_SAMPLES || sampleCount % 120 !== 0) {
+    throw invalidFrame('Opus relay sampleCount is invalid.', 'MEDIA_FRAME_BAD_LENGTH');
+  }
+  return {
+    codec: 'opus',
+    sampleRate: MEDIA_RELAY_SAMPLE_RATE,
+    channels: MEDIA_RELAY_CHANNELS,
+    sourceEpoch: view.getUint32(10, true),
+    sequence: view.getUint32(14, true),
+    sampleCount,
+    payloadBytes,
+  };
+}
+
+/** Header plus a copy of the Opus packet, for browser decoders. */
+export function decodeOpusFrame(input) {
+  const bytes = asBytes(input);
+  const header = validateRelayFrameHeader(bytes, { maxPayloadBytes: MEDIA_RELAY_OPUS_MAX_PAYLOAD_BYTES });
+  if (header.codec !== 'opus') throw invalidFrame('Not an Opus relay frame.', 'MEDIA_FRAME_BAD_VERSION');
+  return { ...header, payload: bytes.slice(MEDIA_RELAY_HEADER_BYTES) };
+}
+
+/** Frame version without validation; 0 for anything that is not RSR1. */
+export function relayFrameVersion(input) {
+  const bytes = asBytes(input);
+  if (bytes.byteLength < 5) return 0;
+  for (let index = 0; index < MEDIA_RELAY_MAGIC_BYTES.length; index += 1) {
+    if (bytes[index] !== MEDIA_RELAY_MAGIC_BYTES[index]) return 0;
+  }
+  return bytes[4];
+}

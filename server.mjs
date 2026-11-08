@@ -39,7 +39,7 @@ import {
 import { DEFAULT_REWARDED_ACCESS_CONFIG, normalizeRewardedAccessConfig } from './ads.mjs';
 import { assertProductionConfig } from './config.mjs';
 import {
-  validatePcm16FrameHeader,
+  validateRelayFrameHeader,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_MAX_FRAME_BYTES,
@@ -119,12 +119,31 @@ const TURN_URLS = turnEnabled && process.env.TURN_URLS
   : [];
 const TURN_USERNAME = process.env.TURN_USERNAME || '';
 const TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || '';
+// Opus is negotiated per room and can be switched off without a release by
+// setting MEDIA_RELAY_OPUS=0; PCM16 always remains available.
+const opusRelayEnabled = !['0', 'false', 'off', 'no'].includes(String(process.env.MEDIA_RELAY_OPUS ?? '1').trim().toLowerCase());
 const mediaRelay = {
   enabled: !['0', 'false', 'off', 'no'].includes(String(process.env.MEDIA_RELAY_ENABLED ?? '1').trim().toLowerCase()),
   mode: 'pcm16',
   sampleRate: MEDIA_RELAY_SAMPLE_RATE,
   channels: MEDIA_RELAY_CHANNELS,
+  codecs: opusRelayEnabled ? ['pcm16', 'opus'] : ['pcm16'],
+  opusBitrate: Math.min(128_000, Math.max(32_000, positiveIntegerEnv('MEDIA_RELAY_OPUS_BITRATE', 96_000))),
 };
+
+// Clients list what they can decode; PCM16 is assumed for older clients.
+function normalizeCodecs(value) {
+  const codecs = new Set(['pcm16']);
+  if (Array.isArray(value) && value.includes('opus')) codecs.add('opus');
+  return codecs;
+}
+
+// Opus only when the server allows it and every online member can decode it.
+function roomRelayCodec(room) {
+  if (!opusRelayEnabled) return 'pcm16';
+  const online = [...room.members.values()].filter((member) => member.ws);
+  return online.length && online.every((member) => member.codecs?.has('opus')) ? 'opus' : 'pcm16';
+}
 const adsenseClient = String(process.env.ADSENSE_CLIENT || '').trim();
 const adsenseLandingSlot = String(process.env.ADSENSE_LANDING_SLOT || '').trim();
 const adsenseRoomSlot = String(process.env.ADSENSE_ROOM_SLOT || '').trim();
@@ -226,7 +245,7 @@ const publicFiles = new Set([
   'chat.css', 'index.html', 'privacy.html', 'terms.html',
   'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'themes.css', 'themes.js',
   'chat-ui.mjs', 'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
-  'room-palette.js', 'media-relay.mjs', 'relay-pcm.js', 'stream-health.mjs', 'audio-diagnostics.mjs',
+  'room-palette.js', 'media-relay.mjs', 'relay-pcm.js', 'relay-opus.mjs', 'stream-health.mjs', 'audio-diagnostics.mjs',
   'relay-capture-worklet.js', 'relay-playout-worklet.js', 'notifications-sw.js',
   'manifest.webmanifest',
 ]);
@@ -383,6 +402,7 @@ function publicMember(member, room) {
     name: member.name,
     role: member.role,
     online: Boolean(member.ws),
+    paused: member.listening === false,
     isSource: room.activeSourceId === member.id,
     joinedAt: member.joinedAt,
   };
@@ -407,6 +427,7 @@ function clientState(room, viewer, includeVoiceData = true) {
       sourceStatus: room.sourceStatus,
       sourceEpoch: room.sourceEpoch,
       resumeSourceId: room.resumeSourceId,
+      relayCodec: roomRelayCodec(room),
       locked: Boolean(room.locked),
       createdAt: room.createdAt,
     },
@@ -828,7 +849,7 @@ function normalizeReconnectSecret(value) {
   return typeof value === 'string' && /^[A-Za-z0-9_-]{32,80}$/.test(value) ? value : null;
 }
 
-function makeMember({ guestId, reconnectSecret = null, name, ws, role = 'PARTICIPANT' }) {
+function makeMember({ guestId, reconnectSecret = null, name, ws, role = 'PARTICIPANT', codecs = null }) {
   return {
     id: randomId(),
     guestId: safeText(guestId, 80) || randomId(),
@@ -837,6 +858,8 @@ function makeMember({ guestId, reconnectSecret = null, name, ws, role = 'PARTICI
     name: safeText(name, 40) || 'Guest',
     role,
     ws,
+    codecs: normalizeCodecs(codecs),
+    listening: true,
     joinedAt: Date.now(),
   };
 }
@@ -936,6 +959,7 @@ async function createRoom(ws, message) {
     name: displayName,
     ws,
     role: 'HOST',
+    codecs: message.codecs,
   });
   room.hostId = member.id;
   try {
@@ -974,7 +998,7 @@ async function joinRoom(ws, message) {
   const reconnectSecretClean = normalizeReconnectSecret(message.reconnectSecret);
   if (room.bannedGuestIds?.has(guestIdClean) || room.bannedReconnectSecrets?.has(reconnectSecretClean)) {
     recordJoinFailure(ws._ip);
-    return sendError(ws, 'You were removed from this room.');
+    return sendError(ws, 'You were banned from this room.');
   }
   const existing = [...room.members.values()].find((member) => (
     (ws.authenticatedUser && member.accountId === ws.authenticatedUser.id)
@@ -995,6 +1019,8 @@ async function joinRoom(ws, message) {
     }
     existing.ws = ws;
     existing.name = displayName;
+    existing.codecs = normalizeCodecs(message.codecs);
+    existing.listening = true;
     attachRoom(ws, room, existing);
     return;
   }
@@ -1025,6 +1051,7 @@ async function joinRoom(ws, message) {
     name: displayName,
     ws,
     role,
+    codecs: message.codecs,
   });
   if (role === 'HOST') room.hostId = member.id;
   if (role === 'CO_HOST') room.cohostId = member.id;
@@ -1186,15 +1213,20 @@ function handleBinaryFrame(ws, raw) {
   try {
     // Zero-copy O(1) header check: avoids allocating Int16Array(960) and looping
     // over 48,000 samples/sec on the Node.js event loop.
-    header = validatePcm16FrameHeader(raw, { maxPayloadBytes: MEDIA_RELAY_MAX_PAYLOAD_BYTES });
+    header = validateRelayFrameHeader(raw, { maxPayloadBytes: MEDIA_RELAY_MAX_PAYLOAD_BYTES });
   } catch (error) {
     return sendError(ws, `Invalid media relay frame: ${error.message}`);
   }
   if (header.sourceEpoch !== room.sourceEpoch) return sendError(ws, 'Stale source epoch.');
+  const opus = header.codec === 'opus';
+  if (opus && !opusRelayEnabled) return sendError(ws, 'Opus relay is disabled on this server.');
 
   const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
   for (const target of room.members.values()) {
     if (target.id === member.id || !target.ws || target.ws.readyState !== WebSocket.OPEN) continue;
+    if (target.listening === false) { relayPackets.inc(1,{outcome:'paused_skip'}); continue; }
+    // During a codec switch a listener that cannot decode Opus skips those frames.
+    if (opus && !target.codecs?.has('opus')) { relayPackets.inc(1,{outcome:'codec_skip'}); continue; }
     if (Number(target.ws.bufferedAmount) > MEDIA_RELAY_MAX_BACKLOG_BYTES) { relayPackets.inc(1,{outcome:'backlog_drop'}); continue; }
     target.ws.send(bytes);
     relayPackets.inc(1,{outcome:'forwarded'});
@@ -1209,6 +1241,20 @@ async function handleMessage(ws, message) {
 
   const { room, member } = currentMember(ws);
   if (!room || !member) return sendError(ws, 'Join or create a room first.');
+
+  if (type === 'set-listening') {
+    // A paused listener receives no audio, which also saves relay bandwidth.
+    member.listening = message.listening !== false;
+    broadcastState(room);
+    return;
+  }
+
+  if (type === 'set-codecs') {
+    // A client can downgrade (or upgrade) what it decodes; the room codec follows.
+    member.codecs = normalizeCodecs(message.codecs);
+    broadcastState(room);
+    return;
+  }
 
   if (type === 'chat') {
     const clientMessageId = typeof message.clientMessageId === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(message.clientMessageId) ? message.clientMessageId : null;
@@ -1485,13 +1531,20 @@ async function handleMessage(ws, message) {
     if (!isModerator(room, member)) return sendError(ws, 'Only the host or co-host can remove participants.');
     const target = findMember(room, message.memberId);
     if (!target || target.id === room.hostId) return sendError(ws, 'That participant cannot be removed.');
-    (room.bannedGuestIds ??= new Set()).add(target.guestId);
-    (room.bannedReconnectSecrets ??= new Set()).add(target.reconnectSecret);
-    if (room.activeSourceId === target.id) stopSource(room, 'The active source was removed.', true, false);
-    if (target.ws) {
-      send(target.ws, { type: 'removed', message: 'You were removed from the room.' });
-      target.ws.close(4003, 'Removed from room');
+    // Remove lets the person rejoin later (for mistakes); ban blocks this
+    // identity for the life of the room.
+    const ban = message.ban === true;
+    if (ban) {
+      (room.bannedGuestIds ??= new Set()).add(target.guestId);
+      (room.bannedReconnectSecrets ??= new Set()).add(target.reconnectSecret);
     }
+    if (room.activeSourceId === target.id) stopSource(room, ban ? 'The active source was banned.' : 'The active source was removed.', true, false);
+    if (target.ws) {
+      const text = ban ? 'You were banned from this room.' : 'You were removed from the room. You can rejoin with the room code.';
+      send(target.ws, { type: 'removed', banned: ban, message: text });
+      target.ws.close(4003, ban ? 'Banned from room' : 'Removed from room');
+    }
+    addSystemMessage(room, `${target.name} was ${ban ? 'banned' : 'removed'} by ${member.name}.`);
     room.members.delete(target.id);
     if (room.cohostId === target.id) {
       room.cohostId = null;

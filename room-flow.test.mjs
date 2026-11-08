@@ -230,16 +230,38 @@ test('removed member identifiers and reconnect capabilities cannot reenter the r
   await guest.open();
   guest.socket.send(JSON.stringify({ type: 'join-room', code: created.state.room.code, displayName: 'Guest', guestId: 'removed-identity' }));
   const joined = await guest.wait((m) => m.type === 'joined');
-  host.socket.send(JSON.stringify({ type: 'remove-member', memberId: joined.state.self.id }));
-  await guest.wait((m) => m.type === 'removed');
+  host.socket.send(JSON.stringify({ type: 'remove-member', memberId: joined.state.self.id, ban: true }));
+  assert.equal((await guest.wait((m) => m.type === 'removed')).banned, true);
   for (const [peer, guestId, reconnectSecret] of [
     [sameIdentity, 'removed-identity', undefined],
     [sameCapability, 'new-identity', joined.reconnectSecret],
   ]) {
     await peer.open();
     peer.socket.send(JSON.stringify({ type: 'join-room', code: created.state.room.code, displayName: 'Guest again', guestId, reconnectSecret }));
-    assert.match((await peer.wait((m) => m.type === 'error')).message, /removed/i);
+    assert.match((await peer.wait((m) => m.type === 'error')).message, /banned/i);
   }
+});
+
+test('a removed member can rejoin; only a ban keeps them out', async (t) => {
+  const { server, url } = await startServer();
+  t.after(() => server.kill());
+  const host = client(url);
+  const guest = client(url);
+  const returning = client(url);
+  for (const peer of [host, guest, returning]) t.after(() => peer.socket.terminate());
+  await host.open();
+  host.socket.send(JSON.stringify({ type: 'create-room', name: 'Mistakes happen', displayName: 'Host', guestId: 'host' }));
+  const created = await host.wait((m) => m.type === 'joined');
+  await guest.open();
+  guest.socket.send(JSON.stringify({ type: 'join-room', code: created.state.room.code, displayName: 'Guest', guestId: 'guest-identity' }));
+  const joined = await guest.wait((m) => m.type === 'joined');
+  host.socket.send(JSON.stringify({ type: 'remove-member', memberId: joined.state.self.id }));
+  const removed = await guest.wait((m) => m.type === 'removed');
+  assert.equal(removed.banned, false);
+  assert.match(removed.message, /can rejoin/);
+  await returning.open();
+  returning.socket.send(JSON.stringify({ type: 'join-room', code: created.state.room.code, displayName: 'Guest', guestId: 'guest-identity', reconnectSecret: joined.reconnectSecret }));
+  assert.equal((await returning.wait((m) => m.type === 'joined' || m.type === 'error')).type, 'joined');
 });
 
 test('phone request keeps source authorization through RTC signaling', async (t) => {

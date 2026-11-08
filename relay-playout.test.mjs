@@ -39,10 +39,12 @@ async function playout(targetDelayMs = 40) {
      * Renders `ms` of audio while the sender produces in real time. Frames arrive
      * in groups of `bunch` once the whole group exists; `connected` gates arrival.
      */
-    run(ms, { connected = true, bunch = 1 } = {}) {
+    run(ms, { connected = true, bunch = 1, produced = true } = {}) {
       const end = rendered + Math.round(ms * 48);
       while (rendered < end) {
         const groupEnd = () => (Math.floor(delivered / bunch) + 1) * bunch;
+        // A paused source produces nothing, so no backlog builds up.
+        if (!produced) { while ((delivered + 1) * FRAME_SAMPLES <= rendered) delivered += 1; render(); continue; }
         while (connected && groupEnd() * FRAME_SAMPLES <= rendered) {
           for (let i = delivered, last = groupEnd(); i < last; i += 1) feed();
         }
@@ -84,7 +86,7 @@ for (const bunchMs of [100, 500, 1_000]) {
     p.run(15_000, { bunch: bunchMs / 20 });
     assert.equal(p.node.underruns, underrunsAfterLearning, 'must stop repeatedly rebuffering after learning the network');
     assert.equal(p.skips, skipsAfterLearning, 'must preserve delayed music after adaptation');
-    assert.ok(p.node.targetFill <= 384_000);
+    assert.ok(p.node.targetFill <= 96_000);
   });
 }
 
@@ -95,16 +97,39 @@ test('very long outages retain bounded memory and recover with fresh audio', asy
   p.flush(700);
   assert.ok(p.skips > 0);
   assert.ok(p.node.available < 576_000);
-  assert.ok(p.node.targetFill <= 384_000);
+  assert.ok(p.node.targetFill <= 96_000);
   p.run(5_000);
   assert.equal(p.node.playing, true);
 });
 
-test('five-second delayed capture burst preserves every delivered sample before the hard bound', async () => {
+test('a five-second delayed burst is caught up so the listener returns near live', async () => {
  const p=await playout();p.run(2000);p.run(5000,{connected:false});p.flush(250);
- assert.equal(p.skips,0);assert.equal(p.node.skippedSamples,0);
- assert.ok(p.node.targetFill>=5000*48);
- p.run(8000);assert.equal(p.skips,0);assert.equal(p.node.playing,true);
+ // The burst is accepted (no loss at the network edge)...
+ assert.equal(p.skips,0);
+ // ...but a pause-length gap does not inflate the cushion past its 2 s ceiling.
+ assert.ok(p.node.targetFill<=96_000);
+ p.run(4000);
+ assert.ok(p.node.skippedSamples>0,'stale backlog is skipped');
+ assert.ok(p.node.available<=p.node.targetFill+48_000,'latency returns to within 1 s of the target');
+ assert.equal(p.node.playing,true);
+});
+
+test('a lasting cushion is released within seconds once the network is stable', async () => {
+ const p=await playout();p.run(2000);
+ p.run(1500,{connected:false});p.flush(75);
+ assert.ok(p.node.adaptiveExtraFill>0);
+ p.run(20_000);
+ assert.equal(p.node.adaptiveExtraFill,0,'cushion decays back to the base delay');
+ assert.ok(p.node.available<=p.node.targetFill+48_000);
+});
+
+test('a source pause longer than two seconds does not raise the delay', async () => {
+ const p=await playout();p.run(2000);
+ p.run(6000,{produced:false});
+ const extra=p.node.adaptiveExtraFill;
+ p.run(3000);
+ assert.ok(p.node.adaptiveExtraFill<=Math.max(extra,4_800),'only the underrun cushion applies, not the pause length');
+ assert.ok(p.node.targetFill<48_000);
 });
 
 test('an immediate burst above the current target is retained even before jitter adaptation', async () => {

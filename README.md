@@ -347,6 +347,12 @@ fails with a signature conflict; uninstall 1.0.1 once, then install.
 - Rate limiting: 120 req/min/IP + 30 JSON msg/5s per socket; PCM16 binary
   frames are bounded to 600/5s and 64 KiB of payload; WebSocket transport is
   capped at 512 KiB so application-level rejection can stay descriptive.
+- Opus relay: rooms send Opus (about 13 KB/s at 96 kbps, versus about 97 KB/s
+  for PCM16) whenever every member can decode it, and fall back to PCM16
+  otherwise, so older apps keep working. Browsers use WebCodecs; Android uses
+  MediaCodec after a local encode/decode self-test. `MEDIA_RELAY_OPUS=0`
+  switches Opus off without a release; `MEDIA_RELAY_OPUS_BITRATE` (32000-128000)
+  sets the bitrate.
 - Room access: 8-character room codes (about 1.1 trillion combinations; legacy
   6-character codes still work), 20 wrong codes per address per 10 minutes, and
   host/co-host **Lock room** and **New room code** controls in Room settings.

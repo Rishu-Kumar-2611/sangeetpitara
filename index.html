@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="app-version" content="1.1.17" />
+    <meta name="app-version" content="1.1.18" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="SangeetPitara — private live audio rooms for listening together." />
     <meta name="google-site-verification" content="google4e6792fe7b47be54" />
@@ -23,34 +23,30 @@
     <meta name="roomsound-media-relay" content="server-configured-pcm16" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob: data:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'" />
     <title>SangeetPitara — listen together</title>
-    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261108-release117" />
+    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261108-listen1" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=20261108-release117" />
-  <link rel="stylesheet" href="/themes.css?v=20261108-release117" />
-    <link rel="stylesheet" href="/chat.css?v=20261108-release117" />
-    <script src="/themes.js?v=20261108-release117"></script>
+    <link rel="stylesheet" href="/styles.css?v=20261108-listen1" />
+  <link rel="stylesheet" href="/themes.css?v=20261108-listen1" />
+    <link rel="stylesheet" href="/chat.css?v=20261108-listen1" />
+    <script src="/themes.js?v=20261108-listen1"></script>
   </head>
   <body>
     <div class="aura" id="aura" aria-hidden="true"><span class="aura-blob aura-blob-one"></span><span class="aura-blob aura-blob-two"></span><span class="aura-blob aura-blob-three"></span></div>
     <main id="app" class="shell">
       <section id="landing-view" class="landing-view" data-entry-screen="home">
         <div class="landing-copy">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261108-release117" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261108-listen1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="eyebrow"><span class="eyebrow-dot" aria-hidden="true">●</span> Live audio rooms · Android + Web</div>
           <h1><span class="hero-line">Share your phone's sound.</span><span class="hero-sub">Live, with up to ten people.</span></h1>
           <p class="landing-hint">Start a room, send the code, press play. Everyone hears the same thing at the same time. No accounts, no recording.</p>
-          <section class="browser-first-panel" aria-labelledby="browser-first-title">
-            <div class="console-bar" aria-hidden="true"><span>Inside a room</span><span class="console-live">Android + Web</span></div>
-            <div class="browser-first-heading"><span class="browser-first-icon" aria-hidden="true">↗</span><div><h2 id="browser-first-title">Share playback with the Android app.</h2></div></div>
-            <p>Use SangeetPitara for eligible Android playback sharing and background listening. Friends can join from the app or their browser, listen live, chat, and request a turn to play.</p>
-            <div class="console-meter" aria-hidden="true"><span style="--level:82%"></span><span style="--level:67%"></span></div>
-            <dl class="console-specs">
-              <div><dt>Capture</dt><dd>Phone playback, not your mic</dd></div>
-              <div><dt>Room size</dt><dd>Up to 10 people</dd></div>
-              <div><dt>Control</dt><dd>Ask to play, host approves</dd></div>
-              <div><dt>Recording</dt><dd>Never</dd></div>
-            </dl>
-          </section>
+          <div class="hero-deck" aria-hidden="true">
+            <div class="cassette cassette-hero">
+              <span class="cassette-label"><span class="cassette-side">A</span><span class="cassette-title">Side A · Live</span><span class="cassette-rule"></span></span>
+              <span class="cassette-window"><span class="reel"></span><span class="tape-run"></span><span class="reel"></span></span>
+              <span class="cassette-foot"></span>
+            </div>
+            <div class="hero-eq"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          </div>
           <a class="apk-download-card" href="/downloads/SangeetPitara.apk" target="_blank" rel="noopener">
             <span class="apk-download-icon" aria-hidden="true">↓</span>
             <span class="apk-download-copy"><strong>Get SangeetPitara for Android</strong><small>Free download · Android 10 or newer</small></span>
@@ -132,7 +128,7 @@
             </div>
 
         <header class="topbar">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261108-release117" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261108-listen1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="room-crumb"><span class="crumb-room-name" id="top-room-name">Listening room</span><span class="crumb-separator">/</span><span class="room-code-small" id="top-room-code">------</span></div>
           <div class="topbar-actions">
             <span class="connection-chip" id="connection-chip"><span class="connection-dot"></span><span id="connection-label">Connecting</span></span>
@@ -169,12 +165,13 @@
 
             <section class="now-playing" id="listening-surface" role="tabpanel" aria-labelledby="room-tab-listen">
             <div class="source-card" id="source-card">
-              <div class="source-orb source-cover" id="source-orb" aria-hidden="true"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261108-release117" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span></div>
+              <div class="source-orb source-cover cassette" id="source-orb" aria-hidden="true"><span class="cassette-label"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261108-listen1" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span><span class="cassette-rule"></span></span><span class="cassette-window"><span class="reel"></span><span class="tape-run"></span><span class="reel"></span></span><span class="cassette-foot"></span></div>
               <div class="source-card-copy">
                 <div class="source-kicker" id="source-kicker">Nothing playing</div>
                 <h2 id="source-title">The room is quiet</h2>
                 <p id="source-detail">Choose an audio source to start sharing with the room.</p>
                 <div class="source-status" id="source-status"><span class="status-pulse"></span><span id="source-status-label">Waiting</span></div>
+                <button id="listen-toggle" class="listen-toggle" type="button" aria-pressed="false" hidden><span class="listen-toggle-icon" aria-hidden="true"></span><span id="listen-toggle-label">Pause</span></button>
               </div>
             </div>
             <canvas id="source-waveform" class="source-waveform" aria-hidden="true"></canvas>
@@ -276,6 +273,6 @@
     </div>
     <div id="toast-stack" class="toast-stack"></div>
     <div id="modal-root"></div>
-    <script type="module" src="/app.js?v=20261108-release117"></script>
+    <script type="module" src="/app.js?v=20261108-listen1"></script>
   </body>
 </html>

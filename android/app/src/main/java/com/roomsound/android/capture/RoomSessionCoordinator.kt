@@ -396,10 +396,10 @@ class RoomSessionCoordinator(
         return client?.assignCohost(memberId) == true
     }
 
-    fun removeMember(memberId: String): Boolean {
+    fun removeMember(memberId: String, ban: Boolean = false): Boolean {
         val state = joinedState() ?: return false
         if (!isModerator(state) || state.members.none { it.id == memberId && it.id != state.self?.id && it.id != state.room.hostId }) return false
-        return client?.removeMember(memberId) == true
+        return client?.removeMember(memberId, ban) == true
     }
 
     fun setRoomLock(locked: Boolean): Boolean {

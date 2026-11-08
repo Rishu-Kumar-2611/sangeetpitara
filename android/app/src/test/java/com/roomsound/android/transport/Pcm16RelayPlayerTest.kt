@@ -472,6 +472,26 @@ class Pcm16RelayPlayerTest {
         }
     }
 
+    @Test
+    fun adaptivePlayerStaysWithinOneSecondOfItsCushionAfterAStall() {
+        val output = Output(capacity = 960, manualConsumption = true)
+        // Production ceilings (3 s / 2.1 s); with no earned cushion the adaptive
+        // player catches up once 1 s behind and lands 100 ms above the cushion.
+        player(output, maxFrames = 1_000, catchUpBytes = Pcm16RelayPlayer.PRODUCTION_CATCH_UP_QUEUED_BYTES,
+            catchUpLandingBytes = Pcm16RelayPlayer.PRODUCTION_CATCH_UP_LANDING_BYTES,
+            maxBytes = Pcm16RelayPlayer.PRODUCTION_MAX_QUEUED_BYTES, adaptive = true).use { player ->
+            player.start(Pcm16RelayPlayer.FORMAT, EPOCH)
+            assertTrue(player.play(packet(0)))
+            output.await { playCount == 1 }
+            assertTrue(player.play(packet(1)))
+            output.await { waitingWrites > 0 }
+            // A stalled sender delivers 1.5 s (150 x 10 ms) at once.
+            (2L..151L).forEach { assertTrue(player.play(packet(it))) }
+            assertTrue("old audio must be skipped, not queued for seconds", player.droppedFrames() > 0)
+            assertTrue("no more than about one second remains queued", player.droppedFrames() >= 150 - 100)
+        }
+    }
+
     private fun sample(bytes: ByteArray, at: Int): Int =
         ((bytes[at + 1].toInt() shl 8) or (bytes[at].toInt() and 0xFF)).toShort().toInt()
 
@@ -612,6 +632,8 @@ class Pcm16RelayPlayerTest {
         status: (String) -> Unit = {},
         catchUpBytes: Int = Int.MAX_VALUE,
         catchUpLandingBytes: Int = 0,
+        maxBytes: Int = 48_000 * 2 * 120 / 1_000, // the player's default bound
+        adaptive: Boolean = false,
     ) = Pcm16RelayPlayer(
         outputFactory = { output },
         audioThreadPriority = priority,
@@ -620,6 +642,8 @@ class Pcm16RelayPlayerTest {
         startupTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis),
         catchUpQueuedBytes = catchUpBytes,
         catchUpLandingBytes = catchUpLandingBytes,
+        maxQueuedBytes = maxBytes,
+        adaptiveBuffering = adaptive,
     )
 
     private fun packet(sequence: Long, samples: Int = 480, epoch: Long = EPOCH, seed: Int = sequence.toInt()): Pcm16RelayPacket {

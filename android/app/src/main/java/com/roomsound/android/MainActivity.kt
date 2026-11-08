@@ -1497,8 +1497,23 @@ class MainActivity : Activity() {
                     roomSession?.grantSource(member.id)
                 }, matchWrap())
             }
-            moderationContainer.addView(button("Remove ${member.name}") { removeMember(member.id) }, matchWrap())
+            // Remove lets them rejoin later; Ban keeps them out of this room.
+            val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            actions.addView(button("Remove ${member.name}", ButtonTone.SECONDARY) { removeMember(member.id) },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f).apply { marginEnd = dp(8) })
+            actions.addView(button("Ban", ButtonTone.DANGER) { confirmBan(member.id, member.name) },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            moderationContainer.addView(actions, matchWrap())
         }
+    }
+
+    private fun confirmBan(memberId: String, name: String) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Ban $name?")
+            .setMessage("$name will be removed and cannot rejoin this room. Use Remove instead if they should be able to come back.")
+            .setPositiveButton("Ban") { _, _ -> removeMember(memberId, ban = true) }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun renderTransport() {
@@ -1771,14 +1786,14 @@ class MainActivity : Activity() {
         session.assignCohost(memberId)
     }
 
-    private fun removeMember(memberId: String) {
+    private fun removeMember(memberId: String, ban: Boolean = false) {
         val session = roomSession ?: return
         val state = session.currentRoomState() ?: return
         if (!isCurrentModerator(state) || state.members.none { it.id == memberId && it.id != state.self?.id && it.id != state.room.hostId }) {
             appendRoomEvent("Refresh the room state; that member cannot be removed now.")
             return
         }
-        session.removeMember(memberId)
+        session.removeMember(memberId, ban)
     }
 
     private fun toggleRoomLock() {

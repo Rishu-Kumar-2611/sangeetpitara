@@ -2,6 +2,7 @@ package com.roomsound.android.transport
 
 import com.roomsound.android.capture.Pcm16Sink
 import com.roomsound.android.room.RoomConnectionState
+import com.roomsound.android.room.Pcm16RelayPacket
 import com.roomsound.android.room.Pcm16RelayPacketCodec
 import com.roomsound.android.room.RoomSoundEvent
 import com.roomsound.android.room.RoomSoundWebSocketClient
@@ -77,6 +78,16 @@ class RoomAudioTransport(
     private var droppedRelayMalformedFrames = 0L
     private var droppedRelayUnavailableFrames = 0L
 
+    // PCM16 and Opus frames share one continuous numbering for the player, so a
+    // codec switch mid-stream is not mistaken for reordering; wire gaps remain gaps.
+    private var playEpoch: Long? = null
+    private var playSequence = -1L
+    private var lastWireCodec = 0
+    private var lastWireSequence = -1L
+    private val opusLock = Any()
+    private var opusDecoder: OpusRelayDecoder? = null
+    private var opusDecoderEpoch: Long? = null
+
     init {
         roomClient.addListener(this)
         if (roomClient.connectionState() == RoomConnectionState.JOINED) {
@@ -114,6 +125,10 @@ class RoomAudioTransport(
 
     override fun onBinaryFrame(frame: ByteString) {
         if (relayPlayer == null) return
+        if (Pcm16RelayPacketCodec.frameVersion(frame) == Pcm16RelayPacketCodec.VERSION_OPUS) {
+            onOpusFrame(frame)
+            return
+        }
         val packet = runCatching {
             Pcm16RelayPacketCodec.decode(
                 frame,
@@ -141,12 +156,129 @@ class RoomAudioTransport(
                 droppedRelayUnavailableFrames += 1
                 return
             }
-            if (player.play(packet)) {
+            val sequence = nextPlaySequenceLocked(packet.sourceEpoch, Pcm16RelayPacketCodec.VERSION, packet.sequence)
+            if (sequence < 0) return
+            if (player.play(packet.copy(sequence = sequence))) {
                 receivedRelayFrames += 1
             } else {
                 droppedRelayUnavailableFrames += 1
             }
         }
+    }
+
+    private fun nextPlaySequenceLocked(epoch: Long, codec: Int, wireSequence: Long): Long {
+        if (playEpoch != epoch) {
+            playEpoch = epoch
+            playSequence = -1L
+            lastWireCodec = 0
+            lastWireSequence = -1L
+        }
+        val step = if (codec == lastWireCodec && lastWireSequence >= 0) {
+            val distance = (wireSequence - lastWireSequence) and Pcm16RelayPacketCodec.UINT32_MAX
+            if (distance == 0L || distance >= 0x8000_0000L) return -1L
+            distance
+        } else {
+            1L
+        }
+        lastWireCodec = codec
+        lastWireSequence = wireSequence
+        playSequence = (playSequence + step) and Pcm16RelayPacketCodec.UINT32_MAX
+        return playSequence
+    }
+
+    private fun onOpusFrame(frame: ByteString) {
+        val packet = runCatching { Pcm16RelayPacketCodec.decodeOpus(frame) }.getOrElse {
+            synchronized(lock) { if (!closed) droppedRelayMalformedFrames += 1 }
+            return
+        }
+        val firstSequence = synchronized(lock) {
+            val player = relayPlayer ?: return
+            if (closed) return
+            val currentAuthorization = authorization
+            if (currentAuthorization == null || !currentAuthorization.canReceiveRelayFrames) {
+                droppedRelayUnauthorizedFrames += 1
+                return
+            }
+            if (packet.sourceEpoch != currentAuthorization.sourceEpoch) {
+                droppedRelayStaleEpochFrames += 1
+                return
+            }
+            if (player.currentEpoch() != currentAuthorization.sourceEpoch) {
+                droppedRelayUnavailableFrames += 1
+                return
+            }
+            nextPlaySequenceLocked(packet.sourceEpoch, Pcm16RelayPacketCodec.VERSION_OPUS, packet.sequence)
+        }
+        if (firstSequence < 0) return
+
+        var failed = false
+        val pcm = synchronized(opusLock) {
+            if (opusDecoder == null || opusDecoderEpoch != packet.sourceEpoch) {
+                opusDecoder?.close()
+                opusDecoder = OpusRelayDecoder.create()
+                opusDecoderEpoch = packet.sourceEpoch
+            }
+            val decoder = opusDecoder
+            if (decoder == null) {
+                failed = true
+                ShortArray(0)
+            } else {
+                runCatching {
+                    decoder.decode(packet.payload, packet.sequence * packet.sampleCount * 1_000_000L / Pcm16RelayPacketCodec.SAMPLE_RATE)
+                }.getOrElse {
+                    decoder.close()
+                    opusDecoder = null
+                    failed = true
+                    ShortArray(0)
+                }
+            }
+        }
+        if (failed) {
+            // This device cannot play Opus after all: ask the room for PCM16.
+            OpusSupport.markDecodeBroken()
+            runCatching { roomClient.announceRelayCodecs() }
+            synchronized(lock) { if (!closed) droppedRelayUnavailableFrames += 1 }
+            return
+        }
+        if (pcm.isEmpty()) return
+
+        synchronized(lock) {
+            val player = relayPlayer ?: return
+            if (closed) return
+            var offset = 0
+            var sequence = firstSequence
+            while (offset < pcm.size) {
+                if (offset > 0) {
+                    playSequence = (playSequence + 1L) and Pcm16RelayPacketCodec.UINT32_MAX
+                    sequence = playSequence
+                }
+                val count = minOf(OpusRelayEncoder.FRAME_SAMPLES, pcm.size - offset)
+                val samples = pcm.copyOfRange(offset, offset + count)
+                val payload = ByteArray(count * 2)
+                for (index in 0 until count) {
+                    val value = samples[index].toInt()
+                    payload[index * 2] = value.toByte()
+                    payload[index * 2 + 1] = (value shr 8).toByte()
+                }
+                val decoded = Pcm16RelayPacket(
+                    sampleRate = Pcm16RelayPacketCodec.SAMPLE_RATE,
+                    channels = Pcm16RelayPacketCodec.CHANNELS,
+                    sourceEpoch = packet.sourceEpoch,
+                    sequence = sequence,
+                    sampleCount = count,
+                    payload = payload,
+                    samples = samples,
+                )
+                if (player.play(decoded)) receivedRelayFrames += 1 else droppedRelayUnavailableFrames += 1
+                offset += count
+            }
+        }
+    }
+
+    private fun closeOpusDecoder() = synchronized(opusLock) {
+        opusDecoder?.close()
+        opusDecoder = null
+        opusDecoderEpoch = null
     }
 
     /**
@@ -208,6 +340,7 @@ class RoomAudioTransport(
             relayPlayer?.stop()
         }
         roomClient.removeListener(this)
+        closeOpusDecoder()
         runCatching { framePublisher.close() }
         runCatching { relayPlayer?.close() }
     }

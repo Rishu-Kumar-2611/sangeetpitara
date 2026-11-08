@@ -181,6 +181,8 @@ test('config enables the PCM16 relay by default and permits an explicit direct-W
     mode: 'pcm16',
     sampleRate: 48000,
     channels: 1,
+    codecs: ['pcm16', 'opus'],
+    opusBitrate: 96000,
   });
 
   const direct = await startServer({ MEDIA_RELAY_ENABLED: '0' });
@@ -191,6 +193,8 @@ test('config enables the PCM16 relay by default and permits an explicit direct-W
     mode: 'pcm16',
     sampleRate: 48000,
     channels: 1,
+    codecs: ['pcm16', 'opus'],
+    opusBitrate: 96000,
   });
 });
 

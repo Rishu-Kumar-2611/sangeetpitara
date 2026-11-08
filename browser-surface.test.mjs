@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261108-release117';
+const assetVersion = '20261108-listen1';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
@@ -59,7 +59,7 @@ test('browser module graph uses one release cache version, including the capture
   ]);
   const importPattern = /^import\s[\s\S]*?\sfrom ['"]([^'"]+)['"];/gm;
   const imports = [...app.matchAll(importPattern)].map((match) => match[1]);
-  for (const name of ['guest-id.js', 'relay-pcm.js', 'capture-tracks.js', 'media-relay.mjs', 'ads.mjs', 'room-palette.js']) {
+  for (const name of ['guest-id.js', 'relay-pcm.js', 'relay-opus.mjs', 'capture-tracks.js', 'media-relay.mjs', 'ads.mjs', 'room-palette.js']) {
     assert.ok(imports.includes(`./${name}?v=${assetVersion}`), name);
   }
   for (const source of [app, worklet]) {
@@ -87,7 +87,7 @@ test('release download points at GitHub Releases and runtime packages audio modu
   assert.ok(!copies.some((args) => args.some((arg) => /\.apk$|^downloads\//.test(arg))), 'APKs ship via GitHub Releases, not the image');
   assert.ok(dockerignore.split(/\r?\n/).includes('*.apk'));
   assert.ok(!dockerignore.split(/\r?\n/).some((line) => /^!.*\.apk/.test(line)));
-  for (const name of ['capture-tracks.js', 'media-relay.mjs', 'relay-pcm.js', 'relay-capture-worklet.js']) {
+  for (const name of ['capture-tracks.js', 'media-relay.mjs', 'relay-pcm.js', 'relay-opus.mjs', 'relay-capture-worklet.js']) {
     assert.ok(copies.some((args) => args.at(-1) === './' && args.slice(0, -1).includes(name)), name);
     assert.ok((await readFile(new URL(name, root), 'utf8')).length > 0, name);
   }
@@ -197,14 +197,18 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   // Exact mono/stereo lengths are exercised by relay-capture.test.mjs.
 });
 
-test('landing page explains Android sharing and companion browser entry', async () => {
+test('landing page offers Android sharing and a cassette listening surface', async () => {
   const [html, css] = await Promise.all([
     readFile(new URL('index.html', root), 'utf8'),
     readFile(new URL('styles.css', root), 'utf8'),
   ]);
 
-  assert.match(html, /class="browser-first-panel"/);
-  assert.match(html, /Friends can join from the app or their browser/);
+  // The landing shows a decorative cassette deck instead of an information box.
+  assert.match(html, /class="hero-deck" aria-hidden="true"/);
+  assert.match(html, /Share your phone's sound\./);
+  // The room's now-playing tile is a cassette, and listeners can pause locally.
+  assert.match(html, /class="source-orb source-cover cassette"/);
+  assert.match(html, /id="listen-toggle"/);
   assert.match(html, /Get SangeetPitara for Android/);
   assert.match(html, /<small>Share this code with listeners<\/small>/);
   assert.match(css, /\.room-code-display strong \{[^}]*letter-spacing: 0\.2em/s);
@@ -244,7 +248,7 @@ test('compact room navigation preserves source hooks and exposes dedicated secti
   for (const id of ['source-card', 'source-orb', 'source-kicker', 'source-title', 'source-detail', 'source-status', 'source-status-label', 'source-waveform', 'source-cover-initial']) {
     assert.match(html, new RegExp(`id="${id}"`), id);
   }
-  assert.match(html, /class="source-orb source-cover" id="source-orb"/);
+  assert.match(html, /class="source-orb source-cover cassette" id="source-orb"/);
   assert.match(css, /\.source-waveform \{[^}]*color: var\(--room-tint-1\); caret-color: var\(--room-tint-2\)/);
 
   // Phone tabs: Chat / People / Health, wired by data attributes.

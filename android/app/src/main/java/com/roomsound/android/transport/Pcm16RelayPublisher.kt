@@ -25,6 +25,13 @@ class Pcm16RelayPublisher(
     private var sequenceEpoch: Long? = null
     private val clarityConditioner = Pcm16ClarityConditioner()
 
+    // Opus state is used only from the capture thread except close/stop.
+    private val opusLock = Any()
+    private var opusEncoder: OpusRelayEncoder? = null
+    private var opusEpoch: Long? = null
+    private var opusSequence = 0L
+    @Volatile private var opusFailed = false
+
     override fun isAvailable(): Boolean = synchronized(lock) { !closed }
 
     override fun start(format: Pcm16AudioFormat, sourceEpoch: Long): Boolean {
@@ -82,6 +89,16 @@ class Pcm16RelayPublisher(
             clarityConditioner.process(frame.samples, frame.sampleCount)
         }
 
+        if (state?.room?.relayCodec == "opus" && !opusFailed && OpusSupport.capabilities().encode) {
+            when (publishOpus(conditionedSamples, frame.sampleCount, frame.sourceEpoch)) {
+                true -> { publishedFrames.incrementAndGet(); return Pcm16PublishResult.PUBLISHED }
+                false -> { droppedFrames.incrementAndGet(); return Pcm16PublishResult.BACKEND_UNAVAILABLE }
+                null -> Unit // Encoder failed: send this and later frames as PCM16.
+            }
+        } else {
+            closeOpusEncoder()
+        }
+
         val encoded = runCatching {
             Pcm16RelayPacketCodec.encodeByteString(
                 samples = conditionedSamples,
@@ -105,6 +122,39 @@ class Pcm16RelayPublisher(
         }
     }
 
+    /** true: queued or sent; false: socket refused a packet; null: encoder unusable. */
+    private fun publishOpus(samples: ShortArray, sampleCount: Int, sourceEpoch: Long): Boolean? = synchronized(opusLock) {
+        if (opusEncoder == null || opusEpoch != sourceEpoch) {
+            opusEncoder?.close()
+            opusEncoder = OpusRelayEncoder.create(roomClient.opusBitrate())
+            opusEpoch = sourceEpoch
+            opusSequence = 0L
+        }
+        val encoder = opusEncoder ?: run { opusFailed = true; return null }
+        val packets = runCatching { encoder.encode(samples, sampleCount) }.getOrElse {
+            encoder.close()
+            opusEncoder = null
+            opusFailed = true
+            return null
+        }
+        var allSent = true
+        for (packet in packets) {
+            val samplesInPacket = opusPacketSampleCount(packet)
+            val frame = runCatching {
+                Pcm16RelayPacketCodec.encodeOpus(packet, samplesInPacket, sourceEpoch, opusSequence)
+            }.getOrNull() ?: continue
+            opusSequence = (opusSequence + 1L) % (Pcm16RelayPacketCodec.UINT32_MAX + 1L)
+            if (!roomClient.sendPcm16Frame(frame)) allSent = false
+        }
+        allSent
+    }
+
+    private fun closeOpusEncoder() = synchronized(opusLock) {
+        opusEncoder?.close()
+        opusEncoder = null
+        opusEpoch = null
+    }
+
     override fun stop(sourceEpoch: Long) {
         synchronized(lock) {
             if (activeEpoch != sourceEpoch) return
@@ -112,10 +162,11 @@ class Pcm16RelayPublisher(
             activeEpoch = null
             clarityConditioner.reset()
         }
+        closeOpusEncoder()
     }
 
     override fun diagnostics(): String = synchronized(lock) {
-        "relay=pcm16 started=$started epoch=${activeEpoch ?: "none"} " +
+        "relay=${if (opusEncoder != null) "opus" else "pcm16"} started=$started epoch=${activeEpoch ?: "none"} " +
             "publishedFrames=${publishedFrames.get()} droppedFrames=${droppedFrames.get()}"
     }
 
@@ -127,6 +178,7 @@ class Pcm16RelayPublisher(
             activeEpoch = null
             clarityConditioner.reset()
         }
+        closeOpusEncoder()
     }
 
     companion object {
