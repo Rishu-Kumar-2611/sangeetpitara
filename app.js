@@ -1,16 +1,16 @@
-import { RoomChatUI } from './chat-ui.mjs?v=20261108-opus1';
+import { RoomChatUI } from './chat-ui.mjs?v=20261108-listen1';
 let roomChatUI = null;
-import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261108-opus1';
-import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261108-opus1';
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261108-opus1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261108-opus1';
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261108-listen1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261108-listen1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261108-listen1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261108-listen1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261108-opus1';
+} from './capture-tracks.js?v=20261108-listen1';
 import {
   decodeOpusFrame,
   decodePcm16Frame,
@@ -20,8 +20,8 @@ import {
   MEDIA_RELAY_SAMPLE_RATE,
   MEDIA_RELAY_VERSION_OPUS,
   relayFrameVersion,
-} from './media-relay.mjs?v=20261108-opus1';
-import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261108-opus1';
+} from './media-relay.mjs?v=20261108-listen1';
+import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261108-listen1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -33,8 +33,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261108-opus1';
-import { roomPalette } from './room-palette.js?v=20261108-opus1';
+} from './ads.mjs?v=20261108-listen1';
+import { roomPalette } from './room-palette.js?v=20261108-listen1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -665,7 +665,7 @@ function createRoomAudioContext() {
 
 function applyOutputVolume() {
   if (state.audioElement) state.audioElement.volume = state.muted ? 0 : state.volume;
-  if (state.relayPlaybackGain) state.relayPlaybackGain.gain.value = state.muted ? 0 : state.volume;
+  if (state.relayPlaybackGain) state.relayPlaybackGain.gain.value = state.muted || state.listeningPaused ? 0 : state.volume;
 }
 
 const WAVEFORM_BARS = 48;
@@ -942,7 +942,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261108-opus1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261108-listen1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -1020,7 +1020,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261108-opus1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261108-listen1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1173,7 +1173,7 @@ function closeRelayPlayback() {
 }
 
 function handleRelayFrame(data) {
-  if (!isMediaRelayEnabled()) return;
+  if (!isMediaRelayEnabled() || state.listeningPaused) return;
   if (relayFrameVersion(data) === MEDIA_RELAY_VERSION_OPUS) { handleOpusRelayFrame(data); return; }
   let frame;
   try {
@@ -1412,6 +1412,7 @@ function selectRoomTab(tabName) {
 
 function resetToLanding(reason = '') {
   roomChatUI?.reset();
+  state.listeningPaused = false;
   closeOpusEncoder();
   closeOpusDecoder();
   state.relayPacketProgress = null;
@@ -1621,7 +1622,7 @@ function handleServerMessage(message) {
     }
     // A rejected join must not be retried automatically: the server counts
     // wrong codes and closes sockets that stay outside a room.
-    if (/unavailable or has ended|room is full|locked by the host|Too many incorrect room codes|removed from this room/.test(message.message)) {
+    if (/unavailable or has ended|room is full|locked by the host|Too many incorrect room codes|banned from this room/.test(message.message)) {
       state.lastRoomCode = null;
       if (state.room) resetToLanding(message.message);
     }
@@ -1635,6 +1636,8 @@ function handleServerMessage(message) {
     window.history.replaceState(window.history.state, '', roomUrlForCode(message.state.room.code));
     showRoom();
     announceRelayCodecs();
+    // A reconnect gets a fresh socket that is listening; keep a pause in force.
+    if (state.listeningPaused) send({ type: 'set-listening', listening: false });
     return;
   }
   if (message.type === 'state') {
@@ -1818,7 +1821,30 @@ function renderSource() {
   if (!state.visualizerRaf && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { if (!state.visualizerRaf) drawSourceWaveform(null); });
 }
 
+// Listener pause is local: the server stops sending to this device, and
+// resuming rejoins the live stream instead of playing old audio.
+function setListeningPaused(paused, { announce = true } = {}) {
+  state.listeningPaused = paused;
+  resetRelayPlaybackQueue(state.room?.sourceEpoch ?? null);
+  closeOpusDecoder();
+  applyOutputVolume();
+  if (announce) send({ type: 'set-listening', listening: !paused });
+  renderControls();
+}
+
+function renderListenToggle() {
+  const toggle = $('#listen-toggle');
+  if (!toggle) return;
+  const canPause = Boolean(state.room?.activeSourceId) && !isSelfSource();
+  toggle.hidden = !canPause;
+  toggle.setAttribute('aria-pressed', String(Boolean(state.listeningPaused)));
+  $('#listen-toggle-label').textContent = state.listeningPaused ? 'Resume live' : 'Pause';
+  $('#source-card')?.classList.toggle('listening-paused', Boolean(state.listeningPaused && canPause));
+}
+
 function renderControls() {
+  if (state.room?.sourceStatus === 'LIVE') ensureVisualizerLoop();
+  renderListenToggle();
   const moderator = isModerator();
   const mobileAudio = currentMobileAudioGuidance();
   const activeOther = Boolean(state.room?.activeSourceId && state.room.activeSourceId !== state.self?.id);
@@ -1885,7 +1911,7 @@ function renderMembers() {
     const isCohost = member.id === cohost;
     const isSource = member.id === state.room.activeSourceId && state.room.sourceStatus !== 'NONE';
     const baseRole = isHost ? 'Host' : isCohost ? 'Co-host' : isSource ? 'Sharing now' : 'Listener';
-    const role = member.online ? baseRole : `${baseRole} · Offline`;
+    const role = !member.online ? `${baseRole} · Offline` : member.paused ? `${baseRole} · Paused` : baseRole;
     const roleClass = !member.online ? '' : (isHost || isSource ? 'green-role' : isCohost ? 'orange-role' : '');
     const canManage = isModerator() && member.id !== state.self?.id && !isHost;
     let actions = '';
@@ -1898,8 +1924,9 @@ function renderMembers() {
       const cohostBtn = state.self?.role === 'HOST' && member.online
         ? `<button class="tiny-button" data-action="cohost" data-member-id="${member.id}">${isCohost ? 'Remove co-host' : 'Make co-host'}</button>`
         : '';
-      const removeBtn = `<button class="tiny-button danger-tiny" data-action="remove" data-member-id="${member.id}">${member.online ? 'Remove' : 'Clear'}</button>`;
-      actions = `<div class="member-actions">${grantBtn}${cohostBtn}${removeBtn}</div>`;
+      const removeBtn = `<button class="tiny-button" data-action="remove" data-member-id="${member.id}" title="They can rejoin with the room code">${member.online ? 'Remove' : 'Clear'}</button>`;
+      const banBtn = `<button class="tiny-button danger-tiny" data-action="ban" data-member-id="${member.id}" title="They cannot rejoin this room">Ban</button>`;
+      actions = `<div class="member-actions">${grantBtn}${cohostBtn}${removeBtn}${banBtn}</div>`;
     }
     return `<div class="member-item ${member.online ? '' : 'member-offline'}"><div class="member-avatar">${escapeHtml(initials(member.name))}</div><div class="member-info"><div class="member-name-row"><span class="member-name">${escapeHtml(member.name)}</span>${member.id === state.self?.id ? '<span class="member-you">YOU</span>' : ''}</div><div class="member-role"><span class="role-badge ${roleClass}">${role}</span></div>${actions}</div><span class="member-state ${member.online ? 'online' : ''} ${isSource ? 'source' : ''}" title="${member.online ? 'Online' : 'Offline'}"></span></div>`;
   }).join('') || '<div class="request-empty">No one is here yet.</div>';
@@ -3031,6 +3058,11 @@ function wireEvents() {
   $('#ask-takeover').addEventListener('click', () => { send({ type: 'chat', text: 'Could the host take control back, please?' }); toast('The host was notified in chat.'); });
   $('#enable-audio').addEventListener('click', enableRoomAudio);
   $('#enable-audio-participant').addEventListener('click', enableRoomAudio);
+  $('#listen-toggle')?.addEventListener('click', () => {
+    const paused = !state.listeningPaused;
+    setListeningPaused(paused);
+    toast(paused ? 'Paused on this device. Others keep listening.' : 'Back to the live stream.', 'success');
+  });
   $('#local-mute').addEventListener('click', () => {
     state.muted = !state.muted;
     applyOutputVolume();
@@ -3135,7 +3167,17 @@ function wireEvents() {
       if (target?.role === 'CO_HOST') toast('Co-host role removed.');
     } else if (button.dataset.action === 'remove') {
       send({ type: 'remove-member', memberId });
-      if (target) toast(`Removed ${target.name} from the room.`);
+      if (target) toast(`Removed ${target.name}. They can rejoin with the room code.`);
+    } else if (button.dataset.action === 'ban') {
+      // A second tap within four seconds confirms the ban.
+      if (button.dataset.confirm !== 'true') {
+        button.dataset.confirm = 'true';
+        button.textContent = 'Tap again to ban';
+        setTimeout(() => { if (button.isConnected) { button.dataset.confirm = ''; button.textContent = 'Ban'; } }, 4000);
+        return;
+      }
+      send({ type: 'remove-member', memberId, ban: true });
+      if (target) toast(`Banned ${target.name}. They cannot rejoin this room.`);
     }
   });
   $('#request-list').addEventListener('click', (event) => {

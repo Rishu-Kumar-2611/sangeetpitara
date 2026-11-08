@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="app-version" content="1.1.17"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="app-version" content="1.1.18"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
 body{background:radial-gradient(ellipse at top left,#19322c 0,transparent 55%),#100d0b;color:#f7f1ea;max-width:640px;padding:clamp(20px,5vw,40px);line-height:1.55}
 h1{font-size:clamp(32px,8vw,44px);letter-spacing:-.045em;margin:12px 0 8px;color:#f5bd68}
 h2{font-size:21px;letter-spacing:-.02em;margin-top:28px}p{color:#d0c2b3}small{display:block;font-size:13px;color:#c4b6a7}
@@ -56,7 +56,7 @@ html[data-theme] .eyebrow, html[data-theme] .section-label, html[data-theme] .mo
 html[data-theme] .shell { max-width: 1240px; padding: 8px 32px 40px; }
 
 /* Surfaces: flat, one hairline, no blur, no glow. */
-html[data-theme] .panel, html[data-theme] .now-playing, html[data-theme] .entry-card, html[data-theme] .browser-first-panel,
+html[data-theme] .panel, html[data-theme] .now-playing, html[data-theme] .entry-card,
 html[data-theme] .apk-download-card, html[data-theme] .room-actions-menu, html[data-theme] .toast, html[data-theme] .source-modal,
 html[data-theme] .mobile-audio-modal, html[data-theme] .cookie-banner, html[data-theme] .contact-card {
   background: var(--surface); border: 1px solid var(--line); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: var(--radius-card);
@@ -122,25 +122,38 @@ html[data-theme] .landing-copy h1 { max-width: 640px; margin: 20px 0 20px; font-
 html[data-theme] .hero-line { display: block; }
 html[data-theme] .hero-sub { display: block; color: var(--muted); }
 html[data-theme] .landing-hint { max-width: 470px; font-size: 17px; line-height: 1.6; color: var(--muted); }
-html[data-theme] .landing-view[data-entry-screen="home"] .browser-first-panel { display: block; }
-html[data-theme] .browser-first-panel { grid-column: 2; grid-row: 2 / 7; align-self: start; max-width: none; margin: 4px 0 0; padding: 0; overflow: hidden; }
-html[data-theme] .console-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 18px; border-bottom: 1px solid var(--line); font: 500 11.5px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-html[data-theme] .console-live { color: var(--accent); }
-html[data-theme] .browser-first-heading { display: block; padding: 20px 18px 0; }
-html[data-theme] .browser-first-heading h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
-html[data-theme] .browser-first-panel > p { margin: 8px 18px 18px; font-size: 14px; line-height: 1.6; color: var(--muted); }
-html[data-theme] .console-meter { display: grid; gap: 6px; padding: 0 18px 20px; border-bottom: 1px solid var(--line); }
-html[data-theme] .console-meter span { display: block; height: 8px; border-radius: 2px; background:
-  linear-gradient(90deg, var(--text) 0 var(--level), var(--meter-off) var(--level) 100%);
-  -webkit-mask: repeating-linear-gradient(90deg, #000 0 calc(100% / 28 - 3px), transparent calc(100% / 28 - 3px) calc(100% / 28));
-  mask: repeating-linear-gradient(90deg, #000 0 calc(100% / 28 - 3px), transparent calc(100% / 28 - 3px) calc(100% / 28)); }
-html[data-theme] .console-specs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
-html[data-theme] .console-specs div { padding: 14px 18px; border-bottom: 1px solid var(--line); }
-html[data-theme] .console-specs div:nth-child(odd) { border-right: 1px solid var(--line); }
-html[data-theme] .console-specs div:nth-last-child(-n+2) { border-bottom: 0; }
-html[data-theme] .console-specs dt { font: 500 11px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-html[data-theme] .console-specs dd { margin: 4px 0 0; font-size: 14px; }
-html[data-theme] .browser-first-points, html[data-theme] .browser-first-icon { display: none; }
+/* A decorative cassette deck replaces the old information box. */
+html[data-theme] .hero-deck { grid-column: 2; grid-row: 2 / 7; align-self: center; justify-self: center; width: min(100%, 440px); padding: 8px 0 0; }
+html[data-theme] .hero-deck .cassette { width: 100%; transform: rotate(-4deg); box-shadow: 0 28px 60px rgb(0 0 0 / 0.35), 0 0 0 1px var(--line-strong) inset; }
+html[data-theme] .hero-eq { display: flex; align-items: flex-end; justify-content: center; gap: 5px; height: 56px; margin-top: 34px; }
+html[data-theme] .hero-eq span { width: 6px; height: 100%; border-radius: 3px; background: var(--text); opacity: .85; transform-origin: bottom; transform: scaleY(.25); animation: eq-bounce 1.4s ease-in-out infinite; }
+html[data-theme] .hero-eq span:nth-child(3n) { background: var(--accent); }
+html[data-theme] .hero-eq span:nth-child(2n) { animation-duration: 1.1s; }
+html[data-theme] .hero-eq span:nth-child(3n+1) { animation-duration: 1.7s; animation-delay: -.4s; }
+html[data-theme] .hero-eq span:nth-child(4n) { animation-delay: -.8s; }
+html[data-theme] .hero-eq span:nth-child(5n) { animation-duration: .9s; animation-delay: -.2s; }
+@keyframes eq-bounce { 0%, 100% { transform: scaleY(.2); } 50% { transform: scaleY(1); } }
+
+/* ---------- Cassette (landing deck and the room's now-playing tile) ---------- */
+html[data-theme] .cassette { position: relative; display: grid; grid-template-rows: auto 1fr auto; gap: 10px; aspect-ratio: 1.58; padding: 7% 7% 0; border-radius: 14px; background: linear-gradient(180deg, var(--raised-strong), var(--raised)); box-shadow: 0 0 0 1px var(--line-strong) inset; overflow: hidden; }
+html[data-theme] .cassette::before, html[data-theme] .cassette::after { content: ''; position: absolute; top: 5%; width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); }
+html[data-theme] .cassette::before { left: 3.2%; }
+html[data-theme] .cassette::after { right: 3.2%; }
+html[data-theme] .cassette-label { position: relative; display: flex; align-items: center; gap: 10px; min-height: 24%; padding: 6px 12px; border-radius: 6px; background: var(--bg); box-shadow: 0 0 0 1px var(--line) inset; overflow: hidden; }
+html[data-theme] .cassette-rule { position: absolute; left: 12px; right: 12px; bottom: 7px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--accent) 0 30%, transparent 30% 34%, var(--accent) 34% 36%, transparent 36%); opacity: .85; }
+html[data-theme] .cassette-side { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font: 600 13px var(--font-mono); }
+html[data-theme] .cassette-title { font: 500 12px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+html[data-theme] .cassette-window { display: flex; align-items: center; justify-content: space-between; align-self: center; height: 64%; min-height: 48px; padding: 0 9%; border-radius: 999px; background: var(--bg); box-shadow: 0 0 0 1px var(--line-strong) inset; }
+html[data-theme] .reel { position: relative; height: 72%; aspect-ratio: 1; border-radius: 50%; background:
+  radial-gradient(circle, var(--bg) 0 18%, transparent 19%),
+  repeating-conic-gradient(var(--text) 0 14deg, transparent 14deg 60deg);
+  box-shadow: 0 0 0 3px var(--raised-strong), 0 0 0 6px color-mix(in srgb, var(--text) 18%, transparent);
+  animation: reel-spin 2.2s linear infinite; }
+html[data-theme] .tape-run { flex: 1; height: 2px; margin: 0 6%; background: repeating-linear-gradient(90deg, var(--muted) 0 6px, transparent 6px 10px); background-size: 20px 2px; animation: tape-run .8s linear infinite; opacity: .6; }
+html[data-theme] .cassette-foot { justify-self: center; width: 58%; height: 10px; border-radius: 6px 6px 0 0; background: var(--bg); box-shadow: 0 0 0 1px var(--line) inset; }
+@keyframes reel-spin { to { transform: rotate(360deg); } }
+@keyframes tape-run { to { background-position: 20px 0; } }
+
 
 html[data-theme] .apk-download-card { gap: 12px; max-width: 380px; margin-top: 32px; padding: 12px 14px; border-color: var(--line-strong); background: transparent; }
 html[data-theme] .apk-download-card:hover { border-color: var(--accent-line); background: var(--accent-soft); }
@@ -214,13 +227,19 @@ html[data-theme] .room-menu-item strong { font-size: 14px; font-weight: 500; }
 html[data-theme] .room-banner, html[data-theme] .legal-warning { border: 1px solid var(--accent-line); border-radius: var(--radius-control); background: var(--accent-soft); color: var(--text); }
 
 /* ---------- Room: now playing ---------- */
-html[data-theme] .now-playing { padding: 24px; }
-html[data-theme] .source-card { grid-template-columns: 112px minmax(0, 1fr); gap: 22px; }
-html[data-theme] .source-cover { width: 112px; aspect-ratio: 1; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--raised); box-shadow: none; animation: none; }
-html[data-theme] .source-cover::before { display: none; }
-html[data-theme] .source-cover .cover-logo { width: 46%; height: auto; padding: 0; border-radius: 0; background: transparent; filter: none; }
-html[data-theme] .cover-initial { color: var(--text); font-family: var(--font-body); font-size: 44px; font-weight: 600; text-shadow: none; }
-html[data-theme] .source-card.live .source-cover { border-color: var(--accent-line); box-shadow: none; transform: none; animation: none; }
+/* The Room tab is only the listening surface; people and chat have their own tabs. */
+html[data-theme] .room-view[data-room-tab="listen"] .room-layout { display: block; max-width: 920px; margin-inline: auto; }
+html[data-theme] .now-playing { padding: 28px; }
+html[data-theme] .source-card { grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 32px; align-items: center; }
+html[data-theme] .source-cover.cassette { width: 100%; aspect-ratio: 1.58; border: 0; border-radius: 14px; place-items: initial; animation: none; }
+html[data-theme] .source-cover.cassette .cassette-label { justify-content: flex-start; }
+html[data-theme] .source-cover .cover-logo { width: 26px; height: 26px; padding: 0; border-radius: 6px; background: transparent; filter: none; }
+html[data-theme] .cover-initial { display: none; place-items: center; width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font: 600 13px var(--font-mono); text-shadow: none; letter-spacing: 0; }
+html[data-theme] .source-cover.has-initial .cover-initial { display: grid; animation: none; }
+html[data-theme] .source-cover .reel, html[data-theme] .source-cover .tape-run { animation-play-state: paused; }
+html[data-theme] .source-card.live:not(.listening-paused) .source-cover .reel, html[data-theme] .source-card.live:not(.listening-paused) .source-cover .tape-run { animation-play-state: running; }
+html[data-theme] .source-card.live .source-cover { box-shadow: 0 0 0 1px var(--accent-line) inset; transform: none; }
+html[data-theme] .source-card.listening-paused .source-cover { opacity: .6; }
 html[data-theme] .source-card.live .source-kicker { color: var(--accent); }
 html[data-theme] .source-card h2 { font-size: clamp(28px, 3.2vw, 40px); font-weight: 600; line-height: 1.08; letter-spacing: -0.035em; }
 html[data-theme] .source-card p { font-size: 15px; color: var(--muted); }
@@ -228,7 +247,18 @@ html[data-theme] .source-status { height: 26px; padding: 0 9px; border-radius: 6
 html[data-theme] .source-card.live .source-status { background: var(--accent-soft); color: var(--accent); box-shadow: none; }
 html[data-theme] .source-card.live .status-pulse { background: var(--accent); }
 /* app.js reads color and caret-color as the two waveform tints. */
-html[data-theme] .source-waveform { height: 96px; margin: 22px 0; padding: 10px 0; border-block: 1px solid var(--line); color: var(--text); caret-color: var(--accent); }
+html[data-theme] .source-waveform { height: 120px; margin: 26px 0; padding: 10px 0; border-block: 1px solid var(--line); color: var(--text); caret-color: var(--accent); }
+
+/* Listener pause: stops this device only and rejoins live on resume. */
+html[data-theme] .listen-toggle { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; margin-top: 14px; padding: 0 18px 0 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--raised); color: var(--text); font: 500 14px var(--font-body); cursor: pointer; }
+html[data-theme] .listen-toggle[hidden] { display: none; }
+html[data-theme] .listen-toggle:hover { background: var(--raised-strong); }
+html[data-theme] .listen-toggle-icon { position: relative; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); }
+html[data-theme] .listen-toggle-icon::before, html[data-theme] .listen-toggle-icon::after { content: ''; position: absolute; top: 7px; width: 3px; height: 8px; border-radius: 1px; background: var(--on-accent); }
+html[data-theme] .listen-toggle-icon::before { left: 7px; }
+html[data-theme] .listen-toggle-icon::after { left: 12px; }
+html[data-theme] .listen-toggle[aria-pressed="true"] .listen-toggle-icon::before { left: 8px; top: 6px; width: 0; height: 0; border-radius: 0; background: transparent; border-style: solid; border-width: 5px 0 5px 8px; border-color: transparent transparent transparent var(--on-accent); }
+html[data-theme] .listen-toggle[aria-pressed="true"] .listen-toggle-icon::after { display: none; }
 html[data-theme] .request-control-surface, html[data-theme] .audio-controls-panel { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
 html[data-theme] .request-control-surface { padding: 14px 16px; }
 html[data-theme] .audio-controls-panel { margin-top: 16px; padding: 12px 16px; }
@@ -321,24 +351,6 @@ html[data-theme] .legal-muted { font-family: var(--font-mono); font-size: 12px !
 .mini-player-copy > span { font: 12px var(--font-mono, ui-monospace, monospace); color: var(--muted); }
 .mini-player-arrow { margin-left: auto; color: var(--accent); }
 
-/* ---------- Desktop console: the Room tab shows people, source and chat together ---------- */
-@media (min-width: 1200px) {
-  html[data-theme] .room-view[data-room-tab="listen"] .room-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
-  html[data-theme] .room-view[data-room-tab="listen"] .room-main,
-  html[data-theme] .room-view[data-room-tab="listen"] .room-sidebar { display: contents; }
-  html[data-theme] .room-view[data-room-tab="listen"] .now-playing { grid-column: 2; grid-row: 1 / span 3; }
-  html[data-theme] .room-view[data-room-tab="listen"] .lower-grid { display: flex; grid-column: 3; grid-row: 1 / span 3; }
-  html[data-theme] .room-view[data-room-tab="listen"] .lower-grid .chat-panel { width: 100%; min-height: 0; }
-  html[data-theme] .room-view[data-room-tab="listen"] .lower-grid .chat-feed { max-height: 420px; }
-  html[data-theme] .room-view[data-room-tab="listen"] #roster-panel { grid-column: 1; grid-row: 1; }
-  html[data-theme] .room-view[data-room-tab="listen"] #request-panel { grid-column: 1; grid-row: 2; }
-  html[data-theme] .room-view[data-room-tab="listen"] #activity-panel,
-  html[data-theme] .room-view[data-room-tab="listen"] #telemetry-panel,
-  html[data-theme] .room-view[data-room-tab="listen"] #room-ad-slot { display: none; }
-  html[data-theme] .room-view[data-room-tab="listen"] .source-card { grid-template-columns: 96px minmax(0, 1fr); }
-  html[data-theme] .room-view[data-room-tab="listen"] .source-cover { width: 96px; }
-}
-
 /* ---------- Offline Play Close page (system fonts, no network assets) ---------- */
 html[data-theme] body:has(#local-health) { background: var(--bg); font-family: system-ui, sans-serif; }
 html[data-theme] body:has(#local-health) h1, html[data-theme] body:has(#local-health) h2 { font-family: system-ui, sans-serif; font-weight: 600; letter-spacing: -0.02em; color: var(--text); }
@@ -349,15 +361,15 @@ html[data-theme] body:has(#local-health) button { box-shadow: none; border-radiu
 /* ---------- Tablets and phones ---------- */
 @media (max-width: 1100px) {
   html[data-theme] .landing-copy { grid-template-columns: minmax(0, 1fr); }
-  html[data-theme] .browser-first-panel { grid-column: 1; grid-row: auto; margin-top: 32px; }
+  html[data-theme] .hero-deck { grid-column: 1; grid-row: auto; justify-self: center; width: min(100%, 380px); margin-top: 40px; }
   html[data-theme] .landing-view[data-entry-screen="home"] { max-width: 720px; }
 }
 @media (max-width: 760px) {
-  /* On phones the ways in come straight after the headline, before the details panel. */
+  /* On phones the ways in come straight after the headline, before the cassette. */
   html[data-theme] .landing-view[data-entry-screen="home"] { gap: 0; }
   html[data-theme] .landing-view[data-entry-screen="home"] .landing-copy { display: contents; }
   html[data-theme] .landing-view[data-entry-screen="home"] .welcome-actions { order: 1; margin-top: 28px; }
-  html[data-theme] .landing-view[data-entry-screen="home"] .browser-first-panel { order: 2; margin-top: 28px; }
+  html[data-theme] .landing-view[data-entry-screen="home"] .hero-deck { order: 2; margin: 36px auto 8px; width: min(100%, 320px); }
   html[data-theme] .welcome-actions, html[data-theme] .welcome-actions:has(#welcome-return-room:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
   html[data-theme] .welcome-choice { min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); padding: 18px 48px 18px 18px; }
   html[data-theme] .welcome-choice:last-child { border-bottom: 0; }
@@ -371,7 +383,6 @@ html[data-theme] body:has(#local-health) button { box-shadow: none; border-radiu
   html[data-theme] .landing-copy > .brand-mark { margin-bottom: 32px; }
   html[data-theme] .landing-copy h1 { font-size: clamp(32px, 9.6vw, 42px); line-height: 1.08; }
   html[data-theme] .landing-hint { font-size: 16px; }
-  html[data-theme] .landing-copy .browser-first-panel { display: block; margin-top: 28px; }
   html[data-theme] .landing-copy .apk-download-card { width: 100%; max-width: none; margin-top: 24px; }
   html[data-theme] .entry-card { padding: 22px 18px; }
   html[data-theme] .topbar { padding: 10px 0; margin-bottom: 16px; }
@@ -379,12 +390,12 @@ html[data-theme] body:has(#local-health) button { box-shadow: none; border-radiu
   html[data-theme] .crumb-room-name { flex: 1; min-width: 0; }
   html[data-theme] .room-actions-menu { top: 72px; }
   html[data-theme] .now-playing { padding: 18px 16px; }
-  html[data-theme] .source-card { grid-template-columns: 72px minmax(0, 1fr); gap: 16px; text-align: left; justify-items: start; }
-  html[data-theme] .source-cover { width: 72px; }
+  html[data-theme] .source-card { grid-template-columns: minmax(0, 1fr); gap: 18px; text-align: left; justify-items: stretch; }
+  html[data-theme] .source-cover.cassette { width: min(100%, 300px); justify-self: center; }
   html[data-theme] .source-card-copy { align-items: flex-start; }
   html[data-theme] .source-card h2 { font-size: 26px; }
   html[data-theme] .source-card p { font-size: 14px; }
-  html[data-theme] .source-waveform { height: 56px; margin: 16px 0; }
+  html[data-theme] .source-waveform { height: 80px; margin: 18px 0; }
   html[data-theme] .audio-controls-panel { padding: 12px; }
   html[data-theme] .room-tabs { gap: 0; justify-content: space-between; }
   html[data-theme] .room-tab { flex: 1 1 0; font-size: 13.5px; }
@@ -395,7 +406,7 @@ html[data-theme] body:has(#local-health) button { box-shadow: none; border-radiu
   .mini-player { padding: 10px 12px; margin-bottom: 16px; }
   html[data-theme] body:has(.room-view:not(.hidden)) .toast-stack { bottom: 16px; }
 }
-@media (prefers-reduced-motion: reduce) { .source-waveform, .mini-player canvas { opacity: .75; } }
+@media (prefers-reduced-motion: reduce) { .source-waveform, .mini-player canvas { opacity: .75; } html[data-theme] .reel, html[data-theme] .tape-run, html[data-theme] .hero-eq span { animation: none !important; } }
 /* Shared room chat controls, including the offline guest page. */
 .chat-message { display:flex; padding:10px 0; border-bottom:1px solid var(--line); }
 .chat-meta { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }

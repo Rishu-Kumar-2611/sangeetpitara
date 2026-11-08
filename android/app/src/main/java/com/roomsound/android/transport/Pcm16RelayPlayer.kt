@@ -65,6 +65,7 @@ class Pcm16RelayPlayer internal constructor(
         var firstPacketAt: Long? = null
         var lastPacketAt: Long? = null
         var cushionBytes = 0
+        var lastUnstableAt: Long? = null
         var jitterMs = 0.0
         var playbackStarted = false
         var crossfadeNext = false
@@ -214,8 +215,18 @@ class Pcm16RelayPlayer internal constructor(
         }
         if (adaptiveBuffering) session.lastPacketAt?.let { previous ->
             val gapMs = TimeUnit.NANOSECONDS.toMillis((now - previous).coerceAtLeast(0))
-            if (gapMs > 80) session.cushionBytes = maxOf(session.cushionBytes,
-                (minOf(8_000L, gapMs + 80) * 96).toInt().coerceAtMost(maxQueuedBytes - 1_920).coerceAtLeast(0))
+            if (gapMs in 81..PAUSE_GAP_MS) {
+                // Network jitter earns cushion, capped at 2 s; a longer gap is a
+                // paused source and must not leave a lasting delay.
+                session.cushionBytes = maxOf(session.cushionBytes,
+                    (minOf(MAX_CUSHION_MS, gapMs + 80) * 96).toInt().coerceAtMost(maxQueuedBytes - 1_920).coerceAtLeast(0))
+                session.lastUnstableAt = now
+            } else if (gapMs <= 80 && session.cushionBytes > 0 &&
+                now - (session.lastUnstableAt ?: now) >= STABLE_BEFORE_RELEASE_NANOS
+            ) {
+                // Steady arrivals release about 250 ms of cushion per second.
+                session.cushionBytes = (session.cushionBytes - packet.payload.size / 4).coerceAtLeast(0)
+            }
         }
         session.lastPacketAt = now
         if (session.firstPacketAt == null) session.firstPacketAt = now
@@ -232,8 +243,11 @@ class Pcm16RelayPlayer internal constructor(
         session.queuedBytes += payload.size
         // The blocking write is the clock, so a backlog left by a network stall
         // would otherwise play late forever. Once playing, skip it in one jump.
-        if (session.playbackStarted && session.queuedBytes > catchUpQueuedBytes) {
-            while (session.queuedBytes > catchUpLandingBytes && session.queue.size > 1) {
+        // Adaptive players also catch up once more than 1 s behind their cushion.
+        val catchUpAt = if (adaptiveBuffering) minOf(catchUpQueuedBytes, session.cushionBytes + CATCH_UP_EXCESS_BYTES) else catchUpQueuedBytes
+        val landAt = if (adaptiveBuffering) minOf(catchUpLandingBytes, session.cushionBytes + CATCH_UP_LANDING_EXTRA_BYTES) else catchUpLandingBytes
+        if (session.playbackStarted && session.queuedBytes > catchUpAt) {
+            while (session.queuedBytes > landAt && session.queue.size > 1) {
                 session.queuedBytes -= session.queue.removeFirst().size
                 dropped++
             }
@@ -433,9 +447,15 @@ class Pcm16RelayPlayer internal constructor(
         const val DEFAULT_MAX_QUEUED_FRAMES = 12
         const val PRODUCTION_MAX_QUEUED_FRAMES = 1000
         const val PRODUCTION_MAX_QUEUED_BYTES = 48_000 * 2 * 10_000 / 1_000
-        // Preserve recoverable bursts; skip only near the hard ten-second bound.
-        const val PRODUCTION_CATCH_UP_QUEUED_BYTES = 48_000 * 2 * 9_800 / 1_000
-        const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 8_000 / 1_000
+        // Listening together beats replaying every delayed second: never fall
+        // more than about 3 s behind live, and land near the earned cushion.
+        const val PRODUCTION_CATCH_UP_QUEUED_BYTES = 48_000 * 2 * 3_000 / 1_000
+        const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 2_100 / 1_000
+        private const val PAUSE_GAP_MS = 2_000L
+        private const val MAX_CUSHION_MS = 2_000L
+        private const val CATCH_UP_EXCESS_BYTES = 48_000 * 2 // 1 s above the cushion
+        private const val CATCH_UP_LANDING_EXTRA_BYTES = 48_000 * 2 / 10 // land 100 ms above it
+        private val STABLE_BEFORE_RELEASE_NANOS = TimeUnit.SECONDS.toNanos(8)
         private const val CATCH_UP_CROSSFADE_SAMPLES = 240 // 5 ms at 48 kHz
         val FORMAT = Pcm16AudioFormat(48_000, 1)
         private const val UINT32_MAX = Pcm16RelayPacketCodec.UINT32_MAX

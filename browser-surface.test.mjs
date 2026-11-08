@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261108-opus1';
+const assetVersion = '20261108-listen1';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
@@ -197,14 +197,18 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   // Exact mono/stereo lengths are exercised by relay-capture.test.mjs.
 });
 
-test('landing page explains Android sharing and companion browser entry', async () => {
+test('landing page offers Android sharing and a cassette listening surface', async () => {
   const [html, css] = await Promise.all([
     readFile(new URL('index.html', root), 'utf8'),
     readFile(new URL('styles.css', root), 'utf8'),
   ]);
 
-  assert.match(html, /class="browser-first-panel"/);
-  assert.match(html, /Friends can join from the app or their browser/);
+  // The landing shows a decorative cassette deck instead of an information box.
+  assert.match(html, /class="hero-deck" aria-hidden="true"/);
+  assert.match(html, /Share your phone's sound\./);
+  // The room's now-playing tile is a cassette, and listeners can pause locally.
+  assert.match(html, /class="source-orb source-cover cassette"/);
+  assert.match(html, /id="listen-toggle"/);
   assert.match(html, /Get SangeetPitara for Android/);
   assert.match(html, /<small>Share this code with listeners<\/small>/);
   assert.match(css, /\.room-code-display strong \{[^}]*letter-spacing: 0\.2em/s);
@@ -244,7 +248,7 @@ test('compact room navigation preserves source hooks and exposes dedicated secti
   for (const id of ['source-card', 'source-orb', 'source-kicker', 'source-title', 'source-detail', 'source-status', 'source-status-label', 'source-waveform', 'source-cover-initial']) {
     assert.match(html, new RegExp(`id="${id}"`), id);
   }
-  assert.match(html, /class="source-orb source-cover" id="source-orb"/);
+  assert.match(html, /class="source-orb source-cover cassette" id="source-orb"/);
   assert.match(css, /\.source-waveform \{[^}]*color: var\(--room-tint-1\); caret-color: var\(--room-tint-2\)/);
 
   // Phone tabs: Chat / People / Health, wired by data attributes.

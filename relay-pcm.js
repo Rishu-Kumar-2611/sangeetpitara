@@ -165,11 +165,17 @@ export class RelayPlaybackPlanner {
   schedule(now, duration, baseDelayMs = 40) {
     const base = Math.max(0.04, Math.min(1, baseDelayMs / 1000));
     this.cushionSeconds = Math.max(base, this.cushionSeconds);
-    if (this.lastArrival !== null && now - this.lastArrival > 0.08) {
-      this.cushionSeconds = Math.min(3, Math.max(this.cushionSeconds, now - this.lastArrival + 0.08));
+    const gap = this.lastArrival === null ? 0 : now - this.lastArrival;
+    // Network jitter (up to 2 s) earns cushion; a longer gap is a paused source.
+    if (gap > 0.08 && gap <= 2) {
+      this.cushionSeconds = Math.min(2, Math.max(this.cushionSeconds, gap + 0.08));
+    } else if (gap >= duration * 0.5) {
+      // Release earned cushion slowly while arrivals are steady (not mid-burst).
+      this.cushionSeconds = Math.max(base, this.cushionSeconds - 0.002);
     }
     this.lastArrival = now;
-    const reset = this.nextTime > now + 4;
+    // More than a second behind the cushion: restart near live.
+    const reset = this.nextTime > now + this.cushionSeconds + 1;
     if (reset) this.nextTime = 0;
     const startAt = this.nextTime >= now + 0.01 ? this.nextTime : now + this.cushionSeconds;
     this.nextTime = startAt + duration;

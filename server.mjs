@@ -402,6 +402,7 @@ function publicMember(member, room) {
     name: member.name,
     role: member.role,
     online: Boolean(member.ws),
+    paused: member.listening === false,
     isSource: room.activeSourceId === member.id,
     joinedAt: member.joinedAt,
   };
@@ -858,6 +859,7 @@ function makeMember({ guestId, reconnectSecret = null, name, ws, role = 'PARTICI
     role,
     ws,
     codecs: normalizeCodecs(codecs),
+    listening: true,
     joinedAt: Date.now(),
   };
 }
@@ -996,7 +998,7 @@ async function joinRoom(ws, message) {
   const reconnectSecretClean = normalizeReconnectSecret(message.reconnectSecret);
   if (room.bannedGuestIds?.has(guestIdClean) || room.bannedReconnectSecrets?.has(reconnectSecretClean)) {
     recordJoinFailure(ws._ip);
-    return sendError(ws, 'You were removed from this room.');
+    return sendError(ws, 'You were banned from this room.');
   }
   const existing = [...room.members.values()].find((member) => (
     (ws.authenticatedUser && member.accountId === ws.authenticatedUser.id)
@@ -1018,6 +1020,7 @@ async function joinRoom(ws, message) {
     existing.ws = ws;
     existing.name = displayName;
     existing.codecs = normalizeCodecs(message.codecs);
+    existing.listening = true;
     attachRoom(ws, room, existing);
     return;
   }
@@ -1221,6 +1224,7 @@ function handleBinaryFrame(ws, raw) {
   const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
   for (const target of room.members.values()) {
     if (target.id === member.id || !target.ws || target.ws.readyState !== WebSocket.OPEN) continue;
+    if (target.listening === false) { relayPackets.inc(1,{outcome:'paused_skip'}); continue; }
     // During a codec switch a listener that cannot decode Opus skips those frames.
     if (opus && !target.codecs?.has('opus')) { relayPackets.inc(1,{outcome:'codec_skip'}); continue; }
     if (Number(target.ws.bufferedAmount) > MEDIA_RELAY_MAX_BACKLOG_BYTES) { relayPackets.inc(1,{outcome:'backlog_drop'}); continue; }
@@ -1237,6 +1241,13 @@ async function handleMessage(ws, message) {
 
   const { room, member } = currentMember(ws);
   if (!room || !member) return sendError(ws, 'Join or create a room first.');
+
+  if (type === 'set-listening') {
+    // A paused listener receives no audio, which also saves relay bandwidth.
+    member.listening = message.listening !== false;
+    broadcastState(room);
+    return;
+  }
 
   if (type === 'set-codecs') {
     // A client can downgrade (or upgrade) what it decodes; the room codec follows.
@@ -1520,13 +1531,20 @@ async function handleMessage(ws, message) {
     if (!isModerator(room, member)) return sendError(ws, 'Only the host or co-host can remove participants.');
     const target = findMember(room, message.memberId);
     if (!target || target.id === room.hostId) return sendError(ws, 'That participant cannot be removed.');
-    (room.bannedGuestIds ??= new Set()).add(target.guestId);
-    (room.bannedReconnectSecrets ??= new Set()).add(target.reconnectSecret);
-    if (room.activeSourceId === target.id) stopSource(room, 'The active source was removed.', true, false);
-    if (target.ws) {
-      send(target.ws, { type: 'removed', message: 'You were removed from the room.' });
-      target.ws.close(4003, 'Removed from room');
+    // Remove lets the person rejoin later (for mistakes); ban blocks this
+    // identity for the life of the room.
+    const ban = message.ban === true;
+    if (ban) {
+      (room.bannedGuestIds ??= new Set()).add(target.guestId);
+      (room.bannedReconnectSecrets ??= new Set()).add(target.reconnectSecret);
     }
+    if (room.activeSourceId === target.id) stopSource(room, ban ? 'The active source was banned.' : 'The active source was removed.', true, false);
+    if (target.ws) {
+      const text = ban ? 'You were banned from this room.' : 'You were removed from the room. You can rejoin with the room code.';
+      send(target.ws, { type: 'removed', banned: ban, message: text });
+      target.ws.close(4003, ban ? 'Banned from room' : 'Removed from room');
+    }
+    addSystemMessage(room, `${target.name} was ${ban ? 'banned' : 'removed'} by ${member.name}.`);
     room.members.delete(target.id);
     if (room.cohostId === target.id) {
       room.cohostId = null;

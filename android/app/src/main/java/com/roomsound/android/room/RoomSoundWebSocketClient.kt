@@ -280,8 +280,9 @@ class RoomSoundWebSocketClient(
         JSONObject().put("type", "assign-cohost").putNullable("memberId", memberId?.trim()?.ifEmpty { null }),
     )
 
-    fun removeMember(memberId: String): Boolean = sendRoomCommand(
-        JSONObject().put("type", "remove-member").put("memberId", memberId.trim()),
+    /** Remove lets the member rejoin later; [ban] keeps them out of this room. */
+    fun removeMember(memberId: String, ban: Boolean = false): Boolean = sendRoomCommand(
+        JSONObject().put("type", "remove-member").put("memberId", memberId.trim()).put("ban", ban),
     )
 
     fun endRoom(): Boolean = sendRoomCommand(JSONObject().put("type", "end-room"))
