@@ -24,6 +24,7 @@ const files = [
   'themes.js',
   'room-palette.js',
   'relay-pcm.js',
+  'relay-opus.mjs',
   'relay-capture-worklet.js',
   'relay-playout-worklet.js',
   'notifications-sw.js',

@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <application
-        android:usesCleartextTraffic="true" android:label="${previewAppLabel}" tools:replace="android:label" />
+        android:usesCleartextTraffic="true" android:label="${previewAppLabel}" tools:replace="android:label">
+        <!-- Debug builds only: adb-triggered Opus codec self-test (needs the shell's DUMP permission). -->
+        <receiver
+            android:name="com.roomsound.android.debug.OpusSelfTestReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+    </application>
 </manifest>

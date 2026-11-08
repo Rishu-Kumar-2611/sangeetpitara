@@ -26,6 +26,8 @@ data class RoomSummary(
     val createdAt: Long,
     /** A locked room admits only reconnecting members; older servers omit it. */
     val locked: Boolean = false,
+    /** "opus" only when every member can decode it; older servers omit it (PCM16). */
+    val relayCodec: String = "pcm16",
 )
 
 data class RoomMember(
@@ -106,6 +108,9 @@ data class RoomMediaRelayConfig(
     val mode: String = MODE_PCM16,
     val sampleRate: Int = PCM16_SAMPLE_RATE,
     val channels: Int = PCM16_CHANNELS,
+    /** The server accepts Opus frames and negotiates them per room. */
+    val opus: Boolean = false,
+    val opusBitrate: Int = 96_000,
 ) {
     val isPcm16Enabled: Boolean
         get() = enabled && mode.equals(MODE_PCM16, ignoreCase = true) &&
@@ -220,6 +225,7 @@ internal fun parseRoomSummary(json: JSONObject): RoomSummary = RoomSummary(
     resumeSourceId = json.stringOrNull("resumeSourceId"),
     createdAt = json.optLong("createdAt", 0L),
     locked = json.optBoolean("locked", false),
+    relayCodec = json.stringOrNull("relayCodec") ?: "pcm16",
 )
 
 internal fun parseRoomMember(json: JSONObject): RoomMember = RoomMember(
@@ -332,6 +338,8 @@ internal fun parseMediaRelayConfig(json: JSONObject): RoomMediaRelayConfig {
         mode = relay.stringOrNull("mode") ?: RoomMediaRelayConfig.MODE_PCM16,
         sampleRate = relay.optInt("sampleRate", RoomMediaRelayConfig.PCM16_SAMPLE_RATE),
         channels = relay.optInt("channels", RoomMediaRelayConfig.PCM16_CHANNELS),
+        opus = relay.optJSONArray("codecs")?.let { codecs -> (0 until codecs.length()).any { codecs.optString(it) == "opus" } } ?: false,
+        opusBitrate = relay.optInt("opusBitrate", 96_000).coerceIn(32_000, 128_000),
     )
 }
 

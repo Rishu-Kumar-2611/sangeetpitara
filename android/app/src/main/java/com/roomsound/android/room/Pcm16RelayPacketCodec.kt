@@ -14,6 +14,14 @@ data class Pcm16RelayPacket(
     val samples: ShortArray,
 )
 
+/** A validated version 2 relay frame: one raw Opus packet and its header. */
+data class OpusRelayPacket(
+    val sourceEpoch: Long,
+    val sequence: Long,
+    val sampleCount: Int,
+    val payload: ByteArray,
+)
+
 /**
  * Bounded codec for the RoomSound no-TURN media relay.
  *
@@ -30,6 +38,10 @@ object Pcm16RelayPacketCodec {
     /** Largest frame emitted by the current browser or Android publishers. */
     const val MAX_PLAYOUT_PAYLOAD_BYTES = 960 * 2
     const val UINT32_MAX = 0xFFFF_FFFFL
+    /** Version 2 carries one raw Opus packet instead of PCM16 samples. */
+    const val VERSION_OPUS = 2
+    const val MAX_OPUS_PAYLOAD_BYTES = 4000
+    private const val MAX_OPUS_SAMPLES = 5760
 
     private const val UINT16_MAX = 0xFFFF
     private const val BYTES_PER_SAMPLE = 2
@@ -82,12 +94,60 @@ object Pcm16RelayPacketCodec {
         sequence: Long,
     ): ByteString = encode(samples, sampleCount, sampleRate, channels, sourceEpoch, sequence).toByteString()
 
+    /** RSR1 frame version (1 = PCM16, 2 = Opus), or 0 for anything else. */
+    fun frameVersion(input: ByteString): Int {
+        if (input.size < 5) return 0
+        if (input[0] != MAGIC[0] || input[1] != MAGIC[1] || input[2] != MAGIC[2] || input[3] != MAGIC[3]) return 0
+        return input[4].toInt() and 0xff
+    }
+
+    fun encodeOpus(payload: ByteArray, sampleCount: Int, sourceEpoch: Long, sequence: Long): ByteString {
+        require(payload.size in 1..MAX_OPUS_PAYLOAD_BYTES) { "Opus packet size is outside the relay bound." }
+        require(sampleCount in 120..MAX_OPUS_SAMPLES && sampleCount % 120 == 0) { "Opus sampleCount is invalid." }
+        require(sourceEpoch in 0..UINT32_MAX) { "sourceEpoch must be an unsigned 32-bit integer." }
+        require(sequence in 0..UINT32_MAX) { "sequence must be an unsigned 32-bit integer." }
+        val frame = ByteArray(HEADER_BYTES + payload.size)
+        MAGIC.copyInto(frame, destinationOffset = 0)
+        frame[4] = VERSION_OPUS.toByte()
+        frame[5] = CHANNELS.toByte()
+        putUint32(frame, 6, SAMPLE_RATE.toLong())
+        putUint32(frame, 10, sourceEpoch)
+        putUint32(frame, 14, sequence)
+        putUint16(frame, 18, sampleCount)
+        payload.copyInto(frame, destinationOffset = HEADER_BYTES)
+        return frame.toByteString()
+    }
+
+    fun decodeOpus(input: ByteString): OpusRelayPacket {
+        val bytes = input.toByteArray()
+        require(bytes.size in HEADER_BYTES + 1..HEADER_BYTES + MAX_OPUS_PAYLOAD_BYTES) { "Opus relay frame size is out of bounds." }
+        MAGIC.indices.forEach { index -> require(bytes[index] == MAGIC[index]) { "Media relay frame has an invalid magic header." } }
+        require((bytes[4].toInt() and 0xff) == VERSION_OPUS) { "Not an Opus relay frame." }
+        require((bytes[5].toInt() and 0xff) == CHANNELS) { "Opus relay frames must contain one channel." }
+        require(readUint32(bytes, 6) == SAMPLE_RATE.toLong()) { "Media relay frame must use a $SAMPLE_RATE Hz sample rate." }
+        val sampleCount = readUint16(bytes, 18)
+        require(sampleCount in 120..MAX_OPUS_SAMPLES && sampleCount % 120 == 0) { "Opus relay sampleCount is invalid." }
+        return OpusRelayPacket(
+            sourceEpoch = readUint32(bytes, 10),
+            sequence = readUint32(bytes, 14),
+            sampleCount = sampleCount,
+            payload = bytes.copyOfRange(HEADER_BYTES, bytes.size),
+        )
+    }
+
     /** Fast O(1) zero-allocation header validator returning sourceEpoch if valid. */
     fun peekSourceEpoch(input: ByteString, maxPayloadBytes: Int = MAX_PAYLOAD_BYTES): Long? {
         if (maxPayloadBytes !in 0..MAX_PAYLOAD_BYTES) return null
         val size = input.size
         if (size < HEADER_BYTES || size > HEADER_BYTES + maxPayloadBytes) return null
         if (input[0] != MAGIC[0] || input[1] != MAGIC[1] || input[2] != MAGIC[2] || input[3] != MAGIC[3]) return null
+        if ((input[4].toInt() and 0xff) == VERSION_OPUS) {
+            if (size > HEADER_BYTES + MAX_OPUS_PAYLOAD_BYTES || size == HEADER_BYTES) return null
+            return (input[10].toLong() and 0xffL) or
+                ((input[11].toLong() and 0xffL) shl 8) or
+                ((input[12].toLong() and 0xffL) shl 16) or
+                ((input[13].toLong() and 0xffL) shl 24)
+        }
         if ((input[4].toInt() and 0xff) != VERSION) return null
         if ((input[5].toInt() and 0xff) != CHANNELS) return null
         val sr = (input[6].toLong() and 0xffL) or

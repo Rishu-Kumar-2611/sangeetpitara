@@ -607,6 +607,7 @@ class RoomSoundWebSocketClient(
                 .put("guestId", intent.guestId)
         }
         message.put("reconnectSecret", reconnectSecret)
+        message.put("codecs", org.json.JSONArray(relayCodecs()))
         if (!socket.send(message.toString())) {
             emit(RoomSoundEvent.Error("SangeetPitara could not send the room selection request."))
         }
@@ -618,6 +619,23 @@ class RoomSoundWebSocketClient(
         } ?: return false
         return socket.send(message.toString())
     }
+
+    /**
+     * Formats this device can decode. Opus is offered only when the server
+     * negotiates it and this device passed its MediaCodec self-test.
+     */
+    fun relayCodecs(): List<String> {
+        val relay = synchronized(lock) { serverConfig.mediaRelay }
+        val opus = relay.opus && com.roomsound.android.transport.OpusSupport.capabilities().decode
+        return if (opus) listOf("pcm16", "opus") else listOf("pcm16")
+    }
+
+    /** Re-announce decodable formats, e.g. after an Opus decoder failure. */
+    fun announceRelayCodecs(): Boolean =
+        sendRoomCommand(JSONObject().put("type", "set-codecs").put("codecs", org.json.JSONArray(relayCodecs())))
+
+    /** Current server Opus bitrate for publishers. */
+    fun opusBitrate(): Int = synchronized(lock) { serverConfig.mediaRelay.opusBitrate }
 
     fun sendBinary(frame: ByteString): Boolean = sendPcm16Frame(frame)
 

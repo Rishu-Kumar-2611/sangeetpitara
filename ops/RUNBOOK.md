@@ -70,6 +70,23 @@ those archives unrecoverable. Archive validation is not a complete database rest
 periodically restore to a separate database and exercise the app before relying
 on a backup for disaster recovery.
 
+## Opus relay
+
+Rooms negotiate Opus per room: the server sends it only while every online
+member reports it can decode it, otherwise everyone gets PCM16. At the default
+96 kbps a listener receives about 13 KB/s instead of about 97 KB/s, roughly 7x
+less server bandwidth. `/config` publishes `mediaRelay.codecs` and
+`mediaRelay.opusBitrate`; each room state carries `room.relayCodec`.
+
+- Emergency off switch: set `MEDIA_RELAY_OPUS=0` on the web service and restart.
+  Every room returns to PCM16 at once; no app release is needed.
+- Tune quality versus bandwidth with `MEDIA_RELAY_OPUS_BITRATE` (32000-128000).
+- Android only offers Opus after a MediaCodec encode/decode self-test. On a debug
+  build, run it by hand with
+  `adb shell am broadcast -n com.roomsound.android/com.roomsound.android.debug.OpusSelfTestReceiver`
+  and read `adb logcat -s OpusSelfTest`.
+- Before calling it done, listen on two real phones in both directions.
+
 ## Capacity and cost
 
 `npm run test:capacity` starts loopback-only, in-memory synthetic servers. It never
