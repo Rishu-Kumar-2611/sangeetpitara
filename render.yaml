@@ -9,7 +9,9 @@ services:
     dockerfilePath: ./Dockerfile.runtime
     dockerContext: .
     healthCheckPath: /ready
-    autoDeployTrigger: commit
+    # Live rooms are held in memory and end on every restart. Deploy manually
+    # (dashboard or deploy hook) at a quiet time instead of on every commit.
+    autoDeployTrigger: "off"
     envVars:
       - key: NODE_ENV
         value: production

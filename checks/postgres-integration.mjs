@@ -110,6 +110,19 @@ try {
   assert.equal((await post(base, '/api/auth/login', { email: victim.user.email, password })).status, 401);
   const guest = await room(base, { type: 'create-room', name: 'Ephemeral guest room', displayName: 'Guest', guestId: 'integration-guest' });
   assert.equal(guest.type, 'joined');
+  assert.match(guest.state.room.code, /^[A-HJ-NP-Z2-9]{8}$/, 'New rooms persist 8-character codes');
+  const hostSocket = sockets.at(-1);
+  const rotated = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Room code rotation timed out')), 5000);
+    hostSocket.on('message', (bytes) => {
+      const event = JSON.parse(bytes.toString());
+      if (event.type === 'state' && event.state.room.code !== guest.state.room.code) { clearTimeout(timeout); resolve(event.state.room.code); }
+    });
+  });
+  hostSocket.send(JSON.stringify({ type: 'rotate-room-code' }));
+  const rotatedCode = await rotated;
+  const persistedCode = await repository.pool.query('SELECT code FROM rooms WHERE id = $1', [guest.state.room.id]);
+  assert.equal(persistedCode.rows[0].code, rotatedCode, 'A replaced room code is persisted');
   await stop();
   base = await start(databaseUrl);
   const stored = await repository.pool.query('SELECT status FROM rooms WHERE id = $1', [guest.state.room.id]);
