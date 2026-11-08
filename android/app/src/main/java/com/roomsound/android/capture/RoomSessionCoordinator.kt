@@ -153,6 +153,7 @@ class RoomSessionCoordinator(
     private var endPending = false
     private var volume = 1.0
     private var playbackAllowed = false
+    private var listeningPaused = false
     private var closed = false
     @Volatile private var mediaBinding: MediaBinding? = null
 
@@ -541,8 +542,26 @@ class RoomSessionCoordinator(
         applyPlaybackVolume()
     }
 
+    fun isListeningPaused(): Boolean = listeningPaused
+
+    /**
+     * Pause or resume room audio on this device only. The room keeps playing
+     * for everyone else; resuming jumps back to the live stream.
+     */
+    fun setListeningPaused(paused: Boolean): Boolean {
+        val state = joinedState() ?: return false
+        if (paused && state.self?.id == state.room.activeSourceId) return false
+        if (listeningPaused == paused) return true
+        listeningPaused = paused
+        client?.setListeningPaused(paused)
+        transport?.restartRelayPlayback()
+        applyPlaybackVolume()
+        changed()
+        return true
+    }
+
     private fun applyPlaybackVolume() {
-        val effectiveVolume = if (playbackAllowed) volume else 0.0
+        val effectiveVolume = if (playbackAllowed && !listeningPaused) volume else 0.0
         (publisher as? WebRtcPcmPublisher)?.setPlaybackVolume(effectiveVolume)
         relayPlayer?.setVolume(effectiveVolume)
     }
@@ -807,6 +826,7 @@ class RoomSessionCoordinator(
         transport = null
         client = null
         endpoint = null
+        listeningPaused = false
         mediaRelayConfig = RoomMediaRelayConfig.DEFAULT
         chatReactions = emptyList()
         voiceMessages = false

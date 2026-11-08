@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261108-listen1';
+const assetVersion = '20261108-invite1';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
@@ -164,7 +164,7 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   assert.match(app, /bufferedAmount\) \|\| 0\) \+ frameBytes > MEDIA_RELAY_MAX_BACKLOG_BYTES/);
   assert.match(html, /id="sync-offset"[^>]*max="1000"/);
   assert.match(app, /SYNC_OFFSET_MAX_MS = 1000/);
-  assert.match(app, /state\.relayLastSequence = frame\.sequence/);
+  assert.match(app, /state\.relayOrder\.observe\(frame\.sequence, codec\)/);
   assert.match(app, /createMediaStreamDestination\(\)/);
   assert.match(app, /audio\.srcObject = destination\.stream/);
   assert.match(app, /audio\.volume = 1/);

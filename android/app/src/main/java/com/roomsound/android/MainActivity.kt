@@ -39,6 +39,7 @@ import com.roomsound.android.capture.PlaybackCaptureCapabilities
 import com.roomsound.android.capture.PlaybackCaptureService
 import com.roomsound.android.capture.RoomSessionCoordinator
 import com.roomsound.android.capture.SourcePlaybackController
+import com.roomsound.android.room.InviteLinks
 import com.roomsound.android.room.RoomConnectionState
 import com.roomsound.android.room.RoomEndpointBootstrap
 import com.roomsound.android.room.RoomEndpointValidator
@@ -125,9 +126,11 @@ class MainActivity : Activity() {
     private lateinit var sourceButton: Button
     private lateinit var takeoverButton: Button
     private lateinit var requestAudioButton: Button
+    private lateinit var listenToggleButton: Button
     private lateinit var leaveRoomButton: Button
     private lateinit var endRoomButton: Button
     private lateinit var roomAccessRow: LinearLayout
+    private lateinit var shareInviteButton: Button
     private lateinit var lockRoomButton: Button
     private lateinit var newRoomCodeButton: Button
 
@@ -249,6 +252,31 @@ class MainActivity : Activity() {
         showPreviousCrashNotice()
         refreshCapability()
         ensureCaptureService()
+        if (savedInstanceState == null) openInviteLink(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openInviteLink(intent)
+    }
+
+    /** Opens the join screen with the code from a tapped https://<site>/join/CODE link. */
+    private fun openInviteLink(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val code = InviteLinks.roomCode(intent.dataString, BuildConfig.ROOMSOUND_INVITE_HOST) ?: return
+        val current = roomSession?.currentRoomState()?.room
+        if (current != null) {
+            val message = if (current.code == code) "You are already in this room." else "Leave room ${current.code} before joining $code."
+            android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
+            nativePage = "room"
+            renderNativePage()
+            return
+        }
+        navigateNative("join")
+        roomCodeInput.setText(code)
+        if (displayNameInput.text.isNullOrBlank()) displayNameInput.requestFocus()
+        appendRoomEvent("Invite opened for room $code. Enter your name, then tap Join room.")
     }
 
     override fun onResume() {
@@ -736,6 +764,9 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(0, dp(6), 0, 0)
         }, matchWrap())
+        shareInviteButton = button("Share invite link", ButtonTone.SECONDARY) { shareInviteLink() }
+        shareInviteButton.visibility = View.GONE
+        roomCodePanel.addView(shareInviteButton, marginLayout())
         // Host and co-host controls: lock the room, or replace the code so old invites stop working.
         roomAccessRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -751,6 +782,9 @@ class MainActivity : Activity() {
 
         sourceButton = button("Share device audio") { handleSourceAction() }
         nativeSessionControls.addView(sourceButton, marginLayout())
+        listenToggleButton = button("Pause room audio", ButtonTone.SECONDARY) { toggleListening() }
+        listenToggleButton.visibility = View.GONE
+        nativeSessionControls.addView(listenToggleButton, marginLayout())
         takeoverButton = button("Take back control", ButtonTone.SECONDARY) { takeoverSource() }
         nativeSessionControls.addView(takeoverButton, marginLayout())
         requestAudioButton = button("Request to share device audio", ButtonTone.SECONDARY) { requestAudioControl() }
@@ -947,6 +981,37 @@ class MainActivity : Activity() {
             android.util.Log.e("RoomSound", "createRoom failed", t)
             appendRoomEvent(t.message ?: "The room could not be created: ${t.javaClass.simpleName}")
         }
+    }
+
+    /** Pause stops room audio on this phone only; resume jumps back to the live stream. */
+    private fun toggleListening() {
+        val session = roomSession ?: return
+        val pause = !session.isListeningPaused()
+        if (!session.setListeningPaused(pause)) {
+            appendRoomEvent("Room audio can be paused once you are connected and someone else is sharing.")
+            return
+        }
+        android.widget.Toast.makeText(this, if (pause) "Paused on this phone. Others keep listening." else "Back to the live stream.", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    private fun renderListenToggle(canPause: Boolean) {
+        val session = roomSession
+        // Sharing your own audio always resumes, so the next listen starts live.
+        // Posted so the resume's own re-render does not run inside this one.
+        if (!canPause && session?.isListeningPaused() == true) listenToggleButton.post { session.setListeningPaused(false) }
+        val paused = canPause && session?.isListeningPaused() == true
+        listenToggleButton.visibility = if (canPause) View.VISIBLE else View.GONE
+        listenToggleButton.text = if (paused) "Resume live" else "Pause room audio"
+        listenToggleButton.contentDescription = if (paused) "Resume room audio from the live stream" else "Pause room audio on this phone only"
+    }
+
+    private fun shareInviteLink() {
+        val room = roomSession?.currentRoomState()?.room ?: return
+        val link = InviteLinks.forRoom(roomSession?.currentEndpoint(), room.code) ?: return
+        val text = "Join my SangeetPitara room \"${room.name}\" with code ${room.code}:\n$link"
+        runCatching {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }, "Share room invite"))
+        }.onFailure { appendRoomEvent("Room code: ${room.code}") }
     }
 
     private fun joinRoom() {
@@ -1241,6 +1306,7 @@ class MainActivity : Activity() {
             takeoverButton.isEnabled = false
             requestAudioButton.text = "Request to share device audio"
             requestAudioButton.isEnabled = false
+            listenToggleButton.visibility = View.GONE
             // Leaving is local cleanup and must remain available during retries.
             leaveRoomButton.isEnabled = roomSession?.currentEndpoint() != null || renderedRoomId != null
             endRoomButton.isEnabled = false
@@ -1272,6 +1338,7 @@ class MainActivity : Activity() {
         roomCodePanel.visibility = View.VISIBLE
         roomCodeText.text = room.code
         roomCodeText.contentDescription = "Room code ${room.code}. Share this code with anyone joining the room."
+        shareInviteButton.visibility = if (InviteLinks.forRoom(roomSession?.currentEndpoint(), room.code) != null) View.VISIBLE else View.GONE
         // Servers that issue 8-character codes also accept lock and code-change commands.
         roomAccessRow.visibility = if (isModerator && room.code.length == 8) View.VISIBLE else View.GONE
         lockRoomButton.text = if (room.locked) "Unlock room" else "Lock room"
@@ -1289,6 +1356,7 @@ class MainActivity : Activity() {
         val accessGranted = rewardedAccessGate.hasAccess()
         requestAudioButton.isEnabled = accessGranted && self != null && !isModerator && self.id != room.activeSourceId
         takeoverButton.isEnabled = accessGranted && isModerator && room.activeSourceId != null && self?.id != room.activeSourceId
+        renderListenToggle(room.activeSourceId != null && self != null && self.id != room.activeSourceId)
         leaveRoomButton.isEnabled = true
         endRoomButton.isEnabled = isHost
         runCatching { renderApprovalControls(state, isModerator) }

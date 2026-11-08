@@ -81,6 +81,32 @@ class RoomAudioTransportRelayTest {
         }
     }
 
+    @Test
+    fun aSenderThatRestartsItsNumberingIsResyncedInsteadOfSilenced() {
+        val client = RoomSoundWebSocketClient(RoomEndpointValidator.normalize("ws://localhost")!!)
+        val player = RecordingPlayer()
+        val transport = RoomAudioTransport(client, RecordingPublisher(), player)
+        try {
+            transport.onEvent(RoomSoundEvent.State(state(selfId = "listener", activeSourceId = "source", epoch = 7)))
+            for (sequence in 5_000L until 5_010L) {
+                transport.onBinaryFrame(ByteString.of(*Pcm16RelayPacketCodec.encode(shortArrayOf(1, 2), sourceEpoch = 7, sequence = sequence)))
+            }
+            assertEquals(10, player.played.size)
+            // The sender reconnects in the same epoch and restarts at 0.
+            for (sequence in 0L until RoomAudioTransport.RESYNC_AFTER_BACKWARDS_FRAMES.toLong() + 10) {
+                transport.onBinaryFrame(ByteString.of(*Pcm16RelayPacketCodec.encode(shortArrayOf(1, 2), sourceEpoch = 7, sequence = sequence)))
+            }
+            // A short run is held back, then playback continues with the new numbering.
+            assertEquals(10 + 11, player.played.size)
+            val sequences = player.played.map { it.sequence }
+            assertEquals("player numbering stays strictly increasing", sequences.sorted(), sequences)
+            assertEquals(sequences.size, sequences.toSet().size)
+        } finally {
+            transport.close()
+            client.close()
+        }
+    }
+
     private fun state(
         selfId: String,
         activeSourceId: String?,

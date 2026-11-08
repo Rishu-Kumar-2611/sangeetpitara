@@ -185,7 +185,18 @@ test('config enables the PCM16 relay by default and permits an explicit direct-W
     opusBitrate: 96000,
   });
 
-  const direct = await startServer({ MEDIA_RELAY_ENABLED: '0' });
+  // Without TURN, turning the relay off would silence listeners on other
+  // networks, so the server keeps it on unless the override says otherwise.
+  const unsafe = await startServer({ MEDIA_RELAY_ENABLED: '0', TURN_ENABLED: '0' });
+  t.after(() => unsafe.server.kill());
+  const unsafeConfig = await fetch(`${unsafe.http}/config`).then((response) => response.json());
+  assert.equal(unsafeConfig.mediaRelay.enabled, true);
+
+  const turned = await startServer({ MEDIA_RELAY_ENABLED: '0', TURN_ENABLED: '1', TURN_URLS: 'turn:turn.example.test:3478' });
+  t.after(() => turned.server.kill());
+  assert.equal((await fetch(`${turned.http}/config`).then((response) => response.json())).mediaRelay.enabled, false);
+
+  const direct = await startServer({ MEDIA_RELAY_ENABLED: '0', TURN_ENABLED: '0', MEDIA_RELAY_FORCE_DIRECT: '1' });
   t.after(() => direct.server.kill());
   const directConfig = await fetch(`${direct.http}/config`).then((response) => response.json());
   assert.deepEqual(directConfig.mediaRelay, {

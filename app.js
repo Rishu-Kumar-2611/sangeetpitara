@@ -1,16 +1,16 @@
-import { RoomChatUI } from './chat-ui.mjs?v=20261108-listen1';
+import { RoomChatUI } from './chat-ui.mjs?v=20261108-invite1';
 let roomChatUI = null;
-import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261108-listen1';
-import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261108-listen1';
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261108-listen1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261108-listen1';
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261108-invite1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261108-invite1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261108-invite1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261108-invite1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261108-listen1';
+} from './capture-tracks.js?v=20261108-invite1';
 import {
   decodeOpusFrame,
   decodePcm16Frame,
@@ -19,9 +19,10 @@ import {
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
   MEDIA_RELAY_VERSION_OPUS,
+  RelaySequenceTracker,
   relayFrameVersion,
-} from './media-relay.mjs?v=20261108-listen1';
-import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261108-listen1';
+} from './media-relay.mjs?v=20261108-invite1';
+import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261108-invite1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -33,8 +34,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261108-listen1';
-import { roomPalette } from './room-palette.js?v=20261108-listen1';
+} from './ads.mjs?v=20261108-invite1';
+import { roomPalette } from './room-palette.js?v=20261108-invite1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -138,7 +139,7 @@ const state = {
   relayPlaybackEpoch: null,
   relayPlaybackNextTime: 0,
   relayPlaybackSources: new Set(),
-  relayLastSequence: null,
+  relayOrder: new RelaySequenceTracker(),
   relayCompatibilityPlanner: new RelayPlaybackPlanner(),
   relayUnavailableNotified: false,
   visualizerRaf: null,
@@ -221,6 +222,8 @@ function announceRelayCodecs() {
 }
 
 function closeOpusEncoder() {
+  // Remember where this epoch's numbering reached so a new encoder continues it.
+  if (state.opusEncoder) state.opusNextSequence = { epoch: state.opusEncoder.sourceEpoch, sequence: state.opusEncoder.sequence };
   state.opusEncoder?.close();
   state.opusEncoder = null;
 }
@@ -325,25 +328,6 @@ function renderRewardedAccess() {
   if (progressLabel) progressLabel.textContent = state.rewardedBusy
     ? `${Number(progress?.dataset.remaining || duration)} seconds remaining`
     : '';
-}
-
-function expireRewardedAccess() {
-  if (state.rewardedAccessConfig?.enabled === false) return;
-  const hadRoom = Boolean(state.room || state.ws);
-  const expiryMessage = 'Your six-hour room access expired. Watch another rewarded ad to continue.';
-  clearRewardedAccess();
-  state.rewardedAccessExpiry = null;
-  if (hadRoom) {
-    state.explicitLeave = true;
-    state.lastRoomCode = null;
-    if (state.ws?.readyState === WebSocket.OPEN) send({ type: 'leave-room' });
-    else state.ws?.close();
-    window.setTimeout(() => {
-      if (state.room || state.ws) resetToLanding(expiryMessage);
-    }, 150);
-    toast(expiryMessage, 'error');
-  }
-  renderRewardedAccess();
 }
 
 async function completeRewardedAccess() {
@@ -841,6 +825,7 @@ function sendRelayOpusFrame(samples, sourceEpoch) {
     try {
       state.opusEncoder = new OpusRelayEncoder({
         sourceEpoch,
+        startSequence: state.opusNextSequence?.epoch === sourceEpoch ? state.opusNextSequence.sequence : 0,
         bitrate: state.mediaRelay.opusBitrate,
         send: (frame) => sendRelayEncodedFrame(frame, sourceEpoch),
         onDrop: () => { state.relaySocketDrops = (state.relaySocketDrops || 0) + 1; },
@@ -942,7 +927,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261108-listen1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261108-invite1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -1020,7 +1005,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261108-listen1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261108-invite1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1143,7 +1128,7 @@ function resetRelayPlaybackQueue(nextEpoch = null) {
   state.relayPlaybackNextTime = 0;
   state.relayCompatibilityPlanner = new RelayPlaybackPlanner();
   state.relayPlaybackEpoch = nextEpoch;
-  state.relayLastSequence = null;
+  state.relayOrder.reset();
 }
 
 function closeRelayPlayback() {
@@ -1222,16 +1207,13 @@ function acceptRelayFrame(frame, codec) {
   const room = state.room;
   if (!room?.activeSourceId || room.activeSourceId === state.self?.id || frame.sourceEpoch !== room.sourceEpoch) return false;
   if (state.relayPlaybackEpoch !== frame.sourceEpoch) resetRelayPlaybackQueue(frame.sourceEpoch);
-  // A codec switch restarts the sender's sequence numbers.
-  if (state.relayLastCodec !== codec) { state.relayLastCodec = codec; state.relayLastSequence = null; }
-  if (state.relayLastSequence !== null) {
-    const distance = (frame.sequence - state.relayLastSequence) >>> 0;
-    if (distance === 0 || distance > 0x80000000) return false;
-    if (distance > 1) state.relayDroppedSequenceFrames += (distance - 1);
-  }
+  // Order check; a sender that restarted its numbering is resynced, not muted.
+  const order = state.relayOrder.observe(frame.sequence, codec);
+  if (!order.accept) return false;
+  if (order.missing > 0) state.relayDroppedSequenceFrames += order.missing;
+  if (order.resynced) audioDiagnostics.event('sequence_resync', {});
   // Receipt accounting is independent of audio-output availability. Otherwise
   // repeated output-init failures can count the same sequence gap repeatedly.
-  state.relayLastSequence = frame.sequence;
   state.relayReceivedFrames += 1;
   state.relayReceivedBytes = (state.relayReceivedBytes || 0) + 20 + (frame.payloadBytes ?? frame.samples.byteLength);
   state.relayPacketDurationMs = frame.sampleCount * 1000 / frame.sampleRate;
@@ -2227,7 +2209,10 @@ function renderTelemetry() {
   }
 
   if (isMediaRelayEnabled()) {
-    summary.textContent = `${sourceName} · epoch ${epoch} · PCM16 WebSocket relay (48 kHz)`;
+    // Report what is actually flowing: the sender's encoder, or the listener's last frames.
+    const opus = isSelfSource() ? Boolean(state.opusEncoder) : state.relayOrder.codec === 'opus';
+    const formatName = opus ? `Opus ${Math.round(state.mediaRelay.opusBitrate / 1000)} kbps` : 'PCM16';
+    summary.textContent = `${sourceName} · epoch ${epoch} · ${formatName} relay (48 kHz)`;
     const isSender = isSelfSource();
     const connected = state.ws?.readyState === WebSocket.OPEN;
     if (recentReconnects.previous === null) recentReconnects.update(0);
@@ -2263,7 +2248,7 @@ function renderTelemetry() {
       const rms = Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
       metrics.push(healthMetric('Signal RMS', `${(rms * 100).toFixed(1)}%`, 'No fixed ideal: varies with music; quiet may mean paused', 'pending'));
     }
-    metrics.push(healthMetric('Format', '48 kHz PCM16 mono', 'Source format · does not measure audible quality', 'pending'));
+    metrics.push(healthMetric('Format', `48 kHz ${formatName} mono`, 'Relay format · Opus when everyone in the room supports it · does not measure audible quality', 'pending'));
     const grades = metrics.map(m => m.includes('health-metric bad') ? 'bad' : m.includes('health-metric warning') ? 'warning' : 'good');
     const grade = grades.includes('bad') ? 'bad' : grades.includes('warning') ? 'warning' : 'good';
     status.textContent = `${isSender ? 'Sender' : 'Playback'}: ${{good:'Healthy',warning:'Watch',bad:'Needs attention'}[grade]}`;
@@ -2863,7 +2848,8 @@ function toggleRoomMenu() {
 }
 
 function openShare() {
-  const link = `${location.origin}/?room=${state.room.code}`;
+  // /join/CODE opens the Android app when it is installed, the website otherwise.
+  const link = `${location.origin}/join/${state.room.code}`;
   if (navigator.share) navigator.share({ title: `Join ${state.room.name}`, text: `Join my SangeetPitara room with code ${state.room.code}.`, url: link }).catch(() => {});
   else if (navigator.clipboard?.writeText) navigator.clipboard.writeText(link).then(() => toast('Invite link copied.', 'success')).catch(() => toast(`Room code: ${state.room.code}`, 'success'));
   else toast(`Room code: ${state.room.code}`, 'success');

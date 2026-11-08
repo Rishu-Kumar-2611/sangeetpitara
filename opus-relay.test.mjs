@@ -153,3 +153,27 @@ test('MEDIA_RELAY_OPUS=0 keeps every room on PCM16 and refuses Opus frames', asy
   host.ws.send(encodeOpusFrame({ sourceEpoch: live.state.room.sourceEpoch, sequence: 0, payload: OPUS_PACKET }));
   assert.match((await host.next((message) => message.type === 'error')).message, /Opus relay is disabled/);
 });
+
+test('listeners resync when a sender restarts its numbering instead of going silent', async () => {
+  const { RelaySequenceTracker, RELAY_RESYNC_AFTER } = await import('./media-relay.mjs');
+  const order = new RelaySequenceTracker();
+  for (let sequence = 30_000; sequence < 30_100; sequence += 1) assert.equal(order.observe(sequence, 'opus').accept, true);
+  // The sender reconnects and restarts at 0: briefly treated as late packets...
+  for (let sequence = 0; sequence < RELAY_RESYNC_AFTER - 1; sequence += 1) assert.equal(order.observe(sequence, 'opus').accept, false);
+  // ...then the new numbering is adopted and audio flows again.
+  const resync = order.observe(RELAY_RESYNC_AFTER - 1, 'opus');
+  assert.deepEqual(resync, { accept: true, missing: 0, resynced: true });
+  assert.equal(order.observe(RELAY_RESYNC_AFTER, 'opus').accept, true);
+});
+
+test('listener order tracking drops duplicates, counts gaps and resets on a codec switch', async () => {
+  const { RelaySequenceTracker } = await import('./media-relay.mjs');
+  const order = new RelaySequenceTracker();
+  assert.equal(order.observe(10).accept, true);
+  assert.equal(order.observe(10).accept, false, 'duplicate');
+  assert.deepEqual(order.observe(14), { accept: true, missing: 3, resynced: false });
+  assert.equal(order.observe(12).accept, false, 'late packet');
+  assert.equal(order.observe(0xFFFFFFFF - 1, 'pcm16').accept, false);
+  assert.equal(order.observe(0, 'opus').accept, true, 'a codec switch restarts numbering');
+  assert.deepEqual(order.observe(1, 'opus'), { accept: true, missing: 0, resynced: false });
+});

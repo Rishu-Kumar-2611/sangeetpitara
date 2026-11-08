@@ -1,7 +1,7 @@
 // Opus over the room relay, using the browser's WebCodecs encoder/decoder.
 // Rooms switch to Opus only when every listener can decode it; anything that
 // fails here falls back to PCM16, which every client supports.
-import { encodeOpusFrame } from './media-relay.mjs?v=20261108-listen1';
+import { encodeOpusFrame } from './media-relay.mjs?v=20261108-invite1';
 
 const SAMPLE_RATE = 48_000;
 const CHANNELS = 1;
@@ -49,9 +49,10 @@ function encoderConfig(bitrate) {
  * receives finished relay frames with their own consecutive sequence numbers.
  */
 export class OpusRelayEncoder {
-  constructor({ sourceEpoch, bitrate, send, onDrop = () => {}, onFailure = () => {} }) {
+  constructor({ sourceEpoch, bitrate, send, onDrop = () => {}, onFailure = () => {}, startSequence = 0 }) {
     this.sourceEpoch = sourceEpoch;
-    this.sequence = 0;
+    // Continue the epoch's numbering when an encoder is recreated mid-epoch.
+    this.sequence = startSequence >>> 0;
     this.timestampUs = 0;
     this.closed = false;
     this.send = send;

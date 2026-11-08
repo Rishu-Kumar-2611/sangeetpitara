@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Geist Mono (Vercel), SIL OFL 1.1. Labels, room codes and measurements. -->
-<font-family xmlns:android="http://schemas.android.com/apk/res/android">
-    <font android:fontStyle="normal" android:fontWeight="400" android:font="@font/geist_mono_regular" />
-    <font android:fontStyle="normal" android:fontWeight="500" android:font="@font/geist_mono_medium" />
-</font-family>
