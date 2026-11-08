@@ -277,3 +277,47 @@ export function relayFrameVersion(input) {
   }
   return bytes[4];
 }
+
+/*
+ * Listener-side packet order. Duplicates and late packets are dropped, gaps
+ * are counted. A sender that restarts its numbering mid-epoch (an older app,
+ * or a reconnect that recreated its encoder) would otherwise look "behind"
+ * forever and the listener would fall silent; after RELAY_RESYNC_AFTER
+ * consecutive backwards packets the new numbering is accepted.
+ */
+export const RELAY_RESYNC_AFTER = 25; // about 0.5 s of 20 ms packets
+
+export class RelaySequenceTracker {
+  constructor() { this.reset(); }
+
+  reset() {
+    this.last = null;
+    this.codec = null;
+    this.backwardsRun = 0;
+  }
+
+  /** Returns { accept, missing, resynced }. */
+  observe(sequence, codec = 'pcm16') {
+    if (this.codec !== codec) {
+      // A codec switch restarts the sender's numbering.
+      this.codec = codec;
+      this.last = null;
+    }
+    if (this.last === null) {
+      this.last = sequence >>> 0;
+      this.backwardsRun = 0;
+      return { accept: true, missing: 0, resynced: false };
+    }
+    const distance = ((sequence >>> 0) - this.last) >>> 0;
+    if (distance === 0 || distance > 0x80000000) {
+      this.backwardsRun += 1;
+      if (this.backwardsRun < RELAY_RESYNC_AFTER) return { accept: false, missing: 0, resynced: false };
+      this.last = sequence >>> 0;
+      this.backwardsRun = 0;
+      return { accept: true, missing: 0, resynced: true };
+    }
+    this.backwardsRun = 0;
+    this.last = sequence >>> 0;
+    return { accept: true, missing: distance - 1, resynced: false };
+  }
+}

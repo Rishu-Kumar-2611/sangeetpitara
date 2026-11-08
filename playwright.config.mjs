@@ -23,6 +23,6 @@ export default defineConfig({
     url: `http://127.0.0.1:${port}/health`,
     reuseExistingServer: false,
     env: { NODE_ENV: 'development', DATABASE_URL: '', HOST: '127.0.0.1', PORT: String(port),
-      CANONICAL_PUBLIC_HOST: '', ALLOWED_ORIGINS: `http://127.0.0.1:${port}`, ADSENSE_ENABLED: '0' },
+      CANONICAL_PUBLIC_HOST: '', ALLOWED_ORIGINS: `http://127.0.0.1:${port}`, ADSENSE_ENABLED: '0', ROOM_CREATION_LIMIT: '30' },
   })),
 });

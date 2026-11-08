@@ -6,7 +6,7 @@ const ENUMS = {
   connection: ['connected','connecting','offline'],
   output: ['running','suspended','closed','unavailable'],
 };
-const EVENTS = new Set(['started','connection_changed','source_changed','output_changed','underrun','sequence_gap','playback_trimmed','socket_closed','publisher_drop','exported']);
+const EVENTS = new Set(['started','connection_changed','source_changed','output_changed','underrun','sequence_gap','playback_trimmed','socket_closed','publisher_drop','exported','sequence_resync']);
 export class AudioDiagnostics {
   constructor({ clock = Date.now, capacity = 300, eventCapacity = 120 } = {}) {
     this.clock = clock;

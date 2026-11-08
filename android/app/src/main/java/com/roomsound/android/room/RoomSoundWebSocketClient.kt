@@ -160,6 +160,7 @@ class RoomSoundWebSocketClient(
     }
 
     fun createRoom(name: String, displayName: String, guestId: String) {
+        listeningPaused = false
         val cleanName = name.trim().also {
             require(it.isNotEmpty()) { "Room name must not be empty." }
         }.take(60)
@@ -173,6 +174,7 @@ class RoomSoundWebSocketClient(
     }
 
     fun joinRoom(code: String, displayName: String, guestId: String) {
+        listeningPaused = false
         val cleanCode = code.trim().uppercase(Locale.US)
         require(cleanCode.isNotEmpty()) { "Room code must not be empty." }
         val intent = RoomIntent(
@@ -290,6 +292,19 @@ class RoomSoundWebSocketClient(
     /** Host or co-host: stop new people joining while members can still reconnect. */
     fun setRoomLock(locked: Boolean): Boolean =
         sendRoomCommand(JSONObject().put("type", "set-room-lock").put("locked", locked))
+
+    /**
+     * Listener pause: the server stops relaying audio to this member until it
+     * resumes. The choice outlives reconnects, which rejoin as listening.
+     */
+    @Volatile private var listeningPaused = false
+
+    fun isListeningPaused(): Boolean = listeningPaused
+
+    fun setListeningPaused(paused: Boolean): Boolean {
+        listeningPaused = paused
+        return sendRoomCommand(JSONObject().put("type", "set-listening").put("listening", !paused))
+    }
 
     /** Host or co-host: replace the room code so earlier invites admit no one new. */
     fun rotateRoomCode(): Boolean = sendRoomCommand(JSONObject().put("type", "rotate-room-code"))
@@ -588,6 +603,8 @@ class RoomSoundWebSocketClient(
             return
         }
         setConnectionState(RoomConnectionState.JOINED)
+        // A rejoin starts out listening on the server; keep a pause in force.
+        if (joined && listeningPaused) sendRoomCommand(JSONObject().put("type", "set-listening").put("listening", false))
         emit(if (joined) RoomSoundEvent.Joined(nextState) else RoomSoundEvent.State(nextState))
     }
 

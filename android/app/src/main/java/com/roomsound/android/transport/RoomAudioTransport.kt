@@ -54,6 +54,8 @@ class RoomAudioTransport(
     companion object {
         const val CAPTURE_SAMPLE_RATE = 48_000
         const val CAPTURE_CHANNELS = 1
+        /** About half a second of 20 ms packets (or a quarter of 10 ms ones). */
+        const val RESYNC_AFTER_BACKWARDS_FRAMES = 25
         private val RELAY_FORMAT = Pcm16AudioFormat(
             Pcm16RelayPacketCodec.SAMPLE_RATE,
             Pcm16RelayPacketCodec.CHANNELS,
@@ -84,6 +86,7 @@ class RoomAudioTransport(
     private var playSequence = -1L
     private var lastWireCodec = 0
     private var lastWireSequence = -1L
+    private var backwardsRun = 0
     private val opusLock = Any()
     private var opusDecoder: OpusRelayDecoder? = null
     private var opusDecoderEpoch: Long? = null
@@ -172,14 +175,23 @@ class RoomAudioTransport(
             playSequence = -1L
             lastWireCodec = 0
             lastWireSequence = -1L
+            backwardsRun = 0
         }
         val step = if (codec == lastWireCodec && lastWireSequence >= 0) {
             val distance = (wireSequence - lastWireSequence) and Pcm16RelayPacketCodec.UINT32_MAX
-            if (distance == 0L || distance >= 0x8000_0000L) return -1L
-            distance
+            if (distance == 0L || distance >= 0x8000_0000L) {
+                // A sender that restarted its numbering mid-epoch would otherwise
+                // be rejected forever; adopt the new numbering after a short run.
+                backwardsRun += 1
+                if (backwardsRun < RESYNC_AFTER_BACKWARDS_FRAMES) return -1L
+                1L
+            } else {
+                distance
+            }
         } else {
             1L
         }
+        backwardsRun = 0
         lastWireCodec = codec
         lastWireSequence = wireSequence
         playSequence = (playSequence + step) and Pcm16RelayPacketCodec.UINT32_MAX
@@ -343,6 +355,17 @@ class RoomAudioTransport(
         closeOpusDecoder()
         runCatching { framePublisher.close() }
         runCatching { relayPlayer?.close() }
+    }
+
+    /** Drops buffered relay audio so playback restarts at the live edge, e.g. when a listener resumes. */
+    fun restartRelayPlayback() {
+        synchronized(lock) {
+            if (closed) return
+            val player = relayPlayer ?: return
+            val current = authorization
+            player.stop()
+            if (current != null && current.canReceiveRelayFrames) player.start(RELAY_FORMAT, current.sourceEpoch)
+        }
     }
 
     private fun applyRoomState(state: RoomState) {

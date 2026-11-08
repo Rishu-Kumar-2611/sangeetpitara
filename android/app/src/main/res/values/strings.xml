@@ -1,6 +1,5 @@
 <resources>
     <string name="app_name">SangeetPitara</string>
-    <string name="header_eyebrow">LISTEN TOGETHER</string>
     <string name="header_title">SangeetPitara</string>
     <string name="capture_notification_title">SangeetPitara device audio</string>
     <string name="capture_notification_text">Capturing eligible device playback for this room</string>
@@ -13,7 +12,6 @@
     <string name="leave_room_notification">Leave room</string>
     <string name="control_request_channel_name">SangeetPitara control requests</string>
     <string name="control_request_channel_description">Alerts that let a host or co-host approve or reject room control requests.</string>
-    <string name="control_request_notification_title">SangeetPitara control request</string>
     <string name="control_request_notification_text">Open to confirm or use Approve/Disapprove.</string>
     <string name="control_request_requester">%1$s wants to share device audio</string>
     <string name="control_request_prompt_eyebrow">LISTEN TOGETHER · APPROVAL REQUIRED</string>

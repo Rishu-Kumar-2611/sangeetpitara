@@ -113,6 +113,15 @@ const STREAMING_STATIC_THRESHOLD_BYTES = 256 * 1024;
 const ANDROID_APK_URL = /^https:\/\//.test(process.env.ANDROID_APK_URL || '')
   ? process.env.ANDROID_APK_URL
   : 'https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/latest/download/SangeetPitara.apk';
+// Android App Links: the app opens https://<site>/join/CODE directly once Android
+// has checked /.well-known/assetlinks.json. ANDROID_APP_CERT_SHA256 (comma
+// separated) replaces the default release signing fingerprint.
+const ANDROID_PACKAGE_NAME = 'com.roomsound.android';
+const ANDROID_RELEASE_CERT_SHA256 = '15:7C:A9:35:A7:C5:43:9D:E4:67:C7:D2:96:B6:04:E9:B4:F1:5B:A7:CC:56:F9:48:6D:D8:6E:CA:F7:51:81:13';
+const androidCertFingerprints = (process.env.ANDROID_APP_CERT_SHA256 || ANDROID_RELEASE_CERT_SHA256)
+  .split(',')
+  .map((value) => value.trim().toUpperCase())
+  .filter((value) => /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(value));
 const turnEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.TURN_ENABLED || '').trim().toLowerCase());
 const TURN_URLS = turnEnabled && process.env.TURN_URLS
   ? process.env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean)
@@ -122,8 +131,17 @@ const TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || '';
 // Opus is negotiated per room and can be switched off without a release by
 // setting MEDIA_RELAY_OPUS=0; PCM16 always remains available.
 const opusRelayEnabled = !['0', 'false', 'off', 'no'].includes(String(process.env.MEDIA_RELAY_OPUS ?? '1').trim().toLowerCase());
+// Turning the relay off leaves only direct peer audio, which fails between most
+// networks unless a TURN server is configured. Refuse that unsafe combination
+// unless MEDIA_RELAY_FORCE_DIRECT=1 says it is intended.
+const mediaRelayRequested = !['0', 'false', 'off', 'no'].includes(String(process.env.MEDIA_RELAY_ENABLED ?? '1').trim().toLowerCase());
+const forceDirectAudio = ['1', 'true', 'yes', 'on'].includes(String(process.env.MEDIA_RELAY_FORCE_DIRECT || '').trim().toLowerCase());
+const mediaRelayEnabled = mediaRelayRequested || (!TURN_URLS.length && !forceDirectAudio);
+if (!mediaRelayRequested && mediaRelayEnabled) {
+  console.warn('[config] MEDIA_RELAY_ENABLED=0 ignored: no TURN server is configured, so listeners on other networks would hear nothing. Configure TURN or set MEDIA_RELAY_FORCE_DIRECT=1 to really turn the relay off.');
+}
 const mediaRelay = {
-  enabled: !['0', 'false', 'off', 'no'].includes(String(process.env.MEDIA_RELAY_ENABLED ?? '1').trim().toLowerCase()),
+  enabled: mediaRelayEnabled,
   mode: 'pcm16',
   sampleRate: MEDIA_RELAY_SAMPLE_RATE,
   channels: MEDIA_RELAY_CHANNELS,
@@ -260,6 +278,8 @@ const rateLimit = new Map();
 const staticRateLimit = new Map();
 const authRateLimit = new Map();
 const roomCreationRateLimit = new Map();
+// Rooms one address may create per 10 minutes.
+const ROOM_CREATION_LIMIT = positiveIntegerEnv('ROOM_CREATION_LIMIT', 10);
 const joinFailureRateLimit = new Map();
 setInterval(() => {
   const now = Date.now();
@@ -919,7 +939,7 @@ async function createRoom(ws, message) {
     creationBudget = { count: 0, resetAt: now + 10 * 60_000 };
     roomCreationRateLimit.set(ws._ip, creationBudget);
   }
-  if (++creationBudget.count > 10) return sendError(ws, 'Too many room creations. Please try again later.');
+  if (++creationBudget.count > ROOM_CREATION_LIMIT) return sendError(ws, 'Too many room creations. Please try again later.');
   // The moderation lookup above yields; reserve capacity only after rechecking.
   if (rooms.size + reservedRoomCodes.size >= MAX_ACTIVE_ROOMS) return sendError(ws, 'The service is at room capacity. Please try again later.');
   let code = randomCode();
@@ -1753,6 +1773,22 @@ const server = http.createServer(async (req, res) => {
       rewardedAccess,
       adsense,
     }));
+    return;
+  }
+  if (requestPath === '/.well-known/assetlinks.json') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    res.end(JSON.stringify(androidCertFingerprints.length ? [{
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: { namespace: 'android_app', package_name: ANDROID_PACKAGE_NAME, sha256_cert_fingerprints: androidCertFingerprints },
+    }] : []));
+    return;
+  }
+  // Invite links: the Android app opens these itself; browsers land on the join form.
+  const inviteMatch = /^\/join\/([A-Za-z0-9-]{4,16})\/?$/.exec(requestPath);
+  if (inviteMatch) {
+    const code = inviteMatch[1].replace(/-/g, '').toUpperCase();
+    res.writeHead(302, { Location: `/?room=${encodeURIComponent(code)}`, 'Cache-Control': 'no-store' });
+    res.end();
     return;
   }
   if (/^\/downloads\/[^/]+\.apk$/.test(requestPath)) {

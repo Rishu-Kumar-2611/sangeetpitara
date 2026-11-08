@@ -39,11 +39,14 @@ fun String.asBuildConfigStringLiteral(): String = buildString {
 val localPreviewBuild = configuredValue("ROOMSOUND_PREVIEW_BUILD") == "1"
 val configuredDefaultEndpoint = configuredValue("ROOMSOUND_DEFAULT_ENDPOINT")
     ?: "wss://sangeet-pitaraa.onrender.com"
+// Invite links https://<site>/join/CODE open the app for the default room server.
+val inviteLinkHost = Regex("^wss://([^/:]+)").find(configuredDefaultEndpoint)?.groupValues?.get(1)
+    ?: "sangeet-pitaraa.onrender.com"
 // The release workflow derives both from the pushed v<major>.<minor>.<patch> tag.
 val configuredVersionName = configuredValue("ROOMSOUND_VERSION_NAME")
-    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.18")
+    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.19")
 val configuredVersionCode = configuredValue("ROOMSOUND_VERSION_CODE")?.toInt()
-    ?: releaseProperties.getProperty("VERSION_CODE", "10118").toInt()
+    ?: releaseProperties.getProperty("VERSION_CODE", "10119").toInt()
 // GitHub repository whose latest release the app checks for an update notice.
 val configuredReleasesRepository = configuredValue("ROOMSOUND_RELEASES_REPOSITORY")
     ?: "Rishu-Kumar-2611/sangeetpitara"
@@ -66,6 +69,8 @@ android {
 
     defaultConfig {
         applicationId = "com.roomsound.android"
+        // Invite links https://<site>/join/CODE open the app for the default room server.
+        manifestPlaceholders["inviteHost"] = inviteLinkHost
         manifestPlaceholders["previewAppLabel"] = if (localPreviewBuild) "SangeetPitara Preview" else "SangeetPitara"
         minSdk = 29
         targetSdk = 36
@@ -76,6 +81,7 @@ android {
             "ROOMSOUND_DEFAULT_ENDPOINT",
             configuredDefaultEndpoint.asBuildConfigStringLiteral(),
         )
+        buildConfigField("String", "ROOMSOUND_INVITE_HOST", inviteLinkHost.asBuildConfigStringLiteral())
         buildConfigField(
             "String",
             "ROOMSOUND_RELEASES_REPOSITORY",

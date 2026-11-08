@@ -30,6 +30,10 @@ class Pcm16RelayPublisher(
     private var opusEncoder: OpusRelayEncoder? = null
     private var opusEpoch: Long? = null
     private var opusSequence = 0L
+    // Packet numbers belong to the source epoch, not to one encoder: a reconnect
+    // that recreates the encoder must continue counting, or listeners would see
+    // every new packet as old and go silent.
+    private var opusSequenceEpoch: Long? = null
     @Volatile private var opusFailed = false
 
     override fun isAvailable(): Boolean = synchronized(lock) { !closed }
@@ -128,7 +132,10 @@ class Pcm16RelayPublisher(
             opusEncoder?.close()
             opusEncoder = OpusRelayEncoder.create(roomClient.opusBitrate())
             opusEpoch = sourceEpoch
-            opusSequence = 0L
+            if (opusSequenceEpoch != sourceEpoch) {
+                opusSequenceEpoch = sourceEpoch
+                opusSequence = 0L
+            }
         }
         val encoder = opusEncoder ?: run { opusFailed = true; return null }
         val packets = runCatching { encoder.encode(samples, sampleCount) }.getOrElse {
