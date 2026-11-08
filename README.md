@@ -347,6 +347,13 @@ fails with a signature conflict; uninstall 1.0.1 once, then install.
 - Rate limiting: 120 req/min/IP + 30 JSON msg/5s per socket; PCM16 binary
   frames are bounded to 600/5s and 64 KiB of payload; WebSocket transport is
   capped at 512 KiB so application-level rejection can stay descriptive.
+- Room access: 8-character room codes (about 1.1 trillion combinations; legacy
+  6-character codes still work), 20 wrong codes per address per 10 minutes, and
+  host/co-host **Lock room** and **New room code** controls in Room settings.
+  A replaced code lets existing members reconnect but admits no one new.
+- Connection caps: 200 total, 20 per address, 50 rooms (`MAX_CONNECTIONS`,
+  `MAX_CONNECTIONS_PER_IP`, `MAX_ACTIVE_ROOMS`); sockets that do not join a room
+  within 60 seconds are closed.
 - Message/history bounded: `messages >200 splice 100`; requests auto-prune after cancel/expire/approve.
 - CSP + `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` etc. Also `<meta http-equiv CSP>` in `index.html`.
 - `/health` + `SIGTERM`/`SIGINT` graceful shutdown; timed `host → cohost` promotion at 30s.

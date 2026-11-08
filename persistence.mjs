@@ -527,7 +527,8 @@ export class PostgresRepository {
        SET name = $2, status = $3, host_user_id = $4, cohost_user_id = $5,
            source_status = $6, source_type = $7, source_epoch = $8,
            updated_at = COALESCE($9::timestamptz, CURRENT_TIMESTAMP),
-           ended_at = $10::timestamptz
+           ended_at = $10::timestamptz,
+           code = COALESCE($11, code)
        WHERE id = $1
        RETURNING id, code, name, status, host_user_id, cohost_user_id,
          source_status, source_type, source_epoch, created_at, updated_at, ended_at`,
@@ -542,6 +543,7 @@ export class PostgresRepository {
         Number.isInteger(room.sourceEpoch) ? room.sourceEpoch : 0,
         room.updatedAt ? isoDate(room.updatedAt) : null,
         room.endedAt ? isoDate(room.endedAt) : null,
+        room.code || null,
       ],
     );
     return mapRoom(result.rows[0]);

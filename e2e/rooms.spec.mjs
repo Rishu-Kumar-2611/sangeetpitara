@@ -84,11 +84,14 @@ test('welcome is minimal and entry screens navigate without mixing forms', async
   await expect(page.locator('.nearby-card')).toBeHidden();
   const arrows=await page.locator('#welcome-actions [data-open-screen]').evaluateAll(cards=>cards.map(card=>{
     const arrow=card.querySelector('b'),a=arrow.getBoundingClientRect(),c=card.getBoundingClientRect();
-    return {text:arrow.textContent,x:a.x,offset:Math.abs(a.y+a.height/2-c.y-c.height/2)};
+    return {text:arrow.textContent,right:c.right-a.right,top:a.y-c.y,inside:a.x>=c.x&&a.right<=c.right&&a.y>=c.y&&a.bottom<=c.bottom};
   }));
   expect(arrows.map(a=>a.text)).toEqual(['→','→','→']);
-  expect(arrows.every(a=>a.offset<1)).toBe(true);
-  expect(Math.max(...arrows.map(a=>a.x))-Math.min(...arrows.map(a=>a.x))).toBeLessThan(1);
+  // Tiles may sit in a row (desktop) or a list (phone); each arrow keeps the same place in its tile.
+  const spread=key=>Math.max(...arrows.map(a=>a[key]))-Math.min(...arrows.map(a=>a[key]));
+  expect(arrows.every(a=>a.inside)).toBe(true);
+  expect(spread('right')).toBeLessThan(1);
+  expect(spread('top')).toBeLessThan(1);
   await page.locator('[data-open-screen="join"]').click();
   await expect(page.locator('#join-panel')).toBeVisible();
   await expect(page.locator('#create-panel')).toBeHidden();

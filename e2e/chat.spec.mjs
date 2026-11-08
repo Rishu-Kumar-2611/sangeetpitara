@@ -44,7 +44,7 @@ test('all public sections and room tabs reflow at phone portrait, landscape and 
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  for(const width of [320,390,844,1024]){
   await page.setViewportSize({width,height:width===844?390:844});
-  for(const route of ['/','/about.html','/contact.html','/privacy.html','/terms.html']) {
+  for(const route of ['/','/privacy.html','/terms.html']) {
    await page.goto(route);for(const mode of ['light','dark']){
     await page.locator('#theme-picker').selectOption(mode);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${route}/${width}/${mode}`).toBe(true);

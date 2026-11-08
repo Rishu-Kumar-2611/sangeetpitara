@@ -59,10 +59,13 @@ node --env-file=.env ops/database-backup.mjs create --output <private-file.sgb>
 node ops/database-backup.mjs verify --file <private-file.sgb>
 ```
 
-`database-backup.yml` is manual-only and requires repository secrets
-`DATABASE_BACKUP_URL` and `BACKUP_ENCRYPTION_KEY`. It uploads only encrypted archives
-and checksum manifests with seven-day retention. Scheduling/destination are not
-enabled until the owner chooses their policy. Losing the encryption key makes
+`database-backup.yml` runs daily at 21:30 UTC (03:00 IST) and can also be started
+manually. It requires repository secrets `DATABASE_BACKUP_URL` and
+`BACKUP_ENCRYPTION_KEY`; until both exist, scheduled runs end with a warning and
+manual runs fail. It uploads only encrypted archives and checksum manifests to
+GitHub Actions artifacts with seven-day retention. Schedules run only from the
+default branch, and GitHub pauses them after 60 days without repository activity.
+Copy archives somewhere offsite if seven days of history is not enough. Losing the encryption key makes
 those archives unrecoverable. Archive validation is not a complete database restore;
 periodically restore to a separate database and exercise the app before relying
 on a backup for disaster recovery.
@@ -74,8 +77,16 @@ accepts an external load-test URL or reads `.env`. Current measurements are in
 `ops/capacity-results.json`. They cover relay delivery and reconnects on this
 computer, not WAN audio, Android output, free-host quotas or a long soak.
 
-The configured ceilings remain 200 connections, 40 per IP, 50 rooms. Test before
-raising them. Raw mono PCM is 768 kbit/s plus overhead per listener. Consider a
+The default ceilings are 200 connections, 20 per IP and 50 rooms. They can be
+tuned with `MAX_CONNECTIONS`, `MAX_CONNECTIONS_PER_IP` and `MAX_ACTIVE_ROOMS`; test
+before raising them. Sockets that do not join a room within 60 seconds are closed
+(`UNJOINED_SOCKET_TIMEOUT_MS`). Each client address may submit 20 wrong or stale
+room codes per 10 minutes (`JOIN_FAILURE_LIMIT`) before joins pause. Room codes are
+8 characters from a 32-symbol alphabet; legacy 6-character codes are still accepted.
+Hosts and co-hosts can lock a room or replace its code from Room settings; a
+replaced code still lets existing members reconnect but admits no one new.
+Per-address limits cannot stop a distributed flood: put the service behind an edge
+rate limiter or firewall before a public launch. Raw mono PCM is 768 kbit/s plus overhead per listener. Consider a
 separately negotiated compressed internet transport only after listening and
 cross-platform compatibility tests; this change preserves the current sound path.
 
@@ -101,6 +112,12 @@ dependency/secret scans, container and PostgreSQL checks. Increment version/cach
 identities together, sign with the existing release key, verify APK certificate,
 and build all download assets. Publish artifacts before switching the website.
 Verify `/ready`, version, module hashes and redirects after rollout.
+
+Every restart ends all live rooms, because room membership and audio live in
+process memory. `render.yaml` therefore sets `autoDeployTrigger: "off"`. Deploy
+from the Render dashboard or a deploy hook at a quiet time, after checking that
+`/health` reports few or no `rooms`. On shutdown the server tells connected members
+that it is restarting and that they may need to create a new room.
 
 Rollback website source/config to a verified commit if needed. APK rollback needs
 a new higher versionCode signed with the same key; old version codes cannot be

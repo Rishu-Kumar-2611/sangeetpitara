@@ -1,8 +1,11 @@
 name: Encrypted database backup
 
-# Manual until the owner selects a destination, retention and recovery-key policy.
-# It deliberately does not keep the free web service awake or modify production.
+# Daily encrypted backup to GitHub Actions artifacts (seven-day retention), plus
+# manual runs. It talks to the database directly, so it does not keep the free
+# web service awake or modify production.
 on:
+  schedule:
+    - cron: '30 21 * * *'
   workflow_dispatch:
 
 permissions:
@@ -22,19 +25,28 @@ jobs:
         with:
           node-version-file: .nvmrc
       - name: Create and verify encrypted archive
+        id: backup
         env:
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_BACKUP_URL }}
           BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
           BACKUP_FILE: .private-migration/backups/SangeetPitara-${{ github.run_id }}.sgb
         run: |
           if [ -z "$DATABASE_URL_UNPOOLED" ] || [ -z "$BACKUP_ENCRYPTION_KEY" ]; then
-            echo "Configure DATABASE_BACKUP_URL and BACKUP_ENCRYPTION_KEY repository secrets first. Keep an offline copy of the key."
+            message="Configure DATABASE_BACKUP_URL and BACKUP_ENCRYPTION_KEY repository secrets first. Keep an offline copy of the key."
+            if [ "${{ github.event_name }}" = "schedule" ]; then
+              echo "::warning::Scheduled backup skipped. $message"
+              echo "created=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "$message"
             exit 1
           fi
           mkdir -p .private-migration/backups
           node ops/database-backup.mjs create --output "$BACKUP_FILE"
           node ops/database-backup.mjs verify --file "$BACKUP_FILE"
+          echo "created=true" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
+        if: steps.backup.outputs.created == 'true'
         with:
           name: encrypted-database-${{ github.run_id }}
           path: |

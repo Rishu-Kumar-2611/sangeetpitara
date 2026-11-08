@@ -1,23 +1,23 @@
-import { RoomChatUI } from './chat-ui.mjs?v=20261108-continuity1';
+import { RoomChatUI } from './chat-ui.mjs?v=20261108-console1';
 let roomChatUI = null;
-import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261108-continuity1';
-import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261108-continuity1';
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261108-continuity1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261108-continuity1';
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261108-console1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261108-console1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261108-console1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261108-console1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261108-continuity1';
+} from './capture-tracks.js?v=20261108-console1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261108-continuity1';
+} from './media-relay.mjs?v=20261108-console1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -29,8 +29,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261108-continuity1';
-import { roomPalette } from './room-palette.js?v=20261108-continuity1';
+} from './ads.mjs?v=20261108-console1';
+import { roomPalette } from './room-palette.js?v=20261108-console1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -577,6 +577,17 @@ async function showControlRequestNotification(request) {
   }
 }
 
+function roomAccessSettingsMarkup() {
+  const locked = Boolean(state.room?.locked);
+  if (!isModerator()) {
+    return locked ? '<div class="settings-note"><strong>Room access</strong><br>The host has locked this room. New people cannot join.</div>' : '';
+  }
+  const status = locked
+    ? 'Locked. People already here can reconnect, but no one new can join.'
+    : 'Open to anyone with the room code or invite link.';
+  return `<div class="settings-note"><strong>Room access</strong><br>${status}<div class="settings-actions"><button class="secondary-button" type="button" data-toggle-room-lock="true">${locked ? 'Unlock room' : 'Lock room'}</button><button class="secondary-button" type="button" data-rotate-room-code="true">New room code</button></div><small>A new code stops old invites from letting anyone else in. Everyone already in the room stays connected.</small></div>`;
+}
+
 function notificationSettingsMarkup() {
   const permission = notificationPermissionState();
   if (permission === 'unsupported') {
@@ -844,7 +855,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261108-continuity1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261108-console1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -922,7 +933,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261108-continuity1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261108-console1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1473,6 +1484,12 @@ function handleServerMessage(message) {
     if (message.message.includes('full') || message.message.includes('unavailable') || message.message.includes('ended')) {
       if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
     }
+    // A rejected join must not be retried automatically: the server counts
+    // wrong codes and closes sockets that stay outside a room.
+    if (/unavailable or has ended|room is full|locked by the host|Too many incorrect room codes|removed from this room/.test(message.message)) {
+      state.lastRoomCode = null;
+      if (state.room) resetToLanding(message.message);
+    }
     return;
   }
   if (message.type === 'joined') {
@@ -1485,8 +1502,13 @@ function handleServerMessage(message) {
     return;
   }
   if (message.type === 'state') {
+    const previousCode = state.lastRoomCode;
     applyRoomState(message.state);
     if (message.state?.room?.code) state.lastRoomCode = message.state.room.code;
+    // Keep the address bar on the current invite after the host replaces the code.
+    if (previousCode && state.lastRoomCode !== previousCode) {
+      window.history.replaceState(window.history.state, '', roomUrlForCode(state.lastRoomCode));
+    }
     return;
   }
   if (message.type === 'chat') {
@@ -2764,7 +2786,7 @@ function openRoomSettings() {
   closeRoomMenu();
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="source-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="room-settings-title"><div class="modal-eyebrow">ROOM SETTINGS</div><h2 id="room-settings-title">${escapeHtml(state.room.name)}</h2><p>Private room · up to 10 people · audio is not recorded. Share, leave, and end actions are in the Room menu.</p><div class="settings-summary"><div><span>Room code</span><strong>${escapeHtml(state.room.code)}</strong></div><div><span>Current source</span><strong>${escapeHtml(state.room.activeSourceId ? sourceLabel(state.room.activeSourceType) : 'None')}</strong></div></div>${notificationSettingsMarkup()}<button class="modal-close" type="button">Close</button></div>`;
+  modal.innerHTML = `<div class="source-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="room-settings-title"><div class="modal-eyebrow">ROOM SETTINGS</div><h2 id="room-settings-title">${escapeHtml(state.room.name)}</h2><p>Private room · up to 10 people · audio is not recorded. Share, leave, and end actions are in the Room menu.</p><div class="settings-summary"><div><span>Room code</span><strong>${escapeHtml(state.room.code)}</strong></div><div><span>Current source</span><strong>${escapeHtml(state.room.activeSourceId ? sourceLabel(state.room.activeSourceType) : 'None')}</strong></div></div>${roomAccessSettingsMarkup()}${notificationSettingsMarkup()}<button class="modal-close" type="button">Close</button></div>`;
   $('#modal-root').append(modal);
   containModalFocus(modal);
   const dismiss = () => {
@@ -2783,6 +2805,15 @@ function openRoomSettings() {
     await requestNotificationPermission();
     dismiss();
     openRoomSettings();
+  });
+  modal.querySelector('[data-toggle-room-lock]')?.addEventListener('click', () => {
+    send({ type: 'set-room-lock', locked: !state.room?.locked });
+    dismiss();
+  });
+  modal.querySelector('[data-rotate-room-code]')?.addEventListener('click', () => {
+    send({ type: 'rotate-room-code' });
+    dismiss();
+    toast('Creating a new room code. Share the new invite with anyone still joining.', 'ok');
   });
   modal.querySelector('.modal-close').focus();
 }
@@ -2838,7 +2869,7 @@ function wireEvents() {
   $('#join-room').addEventListener('click', () => {
     const code = normalizeRoomCodeInput($('#room-code').value);
     $('#room-code').value = code;
-    if (code.length !== 6) return showLanding('Enter the six-character room code your host shared with you.');
+    if (code.length !== 6 && code.length !== 8) return showLanding('Enter the room code your host shared with you.');
     connectAnd({ type: 'join', code });
   });
   $('#room-code').addEventListener('input', (event) => { event.target.value = normalizeRoomCodeInput(event.target.value); });

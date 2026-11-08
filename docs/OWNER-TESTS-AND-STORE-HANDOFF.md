@@ -41,7 +41,7 @@ test gate, not a promise that buffered live audio can survive an unlimited outag
 ## Store preparation
 
 Package ID: `com.roomsound.android`. Product: SangeetPitara. Support:
-`rishu2311singh@gmail.com`. Privacy policy:
+`[support email]`. Privacy policy:
 https://sangeet-pitaraa.onrender.com/privacy.html
 
 Draft short description: "Listen together online or nearby, with host-approved audio sharing."

@@ -67,9 +67,23 @@ const legacyPublicHosts = new Set(
 );
 const rooms = new Map();
 const reservedRoomCodes = new Set();
-const MAX_ACTIVE_ROOMS = 50;
-const MAX_CONNECTIONS = 200;
-const MAX_CONNECTIONS_PER_IP = 40;
+function positiveIntegerEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+const MAX_ACTIVE_ROOMS = positiveIntegerEnv('MAX_ACTIVE_ROOMS', 50);
+const MAX_CONNECTIONS = positiveIntegerEnv('MAX_CONNECTIONS', 200);
+// A household or small office can share one address; a single client cannot
+// hold a large share of the global connection budget.
+const MAX_CONNECTIONS_PER_IP = positiveIntegerEnv('MAX_CONNECTIONS_PER_IP', 20);
+// Sockets that never enter a room are closed so they cannot squat capacity.
+const UNJOINED_SOCKET_TIMEOUT_MS = positiveIntegerEnv('UNJOINED_SOCKET_TIMEOUT_MS', 60_000);
+// Wrong or stale room codes per client address before joins pause. This makes
+// guessing an active room's code impractical without blocking honest typos.
+const JOIN_FAILURE_LIMIT = positiveIntegerEnv('JOIN_FAILURE_LIMIT', 20);
+const JOIN_FAILURE_WINDOW_MS = 10 * 60_000;
+const ROOM_CODE_ROTATION_COOLDOWN_MS = 10_000;
+const MAX_RETIRED_ROOM_CODES = 4;
 const MAX_PENDING_COMMANDS = 16;
 const OFFLINE_MEMBER_TTL_MS = 5 * 60_000;
 const requestTtlMs = 45_000;
@@ -209,7 +223,7 @@ const securityHeaders = {
 // Only client assets belong to the public HTTP surface. Backend modules,
 // audit evidence, tests and future repository files are private by default.
 const publicFiles = new Set([
-  'chat.css', 'index.html', 'about.html', 'contact.html', 'privacy.html', 'terms.html',
+  'chat.css', 'index.html', 'privacy.html', 'terms.html',
   'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'themes.css', 'themes.js',
   'chat-ui.mjs', 'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
   'room-palette.js', 'media-relay.mjs', 'relay-pcm.js', 'stream-health.mjs', 'audio-diagnostics.mjs',
@@ -227,13 +241,30 @@ const rateLimit = new Map();
 const staticRateLimit = new Map();
 const authRateLimit = new Map();
 const roomCreationRateLimit = new Map();
+const joinFailureRateLimit = new Map();
 setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of rateLimit) if (now > entry.resetAt) rateLimit.delete(ip);
   for (const [ip, entry] of staticRateLimit) if (now > entry.resetAt) staticRateLimit.delete(ip);
   for (const [ip, entry] of authRateLimit) if (now > entry.resetAt) authRateLimit.delete(ip);
   for (const [ip, entry] of roomCreationRateLimit) if (now > entry.resetAt) roomCreationRateLimit.delete(ip);
+  for (const [ip, entry] of joinFailureRateLimit) if (now > entry.resetAt) joinFailureRateLimit.delete(ip);
 }, 60_000).unref();
+
+function joinFailuresExceeded(ip) {
+  const entry = joinFailureRateLimit.get(ip);
+  return Boolean(entry && Date.now() <= entry.resetAt && entry.count >= JOIN_FAILURE_LIMIT);
+}
+
+function recordJoinFailure(ip) {
+  const now = Date.now();
+  let entry = joinFailureRateLimit.get(ip);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + JOIN_FAILURE_WINDOW_MS };
+    joinFailureRateLimit.set(ip, entry);
+  }
+  entry.count += 1;
+}
 
 function checkRateLimit(ip, { isStaticAsset = false } = {}) {
   const now = Date.now();
@@ -283,7 +314,14 @@ function isAllowedOrigin(origin, allowedList) {
 function getClientIp(req) { return clientAddress(req); }
 
 const randomId = () => crypto.randomUUID();
-const randomCode = () => crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 6);
+// 32 symbols without look-alikes (no I, O, 0 or 1): 8 characters give about
+// 1.1 trillion codes, compared with 16.7 million for the old 6-digit hex codes.
+const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const ROOM_CODE_LENGTH = 8;
+const randomCode = () => Array.from(
+  { length: ROOM_CODE_LENGTH },
+  () => ROOM_CODE_ALPHABET[crypto.randomInt(ROOM_CODE_ALPHABET.length)],
+).join('');
 
 function lanAddresses() {
   if (process.env.NODE_ENV === 'production' && process.env.SHOW_LAN !== '1') return [];
@@ -369,6 +407,7 @@ function clientState(room, viewer, includeVoiceData = true) {
       sourceStatus: room.sourceStatus,
       sourceEpoch: room.sourceEpoch,
       resumeSourceId: room.resumeSourceId,
+      locked: Boolean(room.locked),
       createdAt: room.createdAt,
     },
     self: viewer ? publicMember(viewer, room) : null,
@@ -682,7 +721,9 @@ async function handleAuthRequest(req, res, requestPath) {
   }
 }
 
-const ROOM_CODE_PATTERN = /^[A-F0-9]{6}$/;
+// New codes are 8 characters. Legacy 6-character hex codes stay valid for
+// account-owned rooms restored from the database.
+const ROOM_CODE_PATTERN = /^(?:[A-F0-9]{6}|[A-Z0-9]{8})$/;
 
 function normalizeRoomCode(value) {
   if (typeof value !== 'string') return '';
@@ -696,8 +737,16 @@ function findRoomByCode(code) {
   return [...rooms.values()].find((room) => room.code === normalizedCode);
 }
 
+// A replaced code still lets existing members reconnect (older clients keep
+// the code they joined with), but never admits anyone new.
+function findRoomByRetiredCode(code) {
+  const normalizedCode = normalizeRoomCode(code);
+  if (!normalizedCode) return null;
+  return [...rooms.values()].find((room) => room.retiredCodes?.includes(normalizedCode));
+}
+
 function roomCodeIsUnavailable(code) {
-  return reservedRoomCodes.has(code) || Boolean(findRoomByCode(code));
+  return reservedRoomCodes.has(code) || Boolean(findRoomByCode(code)) || Boolean(findRoomByRetiredCode(code));
 }
 
 function persistedRoomRecord(room) {
@@ -905,8 +954,17 @@ async function joinRoom(ws, message) {
   if (ws.roomId || ws.memberId) return sendError(ws, 'You are already in a room. Leave it before joining another room.');
   const displayName = safeText(message.displayName, 40);
   if (!displayName) return sendError(ws, 'Enter your name before creating or joining a room.');
-  const room = findRoomByCode(message.code);
-  if (!room || room.status !== 'ACTIVE') return sendError(ws, 'That room is unavailable or has ended.');
+  if (joinFailuresExceeded(ws._ip)) {
+    return sendError(ws, 'Too many incorrect room codes from this network. Wait a few minutes and try again.');
+  }
+  const unavailable = () => {
+    recordJoinFailure(ws._ip);
+    return sendError(ws, 'That room is unavailable or has ended.');
+  };
+  let room = findRoomByCode(message.code);
+  const viaRetiredCode = !room;
+  if (!room) room = findRoomByRetiredCode(message.code);
+  if (!room || room.status !== 'ACTIVE') return unavailable();
   if (await moderationBlocksEntry(ws, room)) return;
   // Entry checks include an async repository lookup. Re-check the room after
   // it completes so an end/remove action cannot be followed by a stale join.
@@ -915,6 +973,7 @@ async function joinRoom(ws, message) {
   const guestIdClean = safeText(message.guestId, 80);
   const reconnectSecretClean = normalizeReconnectSecret(message.reconnectSecret);
   if (room.bannedGuestIds?.has(guestIdClean) || room.bannedReconnectSecrets?.has(reconnectSecretClean)) {
+    recordJoinFailure(ws._ip);
     return sendError(ws, 'You were removed from this room.');
   }
   const existing = [...room.members.values()].find((member) => (
@@ -925,6 +984,7 @@ async function joinRoom(ws, message) {
     // Prevent another room participant from spoofing a member's guestId
     // when a client-side reconnectSecret was bound to the member slot.
     if (!reconnectSecretClean || !constantTimeEqual(reconnectSecretClean, existing.reconnectSecret)) {
+      if (viaRetiredCode) return unavailable();
       return sendError(ws, 'This account is already connected to the room.');
     }
     if (existing.ws && existing.ws !== ws) {
@@ -937,6 +997,14 @@ async function joinRoom(ws, message) {
     existing.name = displayName;
     attachRoom(ws, room, existing);
     return;
+  }
+
+  // Only reconnecting members get past this point with a replaced code or
+  // into a locked room.
+  if (viaRetiredCode) return unavailable();
+  if (room.locked) {
+    recordJoinFailure(ws._ip);
+    return sendError(ws, 'This room is locked by the host. Ask them to unlock it before joining.');
   }
 
   const onlineCount = [...room.members.values()].filter((member) => member.ws).length;
@@ -1375,6 +1443,44 @@ async function handleMessage(ws, message) {
     return;
   }
 
+  if (type === 'set-room-lock') {
+    if (!isModerator(room, member)) return sendError(ws, 'Only the host or co-host can lock the room.');
+    const locked = message.locked === true;
+    if (Boolean(room.locked) === locked) return broadcastState(room);
+    room.locked = locked;
+    addSystemMessage(room, locked
+      ? `${member.name} locked the room. New people cannot join until it is unlocked.`
+      : `${member.name} unlocked the room.`);
+    broadcastState(room);
+    return;
+  }
+
+  if (type === 'rotate-room-code') {
+    if (!isModerator(room, member)) return sendError(ws, 'Only the host or co-host can change the room code.');
+    const now = Date.now();
+    if (now - (room.codeRotatedAt || 0) < ROOM_CODE_ROTATION_COOLDOWN_MS) {
+      return sendError(ws, 'Please wait a few seconds before changing the room code again.');
+    }
+    const previousCode = room.code;
+    const previousRetired = room.retiredCodes || [];
+    let code = randomCode();
+    while (roomCodeIsUnavailable(code)) code = randomCode();
+    room.code = code;
+    room.codeRotatedAt = now;
+    room.retiredCodes = [previousCode, ...previousRetired].slice(0, MAX_RETIRED_ROOM_CODES);
+    try {
+      await persistRoom(room);
+    } catch (error) {
+      room.code = previousCode;
+      room.retiredCodes = previousRetired;
+      logger.error('Room persistence failed during code rotation', { error });
+      return sendError(ws, 'The room code could not be changed. Try again.');
+    }
+    addSystemMessage(room, `${member.name} created a new room code. Earlier invites no longer let new people join.`);
+    broadcastState(room);
+    return;
+  }
+
   if (type === 'remove-member') {
     if (!isModerator(room, member)) return sendError(ws, 'Only the host or co-host can remove participants.');
     const target = findMember(room, message.memberId);
@@ -1790,6 +1896,10 @@ wss.on('connection', (ws, req) => {
   websocketConnections.set(wss.clients.size);
   const authTimer = setTimeout(() => { if (!ws.authReady) { ws.pendingMessages.length = 0; ws.close(1013, 'Authentication timed out'); } }, 8000);
   authTimer.unref();
+  const unjoinedTimer = setTimeout(() => {
+    if (ws.readyState === WebSocket.OPEN && !ws.roomId) ws.close(4008, 'Join a room to stay connected');
+  }, UNJOINED_SOCKET_TIMEOUT_MS);
+  unjoinedTimer.unref();
   void auth.currentUser(sessionTokenFromRequest(req)).then((user) => {
     clearTimeout(authTimer);
     if (ws.readyState !== WebSocket.OPEN) return;
@@ -1841,6 +1951,7 @@ wss.on('connection', (ws, req) => {
   });
   ws.on('close', (code, reason) => {
     clearTimeout(authTimer);
+    clearTimeout(unjoinedTimer);
     ws.pendingMessages.length = 0;
     const category=({1000:'normal',1001:'going_away',1006:'transport_lost',1008:'policy',1009:'too_large',1011:'server_error',1013:'retry'})[code] || 'other';
     socketCloses.inc(1,{category}); socketLifetime.observe(Math.max(0,Date.now()-ws._connectedAt)/1000);
@@ -1889,7 +2000,12 @@ function shutdown(signal) {
     if (room.hostFailoverTimer) clearTimeout(room.hostFailoverTimer);
     if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
   }
-  for (const ws of wss.clients) ws.close(1012, 'Service restarting');
+  // Live rooms are held in memory, so say plainly what a restart means before
+  // the sockets close. Both clients show server 'error' messages to the user.
+  for (const ws of wss.clients) {
+    if (ws.roomId) sendError(ws, 'SangeetPitara is restarting for an update. If your room has ended, create a new room and share the new code.');
+    ws.close(1012, 'Service restarting');
+  }
   wss.close(() => server.close(async () => {
     await repository.close().catch((error) => console.error('Repository shutdown failed:', error.message));
     process.exit(0);
