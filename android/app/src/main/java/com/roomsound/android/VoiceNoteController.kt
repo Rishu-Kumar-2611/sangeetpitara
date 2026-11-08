@@ -27,6 +27,8 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
         private set
     var draftId: String? = null
         private set
+    /** Called when a recording has just become a draft (Telegram-style: stop means send). */
+    var onDraftReady: (() -> Unit)? = null
     val recording get() = recorder != null
     val playing get() = player != null
     val elapsedSeconds get() = ((SystemClock.elapsedRealtime() - started) / 1000).toInt().coerceIn(0,30)
@@ -63,6 +65,7 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
             draftId = UUID.randomUUID().toString()
         } catch (_: Exception) { error("Record between 1 and 30 seconds, then try again.") }
         finally { runCatching { capture.release() }; file?.delete(); changed() }
+        if (draft != null) onDraftReady?.invoke()
     }
     fun cancelRecording() {
         handler.removeCallbacks(tick)

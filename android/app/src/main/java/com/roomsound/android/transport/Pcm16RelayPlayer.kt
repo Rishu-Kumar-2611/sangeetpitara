@@ -65,7 +65,9 @@ class Pcm16RelayPlayer internal constructor(
         var firstPacketAt: Long? = null
         var lastPacketAt: Long? = null
         var cushionBytes = 0
-        var lastUnstableAt: Long? = null
+        // Largest recent cushion need and when it was seen (see play()).
+        var holdNeedBytes = 0
+        var holdSince: Long? = null
         var jitterMs = 0.0
         var playbackStarted = false
         var crossfadeNext = false
@@ -215,17 +217,25 @@ class Pcm16RelayPlayer internal constructor(
         }
         if (adaptiveBuffering) session.lastPacketAt?.let { previous ->
             val gapMs = TimeUnit.NANOSECONDS.toMillis((now - previous).coerceAtLeast(0))
+            val holding = session.holdSince?.let { now - it < STABLE_BEFORE_RELEASE_NANOS } == true
             if (gapMs in 81..PAUSE_GAP_MS) {
                 // Network jitter earns cushion, capped at 2 s; a longer gap is a
                 // paused source and must not leave a lasting delay.
-                session.cushionBytes = maxOf(session.cushionBytes,
-                    (minOf(MAX_CUSHION_MS, gapMs + 80) * 96).toInt().coerceAtMost(maxQueuedBytes - 1_920).coerceAtLeast(0))
-                session.lastUnstableAt = now
-            } else if (gapMs <= 80 && session.cushionBytes > 0 &&
-                now - (session.lastUnstableAt ?: now) >= STABLE_BEFORE_RELEASE_NANOS
-            ) {
-                // Steady arrivals release about 250 ms of cushion per second.
-                session.cushionBytes = (session.cushionBytes - packet.payload.size / 4).coerceAtLeast(0)
+                val need = (minOf(MAX_CUSHION_MS, gapMs + 80) * 96).toInt().coerceAtMost(maxQueuedBytes - 1_920).coerceAtLeast(0)
+                session.cushionBytes = maxOf(session.cushionBytes, need)
+                // Hold the largest recent need for 8 s. A smaller hiccup does not
+                // restart that wait, so ordinary jitter cannot pin a 2 s delay.
+                if (need >= session.holdNeedBytes || !holding) {
+                    session.holdNeedBytes = need
+                    session.holdSince = now
+                }
+            } else if (gapMs <= 80 && session.cushionBytes > 0) {
+                // Steady arrivals release about 250 ms of cushion per second,
+                // down to what the recent hiccups still need.
+                val floor = if (holding) session.holdNeedBytes else 0
+                if (session.cushionBytes > floor) {
+                    session.cushionBytes = maxOf(floor, session.cushionBytes - packet.payload.size / 4)
+                }
             }
         }
         session.lastPacketAt = now
@@ -276,6 +286,8 @@ class Pcm16RelayPlayer internal constructor(
     }
 
     fun droppedFrames(): Long = synchronized(lock) { dropped }
+
+    internal fun cushionMillis(): Double = synchronized(lock) { (active?.cushionBytes ?: 0) / 96.0 }
 
     internal fun rejectedSequenceFrames(): Long = synchronized(lock) { rejectedSequences }
     internal fun missingSequenceFrames(): Long = synchronized(lock) { missingSequences }

@@ -188,3 +188,17 @@ test('one address cannot hold more than its connection share', async (t) => {
   });
   assert.equal(status, 503);
 });
+
+test('a liveness ping is answered with a pong, outside the message budget', async (t) => {
+  const url = await startServer(t);
+  const { host } = await createRoom(t, url);
+  for (let i = 0; i < 3; i += 1) {
+    host.ws.send('{"type":"ping"}');
+    assert.equal((await host.next((message) => message.type === 'pong')).type, 'pong');
+    await new Promise((resolve) => setTimeout(resolve, 550));
+  }
+  // A ping flood gets at most two answers a second and no errors.
+  for (let i = 0; i < 50; i += 1) host.ws.send('{"type":"ping"}');
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  await assert.rejects(host.next((message) => message.type === 'error', 300));
+});

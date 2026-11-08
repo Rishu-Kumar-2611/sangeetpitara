@@ -123,6 +123,25 @@ test('a lasting cushion is released within seconds once the network is stable', 
  assert.ok(p.node.available<=p.node.targetFill+48_000);
 });
 
+test('small late packets do not pin a large cushion after a stall', async () => {
+ // Recorded on a real phone-to-laptop session: after one 1.5 s stall the delay
+ // stayed at 2 s because every later ~120 ms hiccup restarted the release wait.
+ const p=await playout();p.run(2000);
+ p.run(1500,{connected:false});p.flush(75);
+ const afterStall=p.node.adaptiveExtraFill;
+ assert.ok(afterStall>=48_000);
+ for(let i=0;i<10;i+=1){p.run(120,{connected:false});p.run(1880);}
+ assert.ok(p.node.adaptiveExtraFill<=Math.ceil(0.25*48_000),`cushion follows the small hiccups (${p.node.adaptiveExtraFill} samples)`);
+ assert.ok(p.node.adaptiveExtraFill>=Math.floor(0.1*48_000),'but still covers them');
+ assert.ok(p.node.available<=p.node.targetFill+48_000);
+});
+
+test('a repeated large stall keeps its cushion while it keeps happening', async () => {
+ const p=await playout();p.run(2000);
+ for(let i=0;i<4;i+=1){p.run(1000,{connected:false});p.run(5000);}
+ assert.ok(p.node.adaptiveExtraFill>=Math.floor(1.0*48_000),'stalls every 6 s keep a cushion that covers them');
+});
+
 test('a source pause longer than two seconds does not raise the delay', async () => {
  const p=await playout();p.run(2000);
  p.run(6000,{produced:false});
