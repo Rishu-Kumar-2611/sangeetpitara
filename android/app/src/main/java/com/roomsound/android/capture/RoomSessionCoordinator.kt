@@ -402,6 +402,18 @@ class RoomSessionCoordinator(
         return client?.removeMember(memberId) == true
     }
 
+    fun setRoomLock(locked: Boolean): Boolean {
+        val state = joinedState() ?: return false
+        if (!isModerator(state) || state.room.locked == locked) return false
+        return client?.setRoomLock(locked) == true
+    }
+
+    fun rotateRoomCode(): Boolean {
+        val state = joinedState() ?: return false
+        if (!isModerator(state)) return false
+        return client?.rotateRoomCode() == true
+    }
+
     fun endRoom(): Boolean {
         val state = joinedState() ?: client?.currentRoomState()
         if (state != null && state.self?.id != state.room.hostId) return false

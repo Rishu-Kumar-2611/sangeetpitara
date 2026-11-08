@@ -127,6 +127,9 @@ class MainActivity : Activity() {
     private lateinit var requestAudioButton: Button
     private lateinit var leaveRoomButton: Button
     private lateinit var endRoomButton: Button
+    private lateinit var roomAccessRow: LinearLayout
+    private lateinit var lockRoomButton: Button
+    private lateinit var newRoomCodeButton: Button
 
     /** The capture transaction owned by the service/coordinator, if any. */
     private var pendingCaptureId: String? = null
@@ -733,6 +736,17 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(0, dp(6), 0, 0)
         }, matchWrap())
+        // Host and co-host controls: lock the room, or replace the code so old invites stop working.
+        roomAccessRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+            setPadding(0, dp(10), 0, 0)
+        }
+        lockRoomButton = button("Lock room", ButtonTone.SECONDARY) { toggleRoomLock() }
+        newRoomCodeButton = button("New code", ButtonTone.SECONDARY) { confirmNewRoomCode() }
+        roomAccessRow.addView(lockRoomButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+        roomAccessRow.addView(newRoomCodeButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        roomCodePanel.addView(roomAccessRow, matchWrap())
         nativeSessionControls.addView(roomCodePanel, marginLayout())
 
         sourceButton = button("Share device audio") { handleSourceAction() }
@@ -1258,8 +1272,12 @@ class MainActivity : Activity() {
         roomCodePanel.visibility = View.VISIBLE
         roomCodeText.text = room.code
         roomCodeText.contentDescription = "Room code ${room.code}. Share this code with anyone joining the room."
+        // Servers that issue 8-character codes also accept lock and code-change commands.
+        roomAccessRow.visibility = if (isModerator && room.code.length == 8) View.VISIBLE else View.GONE
+        lockRoomButton.text = if (room.locked) "Unlock room" else "Lock room"
+        lockRoomButton.contentDescription = if (room.locked) "Unlock the room so new people can join" else "Lock the room so no one new can join"
         roomStateText.text = buildString {
-            append("Room ${room.code} · ${room.status}\n")
+            append("Room ${room.code} · ${room.status}${if (room.locked) " · Locked" else ""}\n")
             append("Source: ${sourceMember?.name ?: "none"} · ${room.sourceStatus}")
         }
 
@@ -1761,6 +1779,34 @@ class MainActivity : Activity() {
             return
         }
         session.removeMember(memberId)
+    }
+
+    private fun toggleRoomLock() {
+        val session = roomSession ?: return
+        val state = session.currentRoomState() ?: return
+        if (!isCurrentModerator(state)) {
+            appendRoomEvent("Only the host or co-host can lock the room.")
+            return
+        }
+        if (session.setRoomLock(!state.room.locked)) {
+            appendRoomEvent(if (state.room.locked) "Unlocking the room…" else "Locking the room…")
+        }
+    }
+
+    private fun confirmNewRoomCode() {
+        val state = roomSession?.currentRoomState() ?: return
+        if (!isCurrentModerator(state)) {
+            appendRoomEvent("Only the host or co-host can change the room code.")
+            return
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Get a new room code?")
+            .setMessage("Old invites will stop letting new people join. Everyone already in the room stays connected.")
+            .setPositiveButton("New code") { _, _ ->
+                if (roomSession?.rotateRoomCode() == true) appendRoomEvent("Creating a new room code…")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun endRoom() {

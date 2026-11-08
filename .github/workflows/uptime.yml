@@ -1,0 +1,81 @@
+name: Uptime check
+
+# Free monitoring for the live site. Every 10 minutes during Indian daytime
+# (07:30-00:30 IST) it checks /health and /ready. A failure opens one issue,
+# which GitHub emails to the repository owner; recovery closes it.
+#
+# The pings also keep the free Render instance awake during those hours, so
+# visitors rarely wait for a cold start. Overnight it may sleep, which keeps
+# total running time well inside Render's 750 free instance hours a month.
+on:
+  schedule:
+    - cron: '*/10 2-18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: uptime-check
+  cancel-in-progress: false
+
+env:
+  SITE_URL: https://sangeet-pitaraa.onrender.com
+  ISSUE_TITLE: 'Live site is down: sangeet-pitaraa.onrender.com'
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Check health and readiness
+        id: probe
+        run: |
+          ok=true
+          summary=""
+          for path in /health /ready; do
+            code=000
+            # A sleeping free instance can take about a minute to wake up.
+            for attempt in 1 2 3; do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 "$SITE_URL$path" || true)
+              [ "$code" = 200 ] && break
+              sleep 20
+            done
+            echo "$path -> HTTP $code"
+            summary="$summary $path=$code"
+            [ "$code" = 200 ] || ok=false
+          done
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          echo "summary=$summary" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the outage issue
+        if: steps.probe.outputs.ok != 'true'
+        uses: actions/github-script@v7
+        env:
+          SUMMARY: ${{ steps.probe.outputs.summary }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const title = process.env.ISSUE_TITLE;
+            const body = `The uptime check could not reach ${process.env.SITE_URL} at ${new Date().toISOString()}.\n\nResults:${process.env.SUMMARY}\n\nCheck the Render dashboard logs for the web service. This issue closes itself when the site recovers.\n\nRun: ${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const open = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', creator: 'github-actions[bot]', per_page: 100 });
+            const existing = open.find((issue) => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body: `Still failing.${process.env.SUMMARY}` });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }
+            core.setFailed(`Live site check failed:${process.env.SUMMARY}`);
+
+      - name: Close the outage issue after recovery
+        if: steps.probe.outputs.ok == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const open = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', creator: 'github-actions[bot]', per_page: 100 });
+            for (const issue of open.filter((item) => item.title === process.env.ISSUE_TITLE)) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body: 'The live site is reachable again. Closing.' });
+              await github.rest.issues.update({ owner, repo, issue_number: issue.number, state: 'closed' });
+            }
