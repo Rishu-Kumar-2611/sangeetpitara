@@ -187,4 +187,31 @@ class NearbyRoomHostTest {
         assertNotEquals(secret,pair.copy(invite="another-invite").reconnectSecret(master))
         assertNotEquals(secret,pair.copy(fingerprint="b".repeat(64)).reconnectSecret(master))
     }
+    @Test fun voiceNotesAndRepliesWorkAcrossLocalClients() {
+        val http=OkHttpClient(); val host=NearbyRoomHost({ "offline".byteInputStream() },0); val clients=mutableListOf<Client>()
+        try {
+            host.startHosting()
+            val owner=Client(host.ownerEndpoint,http).also { clients+=it }
+            owner.send("""{"type":"create-room","displayName":"Host","guestId":"voice-host"}""")
+            val code=owner.event("joined").getJSONObject("state").getJSONObject("room").getString("code")
+            val guest=Client("ws://127.0.0.1:${host.listeningPort}/?invite=${host.invite}",http).also { clients+=it }
+            guest.send("""{"type":"join-room","code":"$code","displayName":"Friend","guestId":"voice-guest"}"""); guest.event("joined")
+            owner.send("""{"type":"chat","text":"Original \uD83C\uDFB5"}""")
+            val original=owner.event("chat").getJSONObject("message"); guest.event("chat")
+            val bytes=byteArrayOf(0,0,0,24)+"ftypisom".toByteArray()+ByteArray(160_000)
+            val voice=JSONObject().put("mimeType","audio/mp4").put("durationMs",2000).put("data",java.util.Base64.getEncoder().encodeToString(bytes))
+            guest.send(JSONObject().put("type","chat").put("voice",voice).put("replyToId",original.getString("id")).put("clientMessageId","local-voice").toString())
+            val echoed=guest.event("chat").getJSONObject("message")
+            val received=owner.event("chat").getJSONObject("message")
+            assertEquals(received.getString("id"),echoed.getString("id"))
+            assertEquals("Original \uD83C\uDFB5",received.getJSONObject("replyTo").getString("text"))
+            assertEquals("Host",received.getJSONObject("replyTo").getString("senderName"))
+            assertEquals(voice.getString("data"),received.getJSONObject("voice").getString("data"))
+            owner.send("""{"type":"start-source","sourceType":"DEVICE_AUDIO"}""")
+            val lightweight=guest.stateWhere { it.getJSONArray("messages").length() >= 2 }.getJSONArray("messages").getJSONObject(1).getJSONObject("voice")
+            assertTrue(lightweight.getBoolean("referenceOnly")); assertFalse(lightweight.has("data"))
+            guest.send("""{"type":"chat","text":"Reply","replyToId":"other-room"}""")
+            assertTrue(guest.event("error").getString("message").contains("history"))
+        } finally { clients.forEach { it.ws.cancel() }; host.close(); http.dispatcher.executorService.shutdownNow(); http.connectionPool.evictAll() }
+    }
 }

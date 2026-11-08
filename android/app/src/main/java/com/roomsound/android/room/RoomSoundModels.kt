@@ -47,6 +47,18 @@ data class RoomRequest(
     val expiresAt: Long,
 )
 
+data class RoomChatReply(val id: String, val senderName: String, val text: String)
+data class RoomVoiceNote(val mimeType: String, val durationMs: Long, val data: String?, val unavailable: Boolean = false, val referenceOnly: Boolean = false) {
+    override fun toString(): String = "RoomVoiceNote(mimeType=$mimeType, durationMs=$durationMs, available=${data != null})"
+}
+internal fun mergeChatVoiceReferences(previous: List<RoomChatMessage>, incoming: List<RoomChatMessage>): List<RoomChatMessage> {
+    val cached = previous.associateBy { it.id }
+    return incoming.map { message ->
+        val voice = message.voice
+        val data = cached[message.id]?.voice?.data
+        if (voice?.referenceOnly == true && data != null) message.copy(voice = voice.copy(data = data, referenceOnly = false)) else message
+    }
+}
 data class RoomChatMessage(
     val id: String,
     val kind: String,
@@ -56,6 +68,9 @@ data class RoomChatMessage(
     val createdAt: Long,
     /** Emoji to member ids that reacted with it; empty on servers without reactions. */
     val reactions: Map<String, List<String>> = emptyMap(),
+    val replyTo: RoomChatReply? = null,
+    val voice: RoomVoiceNote? = null,
+    val clientMessageId: String? = null,
 )
 
 data class RoomState(
@@ -108,6 +123,8 @@ data class RoomServerConfig(
     val mediaRelay: RoomMediaRelayConfig = RoomMediaRelayConfig.DEFAULT,
     /** Reaction set the server accepts; empty means the server has no reactions. */
     val chatReactions: List<String> = emptyList(),
+    val voiceMessages: Boolean = false,
+    val messageReplies: Boolean = false,
 ) {
     companion object {
         val DEFAULT = RoomServerConfig()
@@ -231,6 +248,9 @@ internal fun parseChatMessage(json: JSONObject): RoomChatMessage = RoomChatMessa
     text = json.stringOrNull("text") ?: "",
     createdAt = json.optLong("createdAt", 0L),
     reactions = parseReactions(json.optJSONObject("reactions")),
+    replyTo = json.optJSONObject("replyTo")?.let { RoomChatReply(it.optString("id"), it.optString("senderName"), it.optString("text")) },
+    voice = json.optJSONObject("voice")?.let { RoomVoiceNote(it.optString("mimeType"), it.optLong("durationMs"), it.stringOrNull("data"), it.optBoolean("unavailable"), it.optBoolean("referenceOnly")) },
+    clientMessageId = json.stringOrNull("clientMessageId"),
 )
 
 /** `{"🔥": ["memberId", …]}`; anything malformed is skipped, never thrown. */
@@ -315,6 +335,8 @@ internal fun parseMediaRelayConfig(json: JSONObject): RoomMediaRelayConfig {
 internal fun parseRoomServerConfig(json: JSONObject): RoomServerConfig = RoomServerConfig(
     iceServers = parseIceServers(json),
     mediaRelay = parseMediaRelayConfig(json),
+    voiceMessages = json.optJSONObject("chatFeatures")?.optBoolean("voiceMessages", false) == true,
+    messageReplies = json.optJSONObject("chatFeatures")?.optBoolean("messageReplies", false) == true,
     chatReactions = buildList {
         val reactions = json.arrayOrEmpty("chatReactions")
         for (index in 0 until minOf(reactions.length(), 12)) {

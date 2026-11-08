@@ -5,13 +5,16 @@ import android.content.Context
 import android.util.TypedValue
 
 object AppThemes {
-    val names = arrayOf("Brass", "Midnight", "Forest", "Rose")
-    val keys = arrayOf("brass", "midnight", "forest", "rose")
-    fun selected(context: Context): Int = keys.indexOf(context.getSharedPreferences("appearance", Context.MODE_PRIVATE).getString("theme", "brass")).coerceAtLeast(0)
+    val names = arrayOf("Mehfil · Dark", "Playground · Light")
+    val keys = arrayOf("dark", "light")
+    fun selected(context: Context): Int = when (context.getSharedPreferences("appearance", Context.MODE_PRIVATE).getString("theme", "dark")) {
+        "light", "playground", "courtyard" -> 1
+        else -> 0 // All previous palettes were dark.
+    }
     fun save(context: Context, index: Int) { context.getSharedPreferences("appearance", Context.MODE_PRIVATE).edit().putString("theme",keys[index]).apply() }
     fun apply(activity: Activity, control: Boolean = false) {
-        val styles = if(control) intArrayOf(R.style.Theme_RoomSound_ControlRequest,R.style.Theme_RoomSound_Midnight_ControlRequest,R.style.Theme_RoomSound_Forest_ControlRequest,R.style.Theme_RoomSound_Rose_ControlRequest)
-            else intArrayOf(R.style.Theme_RoomSound,R.style.Theme_RoomSound_Midnight,R.style.Theme_RoomSound_Forest,R.style.Theme_RoomSound_Rose)
+        val styles = if(control) intArrayOf(R.style.Theme_RoomSound_ControlRequest,R.style.Theme_RoomSound_Playground_ControlRequest)
+            else intArrayOf(R.style.Theme_RoomSound,R.style.Theme_RoomSound_Playground)
         activity.setTheme(styles[selected(activity)])
     }
     private val attributes = mapOf(

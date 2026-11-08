@@ -70,6 +70,9 @@ public abstract class NearbyWSD extends NanoHTTPD {
         private OutputStream out;
 
         private WebSocketFrame.OpCode continuousOpCode = null;
+        private long fragmentedBytes = 0;
+        private int fragmentCount = 0;
+        private long fragmentStartedNanos = 0;
 
         private final List<WebSocketFrame> continuousFrames = new LinkedList<WebSocketFrame>();
 
@@ -189,6 +192,14 @@ public abstract class NearbyWSD extends NanoHTTPD {
         }
 
         private void handleFrameFragment(WebSocketFrame frame) throws IOException {
+            if (frame.getOpCode() != OpCode.Continuation) {
+                if (frame.getOpCode() != OpCode.Text) throw new WebSocketException(CloseCode.ProtocolError, "Only text messages may be fragmented.");
+                this.fragmentedBytes = 0; this.fragmentCount = 0; this.fragmentStartedNanos = System.nanoTime();
+            }
+            this.fragmentedBytes += frame.getBinaryPayload().length;
+            if (this.fragmentedBytes > 300 * 1024 || ++this.fragmentCount > 40 || System.nanoTime() - this.fragmentStartedNanos > 10_000_000_000L) {
+                throw new WebSocketException(CloseCode.MessageTooBig, "Fragmented text message limit exceeded.");
+            }
             if (frame.getOpCode() != OpCode.Continuation) {
                 // First
                 if (this.continuousOpCode != null) {
@@ -447,9 +458,13 @@ public abstract class NearbyWSD extends NanoHTTPD {
 
             WebSocketFrame frame = new WebSocketFrame(opCode, fin);
             frame.readPayloadInfo(in);
+            int maxPayload = opCode == OpCode.Text || opCode == OpCode.Continuation ? 300 * 1024 : 65556;
+            if (frame._payloadLength > maxPayload) {
+                throw new WebSocketException(CloseCode.MessageTooBig, "Frame exceeds the nearby message limit.");
+            }
             // Nearby Vibe sends complete, small PCM frames; do not buffer fragments.
-            if (!fin || opCode == OpCode.Continuation) {
-                throw new WebSocketException(CloseCode.ProtocolError, "Fragmented messages are unsupported.");
+            if (!fin && opCode == OpCode.Binary) {
+                throw new WebSocketException(CloseCode.ProtocolError, "Fragmented music frames are unsupported.");
             }
             frame.readPayload(in);
             if (frame.getOpCode() == OpCode.Close) {
@@ -590,8 +605,8 @@ public abstract class NearbyWSD extends NanoHTTPD {
         }
 
         private void readPayload(InputStream in) throws IOException {
-            if (this._payloadLength > 65556) {
-                throw new WebSocketException(CloseCode.MessageTooBig, "Nearby frame exceeds 64 KiB.");
+            if (this._payloadLength > (this.opCode == OpCode.Text || this.opCode == OpCode.Continuation ? 300 * 1024 : 65556)) {
+                throw new WebSocketException(CloseCode.MessageTooBig, "Nearby frame exceeds its message limit.");
             }
             this.payload = new byte[this._payloadLength];
             int read = 0;
@@ -678,7 +693,7 @@ public abstract class NearbyWSD extends NanoHTTPD {
 
         public void setTextPayload(String payload) throws CharacterCodingException {
             this.payload = text2Binary(payload);
-            this._payloadLength = payload.length();
+            this._payloadLength = this.payload.length;
             this._payloadString = payload;
         }
 

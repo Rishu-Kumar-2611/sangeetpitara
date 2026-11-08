@@ -184,10 +184,14 @@ class RoomSoundWebSocketClient(
         selectRoom(intent)
     }
 
-    fun sendChat(text: String): Boolean {
-        val cleanText = text.trim()
-        if (cleanText.isEmpty()) return false
-        return sendRoomCommand(JSONObject().put("type", "chat").put("text", cleanText))
+    fun sendChat(text: String, replyToId: String? = null, voice: RoomVoiceNote? = null, clientMessageId: String? = null): Boolean {
+        val cleanText = text.trim().take(280)
+        if (cleanText.isEmpty() && voice == null) return false
+        val message = JSONObject().put("type", "chat").put("text", cleanText)
+        replyToId?.let { message.put("replyToId", it) }
+        voice?.let { message.put("voice", JSONObject().put("mimeType", it.mimeType).put("durationMs", it.durationMs).put("data", it.data)) }
+        clientMessageId?.let { message.put("clientMessageId", it) }
+        return sendRoomCommand(message)
     }
 
     /** Toggles this member's [emoji] reaction on a chat message. */
@@ -493,7 +497,11 @@ class RoomSoundWebSocketClient(
                         disconnect()
                     }
                 }
-                "chat" -> emit(RoomSoundEvent.Chat(parseChatMessage(message.objectOrEmpty("message"))))
+                "chat" -> {
+                    val chat = parseChatMessage(message.objectOrEmpty("message"))
+                    synchronized(lock) { roomState = roomState?.let { current -> current.copy(messages = (current.messages.filterNot { it.id == chat.id } + chat).sortedBy { it.createdAt }.takeLast(80)) } }
+                    emit(RoomSoundEvent.Chat(chat))
+                }
                 "reaction" -> message.stringOrNull("messageId")?.let { id ->
                     emit(RoomSoundEvent.Reaction(id, parseReactions(message.optJSONObject("reactions"))))
                 }
@@ -537,13 +545,13 @@ class RoomSoundWebSocketClient(
                 else -> emit(RoomSoundEvent.Unknown(type, message))
             }
         } catch (error: Throwable) {
-            android.util.Log.e("RoomSound", "handleMessage fatal for type '$type': $text", error)
-            emit(RoomSoundEvent.Error("Invalid SangeetPitara '$type' event: ${error.message ?: error.javaClass.simpleName}"))
+            android.util.Log.e("RoomSound", "Invalid event type=$type (${text.length} characters, ${error.javaClass.simpleName})")
+            emit(RoomSoundEvent.Error("Invalid SangeetPitara '$type' event."))
         }
     }
 
     private fun handleRoomState(message: JSONObject, joined: Boolean) {
-        val nextState = parseRoomState(message.objectOrEmpty("state"))
+        var nextState = parseRoomState(message.objectOrEmpty("state"))
         var staleEvent: RoomSoundEvent.StaleStateIgnored? = null
         var accepted = false
         synchronized(lock) {
@@ -551,6 +559,7 @@ class RoomSoundWebSocketClient(
             accepted = previous == null || previous.room.id != nextState.room.id ||
                 nextState.room.sourceEpoch >= previous.room.sourceEpoch
             if (accepted) {
+                if (previous?.room?.id == nextState.room.id) nextState = nextState.copy(messages = mergeChatVoiceReferences(previous.messages, nextState.messages))
                 roomState = nextState
                 if (joined) reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS
                 if (joined || roomIntent != null) {

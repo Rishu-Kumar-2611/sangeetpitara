@@ -22,7 +22,7 @@ test('Nearby Vibe page listens and chats using only a local host', async ({ page
         ws.send(JSON.stringify({type:'joined',reconnectSecret:invite,state:{room:{sourceEpoch:1,sourceStatus:'LIVE'}}}));
         interval=setInterval(()=>{if(ws.readyState===1)ws.send(encodePcm16Frame({sourceEpoch:1,sequence:sequence++,samples:new Int16Array(960).fill(1000)}))},20);
       }
-      if(m.type==='chat')ws.send(JSON.stringify({type:'chat',message:{senderName:'Friend',text:m.text}}));
+      if(m.type==='chat')ws.send(JSON.stringify({type:'chat',message:{id:'local-chat',kind:'chat',senderName:'Friend',text:m.text,createdAt:Date.now()}}));
     });
   });
   try {
@@ -32,11 +32,13 @@ test('Nearby Vibe page listens and chats using only a local host', async ({ page
     await expect(page.getByRole('status')).toContainText('Listening over local Wi-Fi');
     expect(await page.evaluate(()=>ctx.state)).toBe('running');
     expect(await page.evaluate(()=>playing)).toBe(true);
+    await page.locator('#local-tab-health').click();
     const downloading=page.waitForEvent('download');await page.locator('#export-diagnostics').click();const downloaded=await downloading;
     const input=await downloaded.createReadStream();let diagnosticText='';for await(const chunk of input)diagnosticText+=chunk.toString();
     const diagnostic=JSON.parse(diagnosticText);expect(diagnostic.platform).toBe('nearby-web');
     for(const secretText of [invite,'ABC123','Offline listener',base])expect(diagnosticText).not.toContain(secretText);
 
+    await page.locator('#local-tab-chat').click();
     await page.getByLabel('Message',{exact:true}).fill('Offline chat works');
     await page.getByRole('button',{name:'Send',exact:true}).click();
     await expect(page.locator('#chat')).toContainText('Offline chat works');

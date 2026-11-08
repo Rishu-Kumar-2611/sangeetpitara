@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="app-version" content="1.1.13"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="app-version" content="1.1.14"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
 body{background:radial-gradient(ellipse at top left,#19322c 0,transparent 55%),#100d0b;color:#f7f1ea;max-width:640px;padding:clamp(20px,5vw,40px);line-height:1.55}
 h1{font-size:clamp(32px,8vw,44px);letter-spacing:-.045em;margin:12px 0 8px;color:#f5bd68}
 h2{font-size:21px;letter-spacing:-.02em;margin-top:28px}p{color:#d0c2b3}small{display:block;font-size:13px;color:#c4b6a7}
@@ -7,25 +7,278 @@ button{min-height:50px;font-weight:600;background:#efad48;border:1px solid #f8c6
 button:focus-visible,input:focus-visible{outline:3px solid #77cbbb;outline-offset:3px}#status{border:1px solid #77603d;border-radius:16px;background:#211b15;padding:16px;color:#f3d9af}
 #chat{padding-left:22px;border-block:1px solid #ffffff14;min-height:48px}#leave{background:transparent;border-color:#77603d;color:#edcd9e}
 </style>
-<!-- SHARED THEME START --><style data-shared-theme>.theme-bar { position: sticky; top: 0; z-index: 35; display: flex; justify-content: flex-end; padding: 8px clamp(16px,4vw,40px); min-height: 52px; background: var(--glass-strong,#211b15); color: var(--muted,#c4b6a7); border-bottom: 1px solid var(--line,#ffffff18); backdrop-filter: blur(20px); }
-.theme-bar label { display: flex; align-items: center; gap: 10px; font: 14px system-ui; }
-.theme-bar select { width: auto; min-height: 36px; padding: 6px 30px 6px 12px; border-radius: 12px; border: 1px solid var(--line-strong,#77603d); background: var(--surface,#211b15); color: var(--text,#f7f1ea); font: inherit; }
-.theme-bar select:focus-visible { outline: 3px solid var(--accent,#efad48); outline-offset: 2px; }
-html[data-theme] { color-scheme: dark; }
-html[data-theme=midnight] { --bg:#0c1220; --surface:#172238; --text:#f0f4ff; --muted:#b2c2dd; --accent:#91b8ff; --accent-hover:#b9d2ff; --on-accent:#091324; --accent-soft:#91b8ff22; --glass:#172238c0; --glass-strong:#172238eb; --room-color-1:#152c4a !important; --room-color-2:#1c2444 !important; --room-hue-1:210 !important; --room-hue-2:237 !important; }
-html[data-theme=forest] { --bg:#0b1713; --surface:#142820; --text:#eff8ef; --muted:#b6cabb; --accent:#83d7b1; --accent-hover:#b1f3d6; --on-accent:#071c12; --accent-soft:#83d7b122; --glass:#142820c0; --glass-strong:#142820eb; --room-color-1:#153c2c !important; --room-color-2:#173734 !important; --room-hue-1:147 !important; --room-hue-2:174 !important; }
-html[data-theme=rose] { --bg:#1c1018; --surface:#2c1b28; --text:#fff0f7; --muted:#cfb1c3; --accent:#edaccc; --accent-hover:#ffd1e7; --on-accent:#2b0f21; --accent-soft:#edaccc22; --glass:#2c1b28c0; --glass-strong:#2c1b28eb; --room-color-1:#42213a !important; --room-color-2:#361e30 !important; --room-hue-1:326 !important; --room-hue-2:303 !important; }
-html[data-theme] .topbar { top: 60px; }
-html[data-theme] #app + footer { color: var(--muted); }
-@media(max-width:600px) { html[data-theme] .room-actions-menu { top: 124px; } }
+<!-- SHARED THEME START --><style data-shared-theme>/* Shared by the website and offline room bundle. */
+html[data-theme] {
+  --font-display: Georgia, 'Times New Roman', serif;
+  --radius-card:20px; --radius-control:12px;
+  --glass-blur:none; --glass-shadow:none; --shadow:none;
+}
+html[data-theme=dark] {
+  color-scheme:dark;
+  --bg:#191715; --surface:#22201c; --text:#f3eadb; --muted:#bcb2a4;
+  --raised:#2b2823; --raised-strong:#37322b; --line:#3c3730; --line-strong:#625849;
+  --accent:#d7ac68; --accent-hover:#e9c58a; --on-accent:#211a10; --accent-soft:#332b20;
+  --glass:#22201c; --glass-strong:#22201c; --glass-border:#3c3730;
+  --teal:#8fbea5; --teal-text:#abd3bc; --teal-bg:#26342c;
+  --danger-text:#f0a59a; --danger-bg:#3d2825; --danger-line:#79534c;
+  --health-good:#abd3bc; --health-warning:#e9bc76; --health-bad:#f0a59a;
+  --room-color-1:#191715 !important; --room-color-2:#191715 !important;
+}
+html[data-theme=light] {
+  color-scheme:light;
+  --bg:#f1eee5; --surface:#f9f7f0; --text:#292e27; --muted:#5f6559;
+  --raised:#e7e5da; --raised-strong:#dedfd0; --line:#d2d4c4; --line-strong:#929784;
+  --accent:#4e6048; --accent-hover:#354b30; --on-accent:#ffffff; --accent-soft:#e2e7d9;
+  --glass:#f9f7f0; --glass-strong:#f9f7f0; --glass-border:#d2d4c4;
+  --teal:#356047; --teal-text:#2d6044; --teal-bg:#e2e9de;
+  --danger-text:#9b3630; --danger-bg:#f6e5df; --danger-line:#c48c83;
+  --health-good:#286043; --health-warning:#89520b; --health-bad:#9b3630;
+  --room-color-1:#f1eee5 !important; --room-color-2:#f1eee5 !important;
+}
+html[data-theme] body { background:var(--bg); color:var(--text); }
+html[data-theme] .aura { display:none; }
+.theme-bar { display:flex; justify-content:flex-end; align-items:center; min-height:64px; padding:12px max(24px,calc((100vw - 1184px)/2)); color:var(--muted); }
+.theme-bar label { display:flex; align-items:center; gap:10px; font:14px system-ui,sans-serif; }
+.theme-bar select { width:auto; min-height:40px; margin:0; padding:8px 12px; border-radius:24px; border:1px solid var(--line-strong); background:var(--surface); color:var(--text); font:inherit; cursor:pointer; box-shadow:none; }
+html[data-theme] :focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+html[data-theme] .shell { max-width:1248px; padding:16px 32px 40px; }
+html[data-theme] .landing-view[data-entry-screen] { max-width:960px; min-height:calc(100svh - 190px); gap:36px; }
+html[data-theme] .landing-copy .brand-mark { margin-bottom:54px; font-family:var(--font-body); font-size:25px; letter-spacing:-.04em; }
+html[data-theme] .brand-logo { background:transparent; border-radius:0; }
+html[data-theme] .eyebrow { font-family:var(--font-body); font-weight:500; font-size:12px; letter-spacing:.18em; color:var(--muted); }
+html[data-theme] .landing-copy h1 { font-size:clamp(44px,6vw,72px); line-height:1.08; letter-spacing:-.045em; font-weight:400; max-width:740px; margin:20px 0 18px; }
+.hero-light { display:none; }
+html[data-theme=light] .hero-dark { display:none; }
+html[data-theme=light] .hero-light { display:inline; }
+html[data-theme] .landing-hint { font-size:19px; max-width:490px; line-height:1.5; }
+html[data-theme] .apk-download-card { margin-top:28px; padding:0; border:0; background:transparent; box-shadow:none; backdrop-filter:none; max-width:350px; }
+html[data-theme] .apk-download-icon { width:34px; height:34px; background:var(--accent-soft); }
+html[data-theme] .apk-download-copy strong { font-size:16px; font-weight:500; }
+html[data-theme] .apk-download-copy small { font-size:13px; }
+html[data-theme] .apk-download-arrow { display:none; }
+html[data-theme] .welcome-actions { gap:0; border-top:1px solid var(--line); margin-top:8px; }
+html[data-theme] .welcome-choice { padding:24px 64px 24px 8px; border:0; border-bottom:1px solid var(--line); border-radius:0; background:transparent; transition:background .18s ease; }
+html[data-theme] .welcome-choice:hover { background:var(--accent-soft); }
+html[data-theme] .welcome-choice strong { font-size:27px; font-weight:400; letter-spacing:-.025em; }
+html[data-theme] .welcome-choice span { font-size:16px; margin-top:4px; }
+html[data-theme] .welcome-choice b { right:12px; font-family:system-ui,sans-serif; font-weight:400; }
+html[data-theme] .entry-card, html[data-theme] .panel, html[data-theme] .now-playing, html[data-theme] .topbar, html[data-theme] .contact-card { background:var(--surface); border:1px solid var(--line); box-shadow:none; backdrop-filter:none; }
+html[data-theme] .entry-card { padding:32px; border-radius:20px; }
+html[data-theme] .entry-card h2 { font-size:34px; font-weight:400; }
+html[data-theme] .entry-step { background:var(--accent-soft); color:var(--accent); }
+html[data-theme] .text-input, html[data-theme] .chat-input { background:var(--bg); border-color:var(--line-strong); color:var(--text); }
+html[data-theme] input::placeholder, html[data-theme] textarea::placeholder { color:var(--muted); opacity:1; }
+html[data-theme] .primary-button, html[data-theme] .send-button { background:var(--accent); color:var(--on-accent); border-color:var(--accent); box-shadow:none; }
+html[data-theme] .primary-button:hover, html[data-theme] .send-button:hover { background:var(--accent-hover); }
+html[data-theme] .secondary-button, html[data-theme] .ghost-button, html[data-theme] .mute-button, html[data-theme] .room-menu-button { color:var(--text); border-color:var(--line-strong); box-shadow:none; }
+html[data-theme] .secondary-button { background:var(--raised); }
+html[data-theme] .topbar { position:relative; top:auto; border-radius:14px; padding:12px 18px; margin-bottom:28px; }
+html[data-theme] .room-actions-menu { background:var(--surface); border-color:var(--line-strong); box-shadow:0 12px 32px #0002; }
+html[data-theme] .room-heading-row h1 { font-size:40px; font-weight:400; }
+html[data-theme] .now-playing { padding:32px; border-radius:22px; }
+html[data-theme] .source-cover { border-radius:50%; background:repeating-radial-gradient(circle at center,#302e29 0 2px,#22211e 3px 5px); border:8px solid #272621; box-shadow:none; aspect-ratio:1; }
+html[data-theme] .source-cover::before { background:var(--accent); opacity:.65; filter:none; }
+html[data-theme] .source-cover .cover-logo { width:45%; height:45%; border-radius:50%; background:var(--accent-soft); padding:12%; box-sizing:content-box; }
+html[data-theme] .source-card h2 { font-weight:400; letter-spacing:-.035em; }
+html[data-theme] .source-status, html[data-theme] .connection-chip { color:var(--teal-text); background:var(--teal-bg); }
+html[data-theme] .audio-controls-panel, html[data-theme] .request-control-surface { background:var(--bg); border-color:var(--line); border-radius:14px; }
+html[data-theme] .panel h3 { font-weight:400; font-size:26px; }
+html[data-theme] .room-tabs, html[data-theme] .telemetry-card, html[data-theme] .telemetry-stat, html[data-theme] .telemetry-stats > div { background:var(--raised); }
+html[data-theme] .room-tab { color:var(--muted); }
+html[data-theme] .room-tab.active { background:var(--surface); color:var(--text); }
+html[data-theme] .member-avatar { background:var(--accent-soft); color:var(--accent); }
+html[data-theme] .health-metric.good { border-color:var(--health-good); }
+html[data-theme] .health-metric.good b { color:var(--health-good); }
+html[data-theme] .health-metric.warning { border-color:var(--health-warning); }
+html[data-theme] .health-metric.warning b, html[data-theme] .telemetry-state.warning { color:var(--health-warning); }
+html[data-theme] .health-metric.bad { border-color:var(--health-bad); }
+html[data-theme] .health-metric.bad b { color:var(--health-bad); }
+html[data-theme] #app + footer { color:var(--muted); }
+/* The local page uses system fonts and needs no internet assets. */
+html[data-theme] body:has(#local-health) { background:var(--bg); font-family:system-ui,sans-serif; }
+html[data-theme] body:has(#local-health) h1, html[data-theme] body:has(#local-health) h2 { font-family:var(--font-display); font-weight:400; color:var(--text); }
+html[data-theme] body:has(#local-health) input { background:var(--bg); border-color:var(--line-strong); color:var(--text); }
+html[data-theme] body:has(#local-health) aside, html[data-theme] body:has(#local-health) #status { border-color:var(--line); background:var(--surface); }
+html[data-theme] body:has(#local-health) button { box-shadow:none; }
+@media (min-width:900px) {
+  html[data-theme=light] .landing-view[data-entry-screen=home] { max-width:880px; }
+  html[data-theme=light] .landing-view[data-entry-screen=home] .landing-copy { text-align:center; }
+  html[data-theme=light] .landing-view[data-entry-screen=home] .brand-mark, html[data-theme=light] .landing-view[data-entry-screen=home] .apk-download-card { justify-content:center; margin-inline:auto; }
+  html[data-theme=light] .landing-view[data-entry-screen=home] h1, html[data-theme=light] .landing-view[data-entry-screen=home] .landing-hint { margin-inline:auto; }
+}
+@media (max-width:600px) {
+  .theme-bar { padding:8px 20px; min-height:56px; }
+  .theme-bar label { font-size:12px; }
+  html[data-theme] .shell { padding:12px 20px 32px; }
+  html[data-theme] .landing-view[data-entry-screen] { gap:26px; }
+  html[data-theme] .landing-copy .brand-mark { font-size:23px; margin-bottom:38px; }
+  html[data-theme] .landing-copy h1 { font-size:46px; margin:18px 0 14px; }
+  html[data-theme] .landing-hint { font-size:17px; }
+  html[data-theme] .welcome-choice { padding-block:20px; }
+  html[data-theme] .welcome-choice strong { font-size:25px; }
+  html[data-theme] .welcome-choice span { font-size:15px; }
+  html[data-theme] .entry-card { padding:24px 20px; }
+  html[data-theme] .topbar { padding:10px 12px; margin-bottom:20px; }
+  html[data-theme] .room-actions-menu { top:72px; }
+  html[data-theme] .now-playing { padding:28px 20px 20px; }
+  html[data-theme] .source-cover { width:min(52vw,210px); }
+  html[data-theme] .source-waveform { height:48px; }
+}
+html[data-theme] .room-banner, html[data-theme] .legal-warning { background:var(--accent-soft); color:var(--text); border-color:var(--line-strong); }
+html[data-theme] .legal-page p, html[data-theme] .legal-page li { color:var(--muted); }
+html[data-theme] .legal-table { background:var(--surface); }
+html[data-theme] .legal-page h1, html[data-theme] .legal-page h2 { font-weight:400; }
+html[data-theme] .telemetry-stats span { background:var(--bg); }
+html[data-theme] .room-tab.active { box-shadow:none; }
+html[data-theme] .text-input:focus, html[data-theme] .chat-input:focus { box-shadow:0 0 0 3px var(--accent-soft); }
+html[data-theme] .cover-logo { filter:none; }
+@media (max-width:600px) {
+  html[data-theme] .room-crumb { max-width:100%; flex-basis:100%; }
+  html[data-theme] .crumb-room-name { flex:1; min-width:0; }
+  html[data-theme] .source-cover { width:min(44vw,180px); }
+  html[data-theme] .source-card { gap:16px; }
+  html[data-theme] .source-card h2 { font-size:30px; }
+  html[data-theme] .source-waveform { height:32px; margin:14px 0; }
+}
+html[data-theme] .brand-mark { font-family:var(--font-body); }
+html[data-theme] .room-code-small, html[data-theme] .room-code-display strong { font-family:ui-monospace,Consolas,monospace; }
+/* A compact product shell: fewer decorative surfaces, consistent type and scale. */
+html[data-theme] { --font-display:'Mukta','Segoe UI',sans-serif; --radius-card:12px; --radius-control:10px; }
+html[data-theme] .shell { max-width:1160px; }
+html[data-theme] .theme-bar { min-height:48px; padding-block:6px; }
+html[data-theme] .landing-view[data-entry-screen] { max-width:820px; gap:24px; }
+html[data-theme] .landing-copy h1 { font-family:Georgia,serif; font-size:clamp(36px,5vw,56px); }
+html[data-theme] .landing-copy .brand-mark { margin-bottom:32px; }
+html[data-theme] .welcome-choice { padding-block:18px; }
+html[data-theme] .welcome-choice strong { font-family:var(--font-body); font-size:23px; font-weight:500; }
+html[data-theme] .entry-card,html[data-theme] .panel,html[data-theme] .now-playing { border-radius:12px; }
+html[data-theme] .panel h3 { font-family:var(--font-body); font-size:22px; font-weight:600; }
+html[data-theme] .entry-card h2 { font-family:var(--font-body); font-size:28px; font-weight:600; }
+html[data-theme] .source-cover { width:144px; border-width:4px; }
+html[data-theme] .source-card h2 { font-size:32px; font-weight:500; }
+html[data-theme] .source-card { grid-template-columns:144px minmax(0,1fr); }
+html[data-theme] .source-waveform { height:36px; margin-block:14px; }
+html[data-theme] .now-playing { padding:24px; }
+html[data-theme] .health-metric { border:0; border-left:2px solid var(--line); border-radius:4px; }
+html[data-theme] .health-metric strong { font-family:var(--font-body); font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; }
+html[data-theme] .telemetry-peer { border-radius:8px; }
+html[data-theme] .room-tab { min-height:44px; font-size:16px; box-shadow:none; }
+html[data-theme] .room-tab.active { box-shadow:none; }
+@media(max-width:600px) {
+  html[data-theme] .shell { padding:8px 16px 24px; }
+  html[data-theme] .theme-bar { padding-inline:16px; }
+  html[data-theme] .landing-copy h1 { font-size:38px; }
+  html[data-theme] .landing-copy .brand-mark { margin-bottom:24px; }
+  html[data-theme] .landing-hint { font-size:16px; }
+  html[data-theme] .welcome-choice strong { font-size:21px; }
+  html[data-theme] .now-playing { padding:20px 16px; }
+  html[data-theme] .source-card { grid-template-columns:80px minmax(0,1fr); gap:16px; text-align:left; justify-items:start; }
+  html[data-theme] .source-cover { width:80px; }
+  html[data-theme] .source-card-copy { align-items:flex-start; }
+  html[data-theme] .source-card h2 { font-size:24px; }
+  html[data-theme] .source-card p { font-size:14px; }
+  html[data-theme] .topbar { margin-bottom:16px; }
+  html[data-theme] .room-tabs { gap:2px; padding:3px; }
+  html[data-theme] .room-tab { font-size:14px; padding:8px 4px; }
+  html[data-theme] .audio-controls-panel { padding:12px; }
+}
+
+html[data-theme] .legal-table { table-layout:fixed; }
+html[data-theme] .legal-page td,html[data-theme] .legal-page th,html[data-theme] .legal-page a,html[data-theme] .legal-page code { overflow-wrap:anywhere; }
+/* Entry forms are separate screens; the introductory hero belongs to Home. */
+html[data-theme] .landing-view:not([data-entry-screen="home"]) .landing-copy > :not(.brand-mark) { display:none; }
+html[data-theme] .landing-view:not([data-entry-screen="home"]) .landing-copy .brand-mark { margin-bottom:0; }
+
+html[data-theme] .entry-panel-heading { display:none; }
+html[data-theme] .online-entry:has(#rewarded-access[hidden]) .entry-footnote { display:none; }
+/* Active playback uses the selected palette, with no decorative glow. */
+html[data-theme] .source-card.live .source-cover { box-shadow:none; animation:none; transform:none; }
+html[data-theme] .source-card.live .source-status { background:var(--teal-bg); color:var(--teal-text); box-shadow:none; }
+html[data-theme] .source-card.live .status-pulse { background:var(--teal); }
+html[data-theme] .source-waveform { color:var(--accent); caret-color:var(--accent); }
+
+/* A shared player summary keeps the current source within reach in every section. */
+.mini-player { display:flex; align-items:center; gap:14px; width:100%; padding:12px 16px; margin:0 0 20px; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--text); text-align:left; cursor:pointer; }
+.room-view[data-room-tab="listen"] .mini-player { display:none; }
+.mini-player canvas { width:44px; height:28px; flex:none; color:var(--accent); caret-color:var(--accent); }
+.mini-player-copy { display:flex; flex-direction:column; min-width:0; gap:2px; }
+.mini-player-copy strong { font:600 15px var(--font-body); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mini-player-copy > span { font:13px var(--font-body); color:var(--muted); }
+.mini-player-arrow { margin-left:auto; color:var(--accent); }
+html[data-theme] .room-heading-row h1 { font-size:clamp(24px,3vw,34px); }
+html[data-theme] .room-tabs { background:var(--bg); border-bottom:1px solid var(--line); border-radius:0; padding:0; gap:16px; }
+html[data-theme] .room-tab { border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; }
+html[data-theme] .room-tab.active { color:var(--text); border-bottom-color:var(--accent); background:transparent; }
+@media(max-width:600px) and (min-height:500px) {
+  html[data-theme] .room-view { padding-bottom:84px; }
+  html[data-theme] .room-tabs { position:fixed; z-index:30; left:0; right:0; bottom:0; margin:0; padding:6px 12px calc(6px + env(safe-area-inset-bottom)); gap:4px; border-top:1px solid var(--line); border-bottom:0; background:var(--surface); }
+  html[data-theme] .room-tab { min-height:48px; border-bottom:0; border-top:2px solid transparent; }
+  html[data-theme] .room-tab.active { border-top-color:var(--accent); background:var(--accent-soft); border-radius:6px; }
+  .mini-player { padding:10px 12px; margin-bottom:16px; }
+  html[data-theme] body:has(.room-view:not(.hidden)) .toast-stack { bottom:90px; }
+}
+@media(prefers-reduced-motion:reduce) { .source-waveform,.mini-player canvas { opacity:.7; } }
+/* Shared room chat controls, including the offline guest page. */
+.chat-message { display:flex; padding:10px 0; border-bottom:1px solid var(--line); }
+.chat-meta { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.chat-time { color:var(--muted); font-size:12px; }
+.chat-text { overflow-wrap:anywhere; white-space:pre-wrap; }
+.chat-feed { max-height:min(58svh,600px); min-height:160px; }
+.chat-body { flex:1; }
+.chat-reply-button { border:0; background:transparent; color:var(--muted); font:inherit; font-size:13px; min-height:32px; padding:4px 0; cursor:pointer; }
+.chat-quote { display:block; width:100%; text-align:left; border:0; border-left:2px solid var(--accent); padding:8px 12px; background:var(--raised); color:var(--muted); font:inherit; font-size:14px; white-space:normal; overflow-wrap:anywhere; cursor:pointer; }
+.chat-reply-composer { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 20px; padding:10px 12px; border-left:2px solid var(--accent); background:var(--raised); }
+.chat-reply-composer div { min-width:0; flex:1; }
+.chat-reply-composer strong,.chat-reply-composer span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; }
+.chat-reply-composer button { flex:none; }
+.chat-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:0 20px 12px; }
+.chat-tools small { color:var(--muted); font-size:13px; }
+.chat-voice-preview { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 20px; padding:12px; background:var(--raised); border-radius:10px; }
+.chat-voice-player { display:block; width:min(100%,320px); max-width:100%; min-width:0; height:40px; }
+.chat-voice-preview audio { flex:1 1 200px; }
+.chat-content small,.chat-unavailable { color:var(--muted); font-size:13px; }
+.chat-reply-composer[hidden],.chat-voice-preview[hidden] { display:none; }
+@media(max-height:500px) and (orientation:landscape) {
+  .theme-bar { min-height:44px; padding-block:4px; }
+  .chat-feed { max-height:48svh; }
+  .source-card { grid-template-columns:96px minmax(0,1fr); text-align:left; }
+  .source-card-copy { align-items:flex-start; }
+}
+
+body:has(#local-health) .chat-tools button,body:has(#local-health) .chat-voice-preview button,body:has(#local-health) .chat-reply-composer button,body:has(#local-health) .chat-reply-button { width:auto; padding:8px 12px; min-height:40px; }
+body:has(#local-health) #chat { padding:0; }
+body:has(#local-health) .chat-tools,body:has(#local-health) .chat-reply-composer,body:has(#local-health) .chat-voice-preview { margin-inline:0; padding-inline:8px; }
+
+.local-header { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:8px; }
+.local-header span { color:var(--muted); font-size:14px; }
+.local-tabs { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; margin:20px 0; padding:4px; background:var(--raised); border-radius:10px; }
+html[data-theme] .local-tabs button { border:0; background:transparent; color:var(--muted); font-size:14px; padding:8px 4px; min-height:44px; margin:0; }
+html[data-theme] .local-tabs button[aria-selected=true] { color:var(--text); background:var(--surface); }
+.local-panel { border:1px solid var(--line); background:var(--surface); border-radius:12px; padding:16px; }
+.local-panel h2:first-child { margin-top:0; }
+.local-panel #chat { max-height:50svh; }
+.local-panel[hidden],#local-entry[hidden] { display:none; }
+html[data-theme] body:has(#local-health) { max-width:900px; }
+html[data-theme] body:has(#local-health) h2 { font-size:21px; }
+html[data-theme] body:has(#local-health) .chat-tools .ghost-button { background:transparent; color:var(--text); border:1px solid var(--line-strong); box-shadow:none; }
+html[data-theme] .local-panel #chat { border-block-color:var(--line); }
 
 :root{--bg:#100d0b;--surface:#211b15;--text:#f7f1ea;--muted:#c4b6a7;--accent:#efad48;--on-accent:#19150d;--room-color-1:#19322c;--room-color-2:#281b12}
 body{background:radial-gradient(ellipse at top left,var(--room-color-1),transparent 65%),var(--bg);color:var(--text)}h1,a{color:var(--accent)}p,small{color:var(--muted)}input{background:var(--bg);color:var(--text)}button{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}#status{background:var(--surface);color:var(--text)}#leave{color:var(--accent)}aside{border:1px solid #ffffff22;border-radius:16px;padding:16px;margin:16px 0;font-size:15px}.theme-bar{padding:8px 0;background:var(--surface)}
 </style><script data-shared-theme>(() => {
-  const choices = [['brass','Brass'],['midnight','Midnight'],['forest','Forest'],['rose','Rose']];
-  let selected = 'brass';
-  try { const saved = localStorage.getItem('sangeetpitara-theme'); if (choices.some(([key]) => key === saved)) selected = saved; } catch {}
-  document.documentElement.dataset.theme = selected;
+  const choices = [['dark', 'Mehfil · Dark'], ['light', 'Playground · Light']];
+  let selected = 'dark';
+  try {
+    const saved = localStorage.getItem('sangeetpitara-theme');
+    // Older palettes were dark; also accept the light design-preview names.
+    if (['light', 'playground', 'courtyard'].includes(saved)) selected = 'light';
+  } catch {}
+  const apply = (key) => {
+    document.documentElement.dataset.theme = key;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = key === 'light' ? '#f1eee5' : '#191715';
+  };
+  apply(selected);
   const attach = () => {
     const bar = document.createElement('div'); bar.className = 'theme-bar';
     const label = document.createElement('label'); label.textContent = 'Theme ';
@@ -33,7 +286,7 @@ body{background:radial-gradient(ellipse at top left,var(--room-color-1),transpar
     for (const [key,name] of choices) { const option = document.createElement('option'); option.value = key; option.textContent = name; picker.append(option); }
     picker.value = selected;
     picker.addEventListener('change', () => {
-      document.documentElement.dataset.theme = picker.value;
+      apply(picker.value);
       try { localStorage.setItem('sangeetpitara-theme',picker.value); } catch {}
     });
     label.append(picker); bar.append(label); document.body.prepend(bar);
@@ -41,6 +294,100 @@ body{background:radial-gradient(ellipse at top left,var(--room-color-1),transpar
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',attach,{once:true}); else attach();
 })();
 </script><!-- SHARED THEME END -->
+<script data-shared-chat>const make = (tag, cls, text) => { const el=document.createElement(tag); if(cls)el.className=cls; if(text!=null)el.textContent=text; return el; };
+const button = (text, action, cls='secondary-button') => { const el=make('button',cls,text);el.type='button';el.addEventListener('click',action);return el; };
+class RoomChatUI {
+  constructor({feed,input,form,send,getMessages,getSelfId,onError}) {
+    Object.assign(this,{feed,input,form,send,getMessages,getSelfId,onError}); this.urls=new Map(); this.nodes=new Map(); this.generation=0;
+    this.reply=make('div','chat-reply-composer');this.reply.hidden=true;form.before(this.reply);
+    this.preview=make('div','chat-voice-preview');this.preview.hidden=true;form.before(this.preview);
+    this.tools=make('div','chat-tools');this.recordButton=button('Record voice',()=>this.toggleRecording(),'ghost-button');this.tools.append(this.recordButton);form.after(this.tools);
+    this.feed.addEventListener('play',e=>{if(e.target.tagName==='AUDIO')for(const audio of this.feed.querySelectorAll('audio'))if(audio!==e.target)audio.pause();},true);
+    this.hideHandler=()=>{if(document.hidden)this.cancelRecording();};document.addEventListener('visibilitychange',this.hideHandler);
+    this.pageHandler=()=>this.reset();addEventListener('pagehide',this.pageHandler);
+    if(!globalThis.isSecureContext||!navigator.mediaDevices?.getUserMedia||!globalThis.MediaRecorder) {this.recordButton.disabled=true;this.recordButton.title='Voice recording needs HTTPS or the desktop companion. You can still listen and reply.';this.tools.append(make('small','','Recording needs HTTPS or the desktop companion.'));}
+  }
+  selectReply(message) {
+    this.replyId=message.id;this.reply.hidden=false;this.reply.replaceChildren();
+    const copy=make('div');copy.append(make('strong','',`Replying to ${message.senderName||'Room'}`),make('span','',message.voice?'Voice message':message.text));
+    this.reply.append(copy,button('Cancel reply',()=>this.clearReply(),'ghost-button'));this.input.focus();
+  }
+  clearReply(){this.replyId=null;this.reply.hidden=true;this.reply.replaceChildren();}
+  payload(content){return {...content,...(this.replyId?{replyToId:this.replyId}:{})};}
+  render(messages,reactions){
+    const near=this.feed.scrollHeight-this.feed.scrollTop-this.feed.clientHeight<64;const ids=new Set(messages.map(m=>m.id));
+    for(const [id,node] of this.nodes)if(!ids.has(id)){node.remove();this.nodes.delete(id);this.releaseUrl(id);}
+    this.feed.querySelector('.request-empty')?.remove();
+    if(!messages.length)this.feed.append(make('p','request-empty','Start the conversation with the room.'));
+    for(const message of messages){
+      if(this.pendingId&&message.clientMessageId===this.pendingId&&message.senderId===this.getSelfId()){this.pendingId=null;clearTimeout(this.ackTimer);this.discardDraft();this.clearReply();}
+      let node=this.nodes.get(message.id);
+      if(!node){
+        node=make('article','chat-message');node.dataset.messageId=message.id;node.id=`chat-${message.id}`;
+        const body=make('div','chat-body');const meta=make('div','chat-meta');meta.append(make('strong','chat-name',message.senderName||'Room'),make('time','chat-time',new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})));
+        body.append(meta);
+        if(message.replyTo){const quote=button(`${message.replyTo.senderName||'Room'}: ${message.replyTo.text}`,()=>{const target=this.nodes.get(message.replyTo.id);if(target){target.scrollIntoView({block:'nearest',behavior:'smooth'});target.setAttribute('tabindex','-1');target.focus({preventScroll:true});}else this.onError('The original message is no longer in this room history.');},'chat-quote');body.append(quote);}
+        const content=make('div','chat-content');body.append(content);
+        if(!message.voice)content.append(make('div','chat-text',message.text));
+        body.append(button('Reply',()=>this.selectReply(message),'chat-reply-button'),make('div','chat-message-reactions'));node.append(body);this.nodes.set(message.id,node);this.feed.append(node);
+      }
+      if(message.voice){
+        const content=node.querySelector('.chat-content');
+        if(message.voice.data&&!this.urls.has(message.id)){
+          try {const bytes=Uint8Array.from(atob(message.voice.data),c=>c.charCodeAt(0));if(bytes.length>192*1024)throw Error();const url=URL.createObjectURL(new Blob([bytes],{type:message.voice.mimeType}));this.urls.set(message.id,url);const audio=make('audio','chat-voice-player');audio.controls=true;audio.preload='none';audio.src=url;audio.setAttribute('aria-label',`Voice message from ${message.senderName}`);content.replaceChildren(audio,make('small','',`Voice message · ${Math.ceil(message.voice.durationMs/1000)} sec`));}catch{content.replaceChildren(make('p','','This recording could not be opened.'));}
+        }else if(!message.voice.data){this.releaseUrl(message.id);content.replaceChildren(make('p','chat-unavailable','Recording is no longer available.'));}
+      }
+      if(reactions)node.querySelector('.chat-message-reactions').innerHTML=reactions(message);
+    }
+    if(near)this.feed.scrollTop=this.feed.scrollHeight;
+  }
+  releaseUrl(id){const url=this.urls.get(id);if(url){URL.revokeObjectURL(url);this.urls.delete(id);}}
+  async toggleRecording(){
+    if(this.recorder?.state==='recording'){this.recorder.stop();return;}
+    if(this.draft){this.showDraft();return;}
+    if(this.requesting)return;this.requesting=true;const generation=++this.generation;
+    try {
+      const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true},video:false});
+      if(generation!==this.generation){stream.getTracks().forEach(t=>t.stop());return;}
+      const mimeType=['audio/webm;codecs=opus','audio/mp4','audio/ogg;codecs=opus'].find(t=>MediaRecorder.isTypeSupported(t));
+      if(!mimeType){stream.getTracks().forEach(t=>t.stop());throw Error('Voice recording is not supported in this browser.');}
+      this.stream=stream;this.chunks=[];this.bytes=0;this.cancelled=false;this.started=performance.now();
+      this.recorder=new MediaRecorder(stream,{mimeType,audioBitsPerSecond:24000});
+      this.recorder.ondataavailable=e=>{if(this.cancelled)return;if(e.data.size){this.bytes+=e.data.size;this.chunks.push(e.data);if(this.bytes>192*1024){this.cancelled=true;if(this.recorder.state==='recording')this.recorder.stop();this.onError('Recording is too large. Try a shorter voice note.');}}};
+      this.recorder.onerror=()=>{this.cancelled=true;if(this.recorder.state==='recording')this.recorder.stop();this.onError('The microphone recording failed. Please try again.');};
+      this.recorder.onstop=async()=>{
+        clearInterval(this.recordTimer);stream.getTracks().forEach(t=>t.stop());this.stream=null;this.recordButton.textContent='Record voice';this.preview.hidden=true;
+        const chunks=this.chunks;this.chunks=[];
+        if(this.cancelled||generation!==this.generation)return;
+        const blob=new Blob(chunks,{type:mimeType}),durationMs=Math.min(30000,Math.round(performance.now()-this.started));
+        if(durationMs<200||blob.size<12||blob.size>192*1024)return this.onError('Please record between 1 and 30 seconds.');
+        const bytes=new Uint8Array(await blob.arrayBuffer());if(generation!==this.generation)return;
+        let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
+        this.draft={data:btoa(binary),mimeType,durationMs};this.draftId=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');this.draftUrl=URL.createObjectURL(blob);this.showDraft();
+      };
+      this.recorder.start(250);this.preview.hidden=false;const label=make('span');label.setAttribute('role','status');this.preview.replaceChildren(label,button('Discard',()=>this.cancelRecording()));
+      const tick=()=>{const elapsed=Math.round((performance.now()-this.started)/1000);label.textContent=`Recording ${Math.min(30,elapsed)} / 30 sec`;if(elapsed>=30&&this.recorder.state==='recording')this.recorder.stop();};
+      tick();this.recordTimer=setInterval(tick,250);this.recordButton.textContent='Stop recording';
+    }catch(error){this.stream?.getTracks().forEach(t=>t.stop());this.onError(error.name==='NotAllowedError'?'Microphone access was denied. You can still send text messages.':error.message||'The microphone is unavailable.');}
+    finally {this.requesting=false;}
+  }
+  showDraft(){
+    this.preview.hidden=false;const audio=make('audio','chat-voice-player');audio.controls=true;audio.src=this.draftUrl;audio.preload='metadata';
+    this.preview.replaceChildren(audio,button('Send voice',()=>this.sendDraft(),'primary-button'),button('Discard',()=>this.discardDraft()));
+    this.recordButton.textContent='Review voice';
+  }
+  sendDraft(){
+    if(!this.draft||this.pendingId)return;
+    if(this.send(this.payload({type:'chat',voice:this.draft,clientMessageId:this.draftId}))===false)return;
+    this.pendingId=this.draftId;this.preview.querySelector('button').disabled=true;
+    this.ackTimer=setTimeout(()=>{this.pendingId=null;if(this.draft){this.showDraft();this.onError('Sending was not confirmed. Reconnect and retry; the recording is still here.');}},15000);
+  }
+  sendFailed(){if(this.pendingId){clearTimeout(this.ackTimer);this.pendingId=null;if(this.draft)this.showDraft();}}
+  cancelRecording(){++this.generation;this.cancelled=true;clearInterval(this.recordTimer);if(this.recorder?.state==='recording')this.recorder.stop();this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;if(!this.draft)this.preview.hidden=true;this.recordButton.textContent=this.draft?'Review voice':'Record voice';}
+  discardDraft(){if(this.draftUrl)URL.revokeObjectURL(this.draftUrl);this.draftUrl=null;this.draft=null;this.preview.hidden=true;this.preview.replaceChildren();this.recordButton.textContent='Record voice';}
+  reset(){this.cancelRecording();clearTimeout(this.ackTimer);this.pendingId=null;this.discardDraft();this.clearReply();for(const id of this.urls.keys())this.releaseUrl(id);this.nodes.clear();this.feed.replaceChildren();}
+}
+</script><!-- SHARED CHAT END -->
 <script data-shared-diagnostics>// Explicit allowlists: diagnostics never accept names, URLs, identifiers, audio,
 // chat, arbitrary errors, or capture content. Nothing is sent to a server.
 const NUMBERS = new Set(['epoch','sentPackets','receivedPackets','missingPackets','underruns','bufferMs','targetMs','jitterMs','queueMs','packetAgeMs','rms','peak','reconnects','closeCode','captureDrops','staleCaptureDrops','socketDrops','acceptedCaptureFrames','rejectedCaptureFrames']);
@@ -132,10 +479,23 @@ class AudioDiagnostics {
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  * #L%
  */ -->
-<section id="desktop-pairing" hidden><h2>Connect to your local host</h2><p>Join the host's Wi-Fi or hotspot, then paste the complete invite copied from the updated Android app.</p><form id="pair-form"><label for="pair-invite">Host's local invite</label><input id="pair-invite" type="url" required><button>Connect to host</button></form><p id="pair-status" role="status"></p></section><h1>Play Close</h1><section aria-label="Stream health"><h2>Stream health</h2><div id="local-health"></div><button id="export-diagnostics" type="button">Save audio diagnostics</button><small>Green: ideal · Orange: tolerable · Red: attention. Adaptive buffering protects continuity by adding delay. Format and packet totals do not certify sound fidelity.</small></section><p>Take turns playing music. Same Wi-Fi or hotspot. No internet required.</p><small>This local room uses your hotspot's network security. Join a trusted host; keep the hotspot password private. Your browser may pause audio when backgrounded.</small><p id="status" role="status">Enter your name and tap Listen.</p><label for="name">Your name</label><input id="name" maxlength="40" autocomplete="nickname"><button id="listen">Join and listen</button><button id="leave" hidden>Leave room</button><label for="volume">Volume</label><input id="volume" type="range" min="0" max="1" step=".05" value=".8"><section id="controls" hidden><h2>Audio control</h2><p id="source-status"></p><p>To share sound from other Android apps, use Play Close → Join nearby room in app. On Windows, use the desktop companion to share screen or tab audio after approval. Only audio is sent to the room; your screen video stays on your device.</p><button id="share-screen" hidden>Share screen / system audio</button><aside id="screen-setup"><p>Screen audio needs the Windows desktop companion. Download and extract it, run Start Play Close.cmd, then paste this host's complete invite into its local browser page. After approval, select Entire screen and enable Share system audio, or choose a Chrome/Edge tab with audio.</p><a href="https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/latest/download/SangeetPitara-Desktop-Windows.zip" target="_blank" rel="noopener">Download Windows companion</a><p>The download needs internet once. Room audio stays on your hotspot. Ordinary HTTP invite pages can still listen and share saved files.</p></aside><label for="track">Or share a saved music file</label><input id="track" type="file" accept="audio/*"><button id="request">Ask to play music</button><button id="cancel-request" hidden>Cancel request</button><button id="share" hidden>Play selected music</button><button id="stop-source" hidden>Stop sharing</button><button id="takeover" hidden>Take back audio control</button><div id="moderation"></div></section><h2>Room chat</h2><ul id="chat"></ul><form id="form"><label for="message">Message</label><input id="message" maxlength="1000"><button>Send</button></form>
+<section id="desktop-pairing" hidden><h2>Connect to your local host</h2><p>Join the host's Wi-Fi or hotspot, then paste the complete invite copied from the updated Android app.</p><form id="pair-form"><label for="pair-invite">Host's local invite</label><input id="pair-invite" type="url" required><button>Connect to host</button></form><p id="pair-status" role="status"></p></section><header class="local-header"><h1>Play Close</h1><span>Local audio room</span></header>
+<p id="status" role="status">Enter your name and tap Listen.</p>
+<section id="local-entry"><label for="name">Your name</label><input id="name" maxlength="40" autocomplete="nickname"><button id="listen">Join and listen</button><details><summary>About local listening</summary><p>Join the host's Wi-Fi or hotspot. Room audio needs no internet. Use a trusted hotspot and keep its password private. Your browser may pause audio in the background.</p></details></section>
+<nav class="local-tabs" role="tablist" aria-label="Nearby room sections"><button id="local-tab-room" role="tab" type="button" aria-selected="true" aria-controls="local-listen-panel" data-local-tab="room" tabindex="0">Room</button><button id="local-tab-chat" role="tab" type="button" aria-selected="false" aria-controls="local-chat-panel" data-local-tab="chat" tabindex="-1">Chat</button><button id="local-tab-people" role="tab" type="button" aria-selected="false" aria-controls="local-people-panel" data-local-tab="people" tabindex="-1">People</button><button id="local-tab-health" role="tab" type="button" aria-selected="false" aria-controls="local-health-panel" data-local-tab="health" tabindex="-1">Health</button></nav>
+<section id="local-listen-panel" class="local-panel" role="tabpanel" aria-labelledby="local-tab-room"><label for="volume">Your listening volume</label><input id="volume" type="range" min="0" max="1" step=".05" value=".8"><section id="controls" hidden><h2>Audio control</h2><p id="source-status"></p><p>To share sound from other Android apps, use Play Close → Join nearby room in app. On Windows, use the desktop companion to share screen or tab audio after approval. Only audio is sent to the room; your screen video stays on your device.</p><button id="share-screen" hidden>Share screen / system audio</button><aside id="screen-setup"><p>Screen audio needs the Windows desktop companion. Download and extract it, run Start Play Close.cmd, then paste this host's complete invite into its local browser page. After approval, select Entire screen and enable Share system audio, or choose a Chrome/Edge tab with audio.</p><a href="https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/latest/download/SangeetPitara-Desktop-Windows.zip" target="_blank" rel="noopener">Download Windows companion</a><p>The download needs internet once. Room audio stays on your hotspot. Ordinary HTTP invite pages can still listen and share saved files.</p></aside><label for="track">Or share a saved music file</label><input id="track" type="file" accept="audio/*"><button id="request">Ask to play music</button><button id="cancel-request" hidden>Cancel request</button><button id="share" hidden>Play selected music</button><button id="stop-source" hidden>Stop sharing</button><button id="takeover" hidden>Take back audio control</button></section></section>
+<section id="local-chat-panel" class="local-panel" role="tabpanel" aria-labelledby="local-tab-chat" hidden><h2>Room chat</h2><div id="chat" role="log" aria-label="Room messages"></div><form id="form"><label for="message">Message</label><input id="message" maxlength="280"><button>Send</button></form></section>
+<section id="local-people-panel" class="local-panel" role="tabpanel" aria-labelledby="local-tab-people" hidden><h2>People</h2><div id="local-people"></div><h2>Audio requests</h2><div id="moderation"></div></section><section id="local-health-panel" class="local-panel" role="tabpanel" aria-labelledby="local-tab-health" hidden><h2>Stream health</h2><div id="local-health"></div><button id="export-diagnostics" type="button">Save audio diagnostics</button><small>Green: ideal · Orange: tolerable · Red: attention. Adaptive buffering protects continuity by adding delay. Format and packet totals do not certify sound fidelity.</small></section><button id="leave" hidden>Leave room</button>
 <script>
 'use strict';
 const $=id=>document.getElementById(id),params=new URLSearchParams(location.hash.slice(1)),invite=params.get('invite'),code=params.get('code');
+function localTab(key) {
+  for(const tab of document.querySelectorAll('[data-local-tab]')) {const active=tab.dataset.localTab===key;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;}
+  for(const [section,id] of [['room','local-listen-panel'],['chat','local-chat-panel'],['people','local-people-panel'],['health','local-health-panel']])$(id).hidden=section!==key;
+  if(key!=='chat')localChatUi.cancelRecording();
+}
+for(const tab of document.querySelectorAll('[data-local-tab]'))tab.addEventListener('click',()=>localTab(tab.dataset.localTab));
+document.querySelector('.local-tabs').addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;const tabs=[...document.querySelectorAll('[data-local-tab]')],current=tabs.indexOf(document.activeElement);if(current<0)return;event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(current+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;localTab(tabs[next].dataset.localTab);tabs[next].focus();});
 let ws,ctx,gain,node,joining=false,ended=false,retry=0,timer,epoch=null,guest=crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random(),secret=null;
 const identityKey='nv-'+(window.NEARBY_DESKTOP?.scope||params.get('pin')||location.host)+'-'+invite;
 try{guest=sessionStorage.getItem(identityKey+'-guest')||guest;sessionStorage.setItem(identityKey+'-guest',guest);secret=sessionStorage.getItem(identityKey+'-secret')}catch{}
@@ -145,15 +505,17 @@ const localDiagnostics=new AudioDiagnostics();
 let localPublished=0,localSocketDrops=0,localReceived=0,localMissing=0,localLastSequence=null,localPacketAt=null;
 $('export-diagnostics').onclick=()=>{const blob=new Blob([JSON.stringify(localDiagnostics.export({platform:'nearby-web',version:document.querySelector('meta[name=app-version]')?.content}),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='SangeetPitara-audio-diagnostics.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 let localUnderruns=0,localUnderrunEvents=[];
-function localFactor(label,value,ideal,grade){const row=document.createElement('p');row.style.color=['#70dba5','#ffb454','#ff9a9a','#b6a797'][grade];row.textContent=label+': '+value+' · '+['Healthy','Watch','Needs attention','Informational'][grade]+' · '+ideal;return row}
+function localFactor(label,value,ideal,grade){const row=document.createElement('p');row.style.color=['var(--health-good)','var(--health-warning)','var(--health-bad)','var(--muted)'][grade];row.textContent=label+': '+value+' · '+['Healthy','Watch','Needs attention','Informational'][grade]+' · '+ideal;return row}
 setInterval(()=>{const now=Date.now();localUnderrunEvents=localUnderrunEvents.filter(t=>now-t<60000);const panel=$('local-health');if(!panel)return;const online=ws?.readyState===WebSocket.OPEN,active=roomState?.room?.sourceStatus==='LIVE',sending=publishEpoch!==null;const recent=localUnderrunEvents.length;localDiagnostics.record({mode:'nearby',direction:!active?'idle':sending?'sender':'listener',connection:online?'connected':'offline',epoch:roomState?.room?.sourceEpoch,receivedPackets:localReceived,sentPackets:localPublished,socketDrops:sending?localSocketDrops:undefined,missingPackets:sending?undefined:localMissing,underruns:sending?undefined:localUnderruns,bufferMs:sending?undefined:fill/48,targetMs:sending?undefined:target/48,packetAgeMs:localPacketAt===null?undefined:now-localPacketAt,queueMs:sending?(ws?.bufferedAmount||0)/96:undefined,output:ctx?.state||'unavailable',refilling:active&&!sending&&!playing});panel.replaceChildren(localFactor('Connection',online?'Connected':'Not connected','Ideal: connected',online?0:joining?2:3),localFactor('Playback buffer',Math.round(fill/48)+' ms','Ideal: near adaptive target '+Math.round(target/48)+' ms (±25% / 20 ms)',!active||sending?3:!playing?2:Math.abs(fill-target)<=Math.max(960,target*.25)?0:fill>=target*.5?1:2),localFactor('Underruns / 60 s',recent+' (total '+localUnderruns+')','Ideal: 0 · tolerable: 1',!active||sending?3:recent===0?0:recent===1?1:2),localFactor('Format','48 kHz PCM16 mono','Source format; not a listening quality score',3));},1000);
 function status(t){$('status').textContent=t}
 function reset(){localLastSequence=null;localPacketAt=null;write=read=fill=0;playing=false;lastArrival=null;target=5760}
 function send(data){if(ws?.readyState===WebSocket.OPEN)ws.send(JSON.stringify(data))}
-function append(name,text){const li=document.createElement('li');li.textContent=name+': '+text;$('chat').append(li);while($('chat').children.length>50)$('chat').firstChild.remove()}
+const localChatMessages=new Map();
+const localChatUi=new RoomChatUI({feed:$('chat'),input:$('message'),form:$('form'),getMessages:()=>[...localChatMessages.values()],getSelfId:()=>roomState?.self?.id,onError:status,send:payload=>{if(ws?.readyState!==WebSocket.OPEN||ws.bufferedAmount>128*1024){status('Reconnect before sending; your message is still here.');return false}send(payload);return true}});
+function append(message){const previous=localChatMessages.get(message.id);if(message.voice?.referenceOnly&&previous?.voice?.data)message={...message,voice:{...message.voice,data:previous.voice.data}};localChatMessages.set(message.id,message);while(localChatMessages.size>50)localChatMessages.delete(localChatMessages.keys().next().value);localChatUi.render([...localChatMessages.values()].filter(m=>m.kind==='chat'))}
 function connect(){if(!joining||ended)return;ws=new WebSocket('ws://'+location.host+'/?invite='+encodeURIComponent(invite));ws.binaryType='arraybuffer';
 ws.onopen=()=>send({type:'join-room',code,guestId:guest,reconnectSecret:secret,displayName:$('name').value.trim()});
-ws.onmessage=e=>{if(typeof e.data==='string'){const m=JSON.parse(e.data);if(m.type==='joined'){secret=m.reconnectSecret;try{sessionStorage.setItem(identityKey+'-secret',secret)}catch{}retry=0;status('Connected locally. Waiting for host music.');$('listen').hidden=true;$('leave').hidden=false}if(m.state){renderControls(m.state);const r=m.state.room;if(epoch!==r.sourceEpoch){reset();epoch=r.sourceEpoch}if(r.sourceStatus!=='LIVE'){reset();if(!localShareError)status('Connected locally. Waiting for host music.')}}if(m.type==='chat')append(m.message.senderName,m.message.text);if(m.type==='removed'){ended=true;stop();status('You were removed from this nearby room.')}if(m.type==='room-ended'){ended=true;stop();status('The host ended this nearby room.')}if(m.type==='error')status(m.message);return}
+ws.onmessage=e=>{if(typeof e.data==='string'){const m=JSON.parse(e.data);if(m.type==='joined'){secret=m.reconnectSecret;try{sessionStorage.setItem(identityKey+'-secret',secret)}catch{}retry=0;$('local-entry').hidden=true;status('Connected locally. Waiting for host music.');$('listen').hidden=true;$('leave').hidden=false}if(m.state){for(const message of m.state.messages||[])append(message);renderControls(m.state);const r=m.state.room;if(epoch!==r.sourceEpoch){reset();epoch=r.sourceEpoch}if(r.sourceStatus!=='LIVE'){reset();if(!localShareError)status('Connected locally. Waiting for host music.')}}if(m.type==='chat')append(m.message);if(m.type==='removed'){ended=true;stop();status('You were removed from this nearby room.')}if(m.type==='room-ended'){ended=true;stop();status('The host ended this nearby room.')}if(m.type==='error')status(m.message);return}
 const v=new DataView(e.data);if(v.byteLength<20||v.getUint32(0)!==0x52535231||v.getUint8(4)!==1||v.getUint8(5)!==1||v.getUint32(6,true)!==48000||v.getUint32(10,true)!==epoch)return;
 const n=v.getUint16(18,true);if(n<1||n>32768||20+n*2!==v.byteLength)return;const now=performance.now();if(lastArrival!==null&&now-lastArrival>80)target=Math.min(144000,Math.max(target,Math.ceil((now-lastArrival+100)*48)));lastArrival=now;
 const packetSequence=v.getUint32(14,true);if(localLastSequence!==null){const distance=(packetSequence-localLastSequence)>>>0;if(distance===0||distance>=0x80000000)return;if(distance>1)localMissing+=distance-1}localLastSequence=packetSequence;localPacketAt=Date.now();localReceived++;if(fill+n>=ring.length){read=write;fill=0;playing=false}for(let i=0;i<n;i++){ring[write]=v.getInt16(20+i*2,true)/32768;write=(write+1)%ring.length}fill+=n;if(!playing&&fill>=target){playing=true;status('Listening over local Wi-Fi · '+Math.round(fill/48)+' ms buffered')}
@@ -161,7 +523,7 @@ const packetSequence=v.getUint32(14,true);if(localLastSequence!==null){const dis
 ws.onclose=e=>{localDiagnostics.event('socket_closed',{closeCode:e.code});stopTrack();$('controls').hidden=true;if(joining&&!ended){status('Local connection lost. Reconnecting to the host…');timer=setTimeout(connect,Math.min(10000,1000*2**retry++))}};
 ws.onerror=()=>status('Cannot reach the host. Check that you joined the same hotspot and the host app is running.');}
 async function audio(){ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});await ctx.resume();gain=ctx.createGain();gain.gain.value=Number($('volume').value);gain.connect(ctx.destination);node=ctx.createScriptProcessor(2048,0,1);node.onaudioprocess=e=>{const out=e.outputBuffer.getChannelData(0),step=48000/ctx.sampleRate;for(let i=0;i<out.length;i++){if(!playing||fill<Math.ceil(step)+1){out[i]=0;if(playing){localUnderruns++;localUnderrunEvents.push(Date.now());playing=false;target=Math.min(144000,Math.max(target+4800,target*1.5));status('Buffering local music…')}continue}const at=Math.floor(read),f=read-at;out[i]=ring[at]*(1-f)+ring[(at+1)%ring.length]*f;read=(read+step)%ring.length;fill-=step}};node.connect(gain)}
-function stop(){stopTrack();roomState=null;$('controls').hidden=true;joining=false;clearTimeout(timer);send({type:'leave-room'});ws?.close();node?.disconnect();gain?.disconnect();ctx?.close();ctx=null;reset();$('listen').hidden=false;$('leave').hidden=true}
+function stop(){localChatUi.reset();localChatMessages.clear();stopTrack();roomState=null;$('controls').hidden=true;joining=false;clearTimeout(timer);send({type:'leave-room'});ws?.close();node?.disconnect();gain?.disconnect();ctx?.close();ctx=null;reset();$('listen').hidden=false;$('leave').hidden=true;$('local-entry').hidden=false}
 function stopTrack(){
   captureGeneration++;pendingScreenEpoch=null;
   const captured=screenStream;screenStream=null;captured?.getTracks().forEach(track=>track.stop());
@@ -170,7 +532,9 @@ function stopTrack(){
   if(trackUrl)URL.revokeObjectURL(trackUrl);trackUrl=null;packetSamples=[];publishEpoch=null;
 }
 function renderControls(state){
-  roomState=state;const self=state.self,room=state.room;if(!self)return;
+  roomState=state;const self=state.self,room=state.room;
+  $('local-people').replaceChildren(...(state.members||[]).map(member=>{const row=document.createElement('p');row.textContent=member.name+(member.id===room.hostId?' · Host':'')+(member.online?'':' · Offline');return row}));
+  if(!self)return;
   $('controls').hidden=false;const mine=room.activeSourceId===self.id,moderator=self.id===room.hostId||self.id===room.cohostId;
   const pending=(state.requests||[]).find(r=>r.requesterId===self.id&&r.status==='PENDING');
   const source=(state.members||[]).find(m=>m.id===room.activeSourceId);
@@ -260,5 +624,5 @@ $('share').onclick=async()=>{
   }catch(error){stopTrack();if(roomState?.room.activeSourceId===roomState?.self?.id)send({type:'stop-source'});localShareError=error.message||'Could not play that music file.';status(localShareError)}
 };
 $('listen').onclick=async()=>{if(joining)return;if(!invite||!code){status('Open the complete local invitation copied by your host.');return}if(!$('name').value.trim()){status('Enter your name first.');return}try{ended=false;await audio();joining=true;connect()}catch{status('Audio could not start. Try Chrome or another browser, then tap Listen again.')}};
-$('leave').onclick=()=>{stop();status('You left the nearby room.')};$('volume').oninput=()=>{if(gain)gain.gain.value=Number($('volume').value)};$('form').onsubmit=e=>{e.preventDefault();if($('message').value.trim()){send({type:'chat',text:$('message').value.trim()});$('message').value=''}};addEventListener('pagehide',stop);
+$('leave').onclick=()=>{stop();status('You left the nearby room.')};$('volume').oninput=()=>{if(gain)gain.gain.value=Number($('volume').value)};$('form').onsubmit=e=>{e.preventDefault();if($('message').value.trim()){if(localChatUi.send(localChatUi.payload({type:'chat',text:$('message').value.trim()}))!==false){$('message').value='';localChatUi.clearReply()}}};addEventListener('pagehide',stop);
 </script></html>

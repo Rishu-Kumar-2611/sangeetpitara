@@ -138,6 +138,8 @@ class RoomSessionCoordinator(
     private var relayPlayer: Pcm16RelayPlayer? = null
     private var transport: RoomAudioTransport? = null
     private var mediaRelayConfig = RoomMediaRelayConfig.DEFAULT
+    private var voiceMessages = false
+    private var messageReplies = false
     private var chatReactions: List<String> = emptyList()
     private var mediaConfigured = false
     private var pendingRoomAction: ((RoomSoundWebSocketClient) -> Unit)? = null
@@ -167,6 +169,8 @@ class RoomSessionCoordinator(
     fun currentMediaRelayConfig(): RoomMediaRelayConfig = mediaRelayConfig
 
     /** Empty until /config arrives, and on servers that do not support reactions. */
+    fun supportsVoiceMessages(): Boolean = voiceMessages
+    fun supportsMessageReplies(): Boolean = messageReplies
     fun currentChatReactions(): List<String> = chatReactions
     fun pendingCapture(): PendingCapture? = attempt?.let { PendingCapture(it.id, it.phase) }
     fun isTakeoverPending(): Boolean = takeover != null
@@ -236,6 +240,8 @@ class RoomSessionCoordinator(
             // unknown enabled relay shape must not silently re-enable TURN.
             mediaRelayConfig = fetchedConfig.mediaRelay
             chatReactions = fetchedConfig.chatReactions
+            voiceMessages = fetchedConfig.voiceMessages
+            messageReplies = fetchedConfig.messageReplies
             val relayEnabled = fetchedConfig.mediaRelay.enabled
             if (relayEnabled) {
                 require(fetchedConfig.mediaRelay.isPcm16Enabled) {
@@ -334,9 +340,9 @@ class RoomSessionCoordinator(
         if (mediaConfigured) client?.connect() else connectPending = true
     }
 
-    fun sendChat(text: String): Boolean {
-        if (joinedState() == null || text.isBlank()) return false
-        return client?.sendChat(text.trim().take(280)) == true
+    fun sendChat(text: String, replyToId: String? = null, voice: com.roomsound.android.room.RoomVoiceNote? = null, clientMessageId: String? = null): Boolean {
+        if (joinedState() == null || (text.isBlank() && voice == null) || (voice != null && !voiceMessages) || (replyToId != null && !messageReplies)) return false
+        return client?.sendChat(text.trim().take(280), replyToId, voice, clientMessageId) == true
     }
 
     fun sendReaction(messageId: String, emoji: String): Boolean {
@@ -639,7 +645,7 @@ class RoomSessionCoordinator(
                 else -> Unit
             }
         } catch (t: Throwable) {
-            android.util.Log.e("RoomSound", "handleEvent failed for $event", t)
+            android.util.Log.e("RoomSound", "Room event failed: ${event.javaClass.simpleName} (${t.javaClass.simpleName})")
             status("Room event handling hit an error: ${t.message}")
         }
         runCatching { listeners.forEach { it.onEvent(event) } }
@@ -791,6 +797,8 @@ class RoomSessionCoordinator(
         endpoint = null
         mediaRelayConfig = RoomMediaRelayConfig.DEFAULT
         chatReactions = emptyList()
+        voiceMessages = false
+        messageReplies = false
         mediaConfigured = false
         pendingRoomAction = null
         connectPending = false

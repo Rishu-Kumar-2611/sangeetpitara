@@ -46,4 +46,10 @@ class RoomServerConfigTest {
         assertTrue(config.mediaRelay.enabled)
         assertFalse(config.mediaRelay.isPcm16Enabled)
     }
+    @Test fun voiceAndRepliesRequireAnExplicitServerCapability() {
+        val legacy=parseRoomServerConfig(org.json.JSONObject())
+        assertFalse(legacy.voiceMessages); assertFalse(legacy.messageReplies)
+        val updated=parseRoomServerConfig(org.json.JSONObject("""{"chatFeatures":{"voiceMessages":true,"messageReplies":true}}"""))
+        assertTrue(updated.voiceMessages); assertTrue(updated.messageReplies)
+    }
 }

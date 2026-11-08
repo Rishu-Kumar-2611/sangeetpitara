@@ -1,3 +1,4 @@
+import { chatContent, boundVoiceHistory, chatSnapshot } from './chat-content.mjs';
 import { clientAddress } from './client-address.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -77,6 +78,7 @@ const requestJitterMs = 5_000;
 const MAX_MESSAGES = 200;
 const MAX_MESSAGE_KEEP = 100;
 const MAX_PAYLOAD_BYTES = 64 * 1024;
+const MAX_CHAT_PAYLOAD_BYTES = 300 * 1024;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
 const STATIC_RATE_LIMIT_MAX = 600;
@@ -194,7 +196,7 @@ const securityHeaders = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
-  'Permissions-Policy': 'camera=(), microphone=(), display-capture=(self)',
+  'Permissions-Policy': 'camera=(), microphone=(self), display-capture=(self)',
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Resource-Policy': 'same-site',
   'Cross-Origin-Embedder-Policy': 'require-corp',
@@ -207,9 +209,9 @@ const securityHeaders = {
 // Only client assets belong to the public HTTP surface. Backend modules,
 // audit evidence, tests and future repository files are private by default.
 const publicFiles = new Set([
-  'index.html', 'about.html', 'contact.html', 'privacy.html', 'terms.html',
+  'chat.css', 'index.html', 'about.html', 'contact.html', 'privacy.html', 'terms.html',
   'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'themes.css', 'themes.js',
-  'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
+  'chat-ui.mjs', 'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
   'room-palette.js', 'media-relay.mjs', 'relay-pcm.js', 'stream-health.mjs', 'audio-diagnostics.mjs',
   'relay-capture-worklet.js', 'relay-playout-worklet.js', 'notifications-sw.js',
   'manifest.webmanifest',
@@ -348,7 +350,7 @@ function publicMember(member, room) {
   };
 }
 
-function clientState(room, viewer) {
+function clientState(room, viewer, includeVoiceData = true) {
   const requests = [...room.requests.values()]
     .filter((request) => request.status === 'PENDING')
     .filter((request) => isModerator(room, viewer) || request.requesterId === viewer?.id)
@@ -372,14 +374,14 @@ function clientState(room, viewer) {
     self: viewer ? publicMember(viewer, room) : null,
     members: [...room.members.values()].map((member) => publicMember(member, room)),
     requests,
-    messages: room.messages.slice(-80),
+    messages: room.messages.slice(-80).map(message => chatSnapshot(message, includeVoiceData)),
   };
 }
 
 function broadcastState(room, excludeMemberId = null) {
   for (const member of room.members.values()) {
     if (excludeMemberId && member.id === excludeMemberId) continue;
-    if (member.ws) send(member.ws, { type: 'state', state: clientState(room, member) });
+    if (member.ws) send(member.ws, { type: 'state', state: clientState(room, member, false) });
   }
 }
 
@@ -1141,11 +1143,17 @@ async function handleMessage(ws, message) {
   if (!room || !member) return sendError(ws, 'Join or create a room first.');
 
   if (type === 'chat') {
-    const text = safeText(message.text, 280);
-    if (!text) return;
-    const chat = { id: randomId(), kind: 'chat', senderId: member.id, senderName: member.name, text, createdAt: Date.now() };
+    const clientMessageId = typeof message.clientMessageId === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(message.clientMessageId) ? message.clientMessageId : null;
+    const previous = clientMessageId && room.messages.find(m => m.senderId === member.id && m.clientMessageId === clientMessageId);
+    if (previous) { ws.send(JSON.stringify({ type: 'chat', message: previous })); return; }
+    let content;
+    try { content = chatContent(message, room.messages); } catch (error) { return sendError(ws, error.message); }
+    if (content.voice && Date.now() - (member.lastVoiceAt || 0) < 5000) return sendError(ws, 'Please wait a few seconds before sending another recording.');
+    if (content.voice) member.lastVoiceAt = Date.now();
+    const chat = { id: randomId(), kind: 'chat', senderId: member.id, senderName: member.name, ...content, ...(clientMessageId ? { clientMessageId } : {}), createdAt: Date.now() };
     room.messages.push(chat);
     trimMessages(room);
+    for (const expired of boundVoiceHistory(rooms.values())) broadcast(expired.room, { type: 'chat', message: expired.message });
     broadcast(room, { type: 'chat', message: chat });
     return;
   }
@@ -1579,6 +1587,7 @@ const server = http.createServer(async (req, res) => {
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...(turn ? [turn] : [])],
       mediaRelay,
       chatReactions: CHAT_REACTIONS,
+      chatFeatures: { voiceMessages: true, messageReplies: true, maxVoiceDurationMs: 30000, maxVoiceBytes: 192 * 1024 },
       maxMembers: 10,
       requestTtlMs,
       authRequired: roomAuthRequired,
@@ -1797,7 +1806,7 @@ wss.on('connection', (ws, req) => {
   ws.on('message', (raw, isBinary) => {
     ws._lastActivityAt = Date.now();
     const byteLength = Buffer.byteLength(raw);
-    const maxBytes = isBinary ? MEDIA_RELAY_MAX_FRAME_BYTES : MAX_PAYLOAD_BYTES;
+    const maxBytes = isBinary ? MEDIA_RELAY_MAX_FRAME_BYTES : MAX_CHAT_PAYLOAD_BYTES;
     if (byteLength > maxBytes) return sendError(ws, isBinary ? 'Media relay frame too large.' : 'Message too large.');
     if (isBinary) {
       if (!checkBinaryFrameRate(ws, byteLength)) return sendError(ws, 'You are sending binary audio frames too quickly.');
@@ -1809,10 +1818,17 @@ wss.on('connection', (ws, req) => {
       }
       return dispatchBinaryFrame(ws, data);
     }
+    if (byteLength > MAX_PAYLOAD_BYTES) {
+      if (!ws.authReady || !currentMember(ws).member) return sendError(ws, 'Join a room before sending a recording.');
+      const now = Date.now();
+      if (!ws._largeResetAt || now > ws._largeResetAt) { ws._largeResetAt = now + 5000; ws._largeCount = 0; }
+      if (++ws._largeCount > 2) return sendError(ws, 'Please wait before retrying this recording.');
+    }
     if (!checkJsonMessageRate(ws)) return sendError(ws, 'You are sending messages too quickly.');
     let data;
     try {
-      data = parseJsonBody(raw, { maxBytes: MAX_PAYLOAD_BYTES, maxStringBytes: MAX_PAYLOAD_BYTES });
+      data = parseJsonBody(raw, { maxBytes: MAX_CHAT_PAYLOAD_BYTES, maxStringBytes: MAX_CHAT_PAYLOAD_BYTES });
+      if (byteLength > MAX_PAYLOAD_BYTES && !(data.type === 'chat' && data.voice)) return sendError(ws, 'Message too large.');
     } catch {
       return sendError(ws, 'Invalid message: expected a bounded JSON object.');
     }

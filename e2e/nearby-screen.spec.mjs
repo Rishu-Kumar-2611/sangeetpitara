@@ -40,7 +40,7 @@ test('companion pairs locally, shares captured audio after approval and stops on
     await page.goto(companion.origin);
     await page.getByLabel("Host's local invite",{exact:true}).fill(`http://127.0.0.1:${certificateServer.address().port}/#invite=${invite}&code=ABC234&tls=${secureServer.address().port}&pin=${pin}`);
     await page.getByRole('button',{name:'Connect to host',exact:true}).click();await expect(page.locator('#pair-status')).toContainText('Host paired');
-    await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption('midnight');
+    await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption('light');
     await page.getByLabel('Your name',{exact:true}).fill('Laptop');await page.getByRole('button',{name:'Join and listen'}).click();
     await expect(page.locator('#request')).toBeVisible();await expect(page.locator('#share-screen')).toBeHidden();
     expect(await page.evaluate(()=>window.__displayCalls||0)).toBe(0);

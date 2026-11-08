@@ -1,5 +1,6 @@
 package com.roomsound.android.nearby
 
+import com.roomsound.android.room.ChatContent
 import java.io.InputStream
 import fi.iki.elonen.NanoHTTPD
 import org.json.JSONArray
@@ -37,7 +38,7 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
     private var epoch = 0L
     private var ended = false
     private val clock = Executors.newSingleThreadScheduledExecutor()
-    private data class Member(val id: String, val guest: String, val secret: String, var name: String, var peer: Peer?, var disconnectedAt: Long = 0)
+    private data class Member(val id: String, val guest: String, val secret: String, var name: String, var peer: Peer?, var disconnectedAt: Long = 0, var lastVoiceAt: Long = 0)
     private sealed class Out {
         data class Text(val value: String) : Out()
         data class Audio(val value: ByteArray) : Out()
@@ -87,7 +88,7 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
     override fun serveHttp(session: IHTTPSession): Response {
         if (session.method != Method.GET) return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, "text/plain", "GET only")
         if (session.uri == "/nearby-certificate" && certificatePem != null) return newFixedLengthResponse(Response.Status.OK,"application/x-pem-file",certificatePem).also { it.addHeader("Cache-Control","no-store") }
-        if (session.uri == "/config") return newFixedLengthResponse("{\"iceServers\":[],\"mediaRelay\":{\"enabled\":true,\"mode\":\"pcm16\",\"sampleRate\":48000,\"channels\":1},\"nearby\":true}")
+        if (session.uri == "/config") return newFixedLengthResponse("{\"iceServers\":[],\"mediaRelay\":{\"enabled\":true,\"mode\":\"pcm16\",\"sampleRate\":48000,\"channels\":1},\"chatFeatures\":{\"voiceMessages\":true,\"messageReplies\":true},\"nearby\":true}")
         if (session.uri != "/" && session.uri != "/index.html") return newFixedLengthResponse(Response.Status.NOT_FOUND,"text/plain","Not found")
         val authority = session.headers["host"].orEmpty().takeIf { it.matches(Regex("[0-9.]+:[0-9]+")) }
         return newChunkedResponse(Response.Status.OK,"text/html; charset=utf-8",page()).also {
@@ -114,8 +115,8 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
         m.peer?.text(JSONObject().put("type","request-result").put("status",status).put("request",request))
     }
     private fun memberJson(m: Member) = JSONObject().put("id",m.id).put("guestId",m.guest).put("name",m.name).put("role",if(m.id==hostId)"HOST" else if(m.id==cohostId)"CO_HOST" else "PARTICIPANT").put("online",m.peer!=null).put("isSource",m.id==sourceId)
-    private fun state(m: Member) = JSONObject().put("room",JSONObject().put("id",roomId).put("code",code).put("name",title).put("status",if(ended)"ENDED" else "ACTIVE").put("hostId",hostId).put("cohostId",cohostId ?: JSONObject.NULL).put("activeSourceId",sourceId ?: JSONObject.NULL).put("activeSourceType",if(sourceId==null)JSONObject.NULL else sourceType).put("sourceStatus",sourceStatus).put("sourceEpoch",epoch)).put("self",memberJson(m)).put("members",JSONArray(members.values.map(::memberJson))).put("requests",JSONArray(controlRequests.values.toList())).put("messages",JSONArray(history.toList()))
-    private fun broadcast() { members.values.forEach { m -> m.peer?.text(JSONObject().put("type","state").put("state",state(m))) } }
+    private fun state(m: Member, includeVoiceData: Boolean = true) = JSONObject().put("room",JSONObject().put("id",roomId).put("code",code).put("name",title).put("status",if(ended)"ENDED" else "ACTIVE").put("hostId",hostId).put("cohostId",cohostId ?: JSONObject.NULL).put("activeSourceId",sourceId ?: JSONObject.NULL).put("activeSourceType",if(sourceId==null)JSONObject.NULL else sourceType).put("sourceStatus",sourceStatus).put("sourceEpoch",epoch)).put("self",memberJson(m)).put("members",JSONArray(members.values.map(::memberJson))).put("requests",JSONArray(controlRequests.values.toList())).put("messages",JSONArray(history.map { ChatContent.snapshot(it, includeVoiceData) }))
+    private fun broadcast() { members.values.forEach { m -> m.peer?.text(JSONObject().put("type","state").put("state",state(m, false))) } }
     private fun error(p: Peer, message: String) = p.text(JSONObject().put("type","error").put("message",message))
     private fun command(p: Peer, json: JSONObject) = synchronized(lock) {
         if (ended) { error(p,"This nearby room has ended."); return@synchronized }
@@ -145,8 +146,18 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
         if (m.peer !== p) { error(p,"This connection was replaced."); return@synchronized }
         when(type) {
             "chat" -> {
-                val body=json.optString("text").trim().take(1000)
-                if(body.isNotEmpty()) { val msg=JSONObject().put("id",UUID.randomUUID().toString()).put("kind","chat").put("senderId",m.id).put("senderName",m.name).put("text",body).put("createdAt",System.currentTimeMillis());history.addLast(msg);if(history.size>50)history.removeFirst();members.values.forEach { it.peer?.text(JSONObject().put("type","chat").put("message",msg)) } }
+                val clientId = json.optString("clientMessageId")
+                val previous = history.find { clientId.isNotEmpty() && it.optString("senderId") == m.id && it.optString("clientMessageId") == clientId }
+                if (previous != null) { p.text(JSONObject().put("type", "chat").put("message", previous)); return@synchronized }
+                val msg = runCatching { ChatContent.build(json, history.toList()) }.getOrElse { error(p, it.message ?: "Invalid chat message."); return@synchronized }
+                if (msg.has("voice")) {
+                    if (System.currentTimeMillis() - m.lastVoiceAt < 5000) { error(p, "Please wait a few seconds before sending another recording."); return@synchronized }
+                    m.lastVoiceAt = System.currentTimeMillis()
+                }
+                msg.put("id",UUID.randomUUID().toString()).put("kind","chat").put("senderId",m.id).put("senderName",m.name).put("createdAt",System.currentTimeMillis())
+                history.addLast(msg); if (history.size > 50) history.removeFirst()
+                for (expired in ChatContent.bound(history.toList())) members.values.forEach { it.peer?.text(JSONObject().put("type","chat").put("message",expired)) }
+                members.values.forEach { it.peer?.text(JSONObject().put("type","chat").put("message",msg)) }
             }
             "request-control" -> {
                 if (m.id == sourceId || controlRequests.values.any { it.optString("requesterId") == m.id && it.optString("status") == "PENDING" }) { error(p,"Already sharing or waiting for approval."); return@synchronized }
@@ -203,6 +214,8 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
         val owner=handshake.parameters["owner"]?.firstOrNull()==ownerKey && handshake.remoteIpAddress in setOf("127.0.0.1","::1")
         private val admitted=owner || handshake.parameters["invite"]?.firstOrNull()==invite
         var member: Member?=null
+        private var largeWindow = 0L
+        private var largeCount = 0
         val controls=ArrayBlockingQueue<Out>(16)
         val audio=ArrayBlockingQueue<Out>(200)
         @Volatile var lastSeen=System.currentTimeMillis()
@@ -222,7 +235,12 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
                 if(audioBudget.allow(message.binaryPayload.size,System.nanoTime()/1_000_000)) audio(this,message.binaryPayload)
             } else {
                 if(lastSeen-window>1000){window=lastSeen;count=0};if(++count>150){disconnect();return}
-                if(message.textPayload.length<=8192)runCatching{command(this,JSONObject(message.textPayload))}.onFailure{error(this,"Invalid nearby command.")}
+                if (message.textPayload.length > 8192) {
+                    if (member == null) { disconnect(); return }
+                    if (lastSeen - largeWindow > 5000) { largeWindow = lastSeen; largeCount = 0 }
+                    if (++largeCount > 2) { error(this,"Please wait before retrying this recording."); return }
+                }
+                if(message.textPayload.length<=300*1024)runCatching{command(this,JSONObject(message.textPayload))}.onFailure{error(this,"Invalid nearby command.")}
                 else disconnect()
             }
         }

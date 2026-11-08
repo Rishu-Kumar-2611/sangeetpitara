@@ -1143,3 +1143,33 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
 .telemetry-stats .health-metric { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 3px 10px; padding: 10px; }
 .health-metric strong { text-align: right; }
 .health-metric b,.health-metric em { grid-column: 1 / -1; }
+
+/* Room sections have one predictable layout on phones, tablets and desktops.
+   Diagnostics never occupy a narrow sidebar beside the listening surface. */
+.room-layout { display: block; }
+.room-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; margin-bottom: 24px; border-radius: 14px; }
+.room-view[data-room-tab="chat"] .room-sidebar { display: none; }
+.room-view[data-room-tab="people"] .room-main,
+.room-view[data-room-tab="health"] .room-main { display: none; }
+.room-view[data-room-tab="people"] [data-room-section]:not([data-room-section="people"]),
+.room-view[data-room-tab="health"] [data-room-section]:not([data-room-section="health"]) { display: none; }
+.room-sidebar { width: 100%; }
+.telemetry-peer-heading { flex-wrap: wrap; }
+.telemetry-stats:has(.health-metric) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.telemetry-stats .health-metric { align-content: start; }
+.health-metric strong { overflow-wrap: anywhere; }
+.telemetry-panel > .secondary-button { margin: 0 22px 22px; }
+@media(min-width:861px) {
+  .room-view[data-room-tab="people"] .room-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .room-view[data-room-tab="people"] .activity-panel { grid-column: 1 / -1; }
+}
+@media(max-width:600px) {
+  .room-tabs { margin-bottom: 16px; }
+  .telemetry-stats:has(.health-metric) { grid-template-columns: minmax(0, 1fr); }
+  .telemetry-panel > .secondary-button { margin: 0 16px 16px; }
+}
+/* One task per section. Playback nodes stay mounted when navigating. */
+.room-tabs { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.room-view[data-room-tab="listen"] .room-sidebar,
+.room-view[data-room-tab="listen"] .lower-grid { display:none; }
+.room-view[data-room-tab="chat"] .now-playing { display:none; }

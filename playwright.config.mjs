@@ -15,13 +15,14 @@ export default defineConfig({
   },
   projects: [
     { name: 'desktop', use: { viewport: { width: 1440, height: 1000 } } },
-    { name: 'phone', use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
+    { name: 'phone', use: { baseURL:'http://127.0.0.1:4188', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
   ],
-  webServer: {
+  // Each device project uses an isolated server and its own production rate budgets.
+  webServer: [4187,4188].map(port => ({
     command: 'node server.mjs',
-    url: 'http://127.0.0.1:4187/health',
+    url: `http://127.0.0.1:${port}/health`,
     reuseExistingServer: false,
-    env: { NODE_ENV: 'development', DATABASE_URL: '', HOST: '127.0.0.1', PORT: '4187',
-      CANONICAL_PUBLIC_HOST: '', ALLOWED_ORIGINS: 'http://127.0.0.1:4187', ADSENSE_ENABLED: '0' },
-  },
+    env: { NODE_ENV: 'development', DATABASE_URL: '', HOST: '127.0.0.1', PORT: String(port),
+      CANONICAL_PUBLIC_HOST: '', ALLOWED_ORIGINS: `http://127.0.0.1:${port}`, ADSENSE_ENABLED: '0' },
+  })),
 });

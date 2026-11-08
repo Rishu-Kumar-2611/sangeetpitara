@@ -13,7 +13,7 @@ test('browser room creation, separate listener, chat, reconnect and leaving', as
   await page.getByLabel('Room name', { exact: true }).fill('Production check');
   await page.locator('#create-room').click();
   await expect(page.locator('#room-title')).toHaveText('Production check');
-  await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption('forest');
+  await page.getByRole('combobox',{name:'Theme',exact:true}).selectOption('light');
   await expect(page.locator('#room-title')).toHaveText('Production check');
   const code = (await page.locator('#room-code-display').textContent()).trim();
   const listenerContext = await browser.newContext();
@@ -25,6 +25,8 @@ test('browser room creation, separate listener, chat, reconnect and leaving', as
     await listener.getByLabel('Room code', { exact: true }).fill(code);
     await listener.locator('#join-room').click();
     await expect(listener.locator('#room-title')).toHaveText('Production check');
+    await page.locator('#room-tab-chat').click();
+    await listener.locator('#room-tab-chat').click();
     await page.getByLabel('Message the room').fill('Hello from the browser regression');
     await page.getByRole('button', { name: 'Send message', exact: true }).click();
     await expect(listener.locator('#chat-feed')).toContainText('Hello from the browser regression');
@@ -47,19 +49,19 @@ test('browser room creation, separate listener, chat, reconnect and leaving', as
   } finally { await listenerContext.close(); }
 });
 
-test('four themes persist across reload and keep the welcome layout usable', async ({ page }, info) => {
+test('two appearances persist across reload and keep the welcome layout usable', async ({ page }, info) => {
   await page.goto('/');
   const picker=page.getByRole('combobox',{name:'Theme',exact:true});
-  await expect(picker.locator('option')).toHaveCount(4);
+  await expect(picker.locator('option')).toHaveCount(2);
   const colors=[];
-  for(const key of ['brass','midnight','forest','rose']){
+  for(const key of ['dark','light']){
     await picker.selectOption(key);await expect(page.locator('html')).toHaveAttribute('data-theme',key);
     colors.push(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()));
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await page.screenshot({path:info.outputPath(`theme-${key}.png`),fullPage:true});
   }
-  expect(new Set(colors).size).toBe(4);
-  await page.reload();await expect(picker).toHaveValue('rose');await expect(page.locator('html')).toHaveAttribute('data-theme','rose');
+  expect(new Set(colors).size).toBe(2);
+  await page.reload();await expect(picker).toHaveValue('light');await expect(page.locator('html')).toHaveAttribute('data-theme','light');
 });
 
 test('room creation remains usable when localStorage is denied', async ({ page }) => {
@@ -127,7 +129,14 @@ test('relay health shows ideal ranges and does not borrow listener underruns for
  await expect(page.locator('#telemetry-list')).toContainText('No fixed ideal');
  await expect.poll(async()=>Number((await page.locator('.health-metric').filter({hasText:'Audio packets'}).locator('strong').textContent()).replaceAll(',',''))).toBeGreaterThan(10);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
- if (await page.locator('#room-tab-health').isVisible()) await page.locator('#room-tab-health').click();
+ const packetsBeforeHealth = Number((await page.locator('.health-metric').filter({hasText:'Audio packets'}).locator('strong').textContent()).replaceAll(',',''));
+ await page.locator('#room-tab-health').click();
+ await expect(page.locator('#telemetry-panel')).toBeVisible();
+ await expect(page.locator('.now-playing')).toBeHidden();
+ const panelBounds = await page.locator('#telemetry-panel').boundingBox();
+ const layoutBounds = await page.locator('.room-layout').boundingBox();
+ expect(panelBounds.width).toBeGreaterThan(layoutBounds.width * 0.95);
+ await expect.poll(async()=>Number((await page.locator('.health-metric').filter({hasText:'Audio packets'}).locator('strong').textContent()).replaceAll(',',''))).toBeGreaterThan(packetsBeforeHealth);
  await page.locator('#telemetry-panel').screenshot({path:info.outputPath('health.png')});
 });
 

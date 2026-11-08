@@ -36,13 +36,14 @@ fun String.asBuildConfigStringLiteral(): String = buildString {
 
 // Public routing configuration, not a credential. Explicit LAN, staging, or
 // release values supplied through ROOMSOUND_DEFAULT_ENDPOINT still win.
+val localPreviewBuild = configuredValue("ROOMSOUND_PREVIEW_BUILD") == "1"
 val configuredDefaultEndpoint = configuredValue("ROOMSOUND_DEFAULT_ENDPOINT")
     ?: "wss://sangeet-pitaraa.onrender.com"
 // The release workflow derives both from the pushed v<major>.<minor>.<patch> tag.
 val configuredVersionName = configuredValue("ROOMSOUND_VERSION_NAME")
-    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.13")
+    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.14")
 val configuredVersionCode = configuredValue("ROOMSOUND_VERSION_CODE")?.toInt()
-    ?: releaseProperties.getProperty("VERSION_CODE", "10113").toInt()
+    ?: releaseProperties.getProperty("VERSION_CODE", "10114").toInt()
 // GitHub repository whose latest release the app checks for an update notice.
 val configuredReleasesRepository = configuredValue("ROOMSOUND_RELEASES_REPOSITORY")
     ?: "Rishu-Kumar-2611/sangeetpitara"
@@ -65,6 +66,7 @@ android {
 
     defaultConfig {
         applicationId = "com.roomsound.android"
+        manifestPlaceholders["previewAppLabel"] = if (localPreviewBuild) "SangeetPitara Preview" else "SangeetPitara"
         minSdk = 29
         targetSdk = 36
         versionCode = configuredVersionCode
@@ -125,6 +127,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
+            if (localPreviewBuild) { applicationIdSuffix = ".preview"; versionNameSuffix = "-preview" }
             signingConfig = signingConfigs.getByName("debug")
         }
     }

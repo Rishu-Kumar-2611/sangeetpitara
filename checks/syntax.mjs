@@ -17,6 +17,8 @@ const files = [
   'ads.mjs',
   'media-relay.mjs',
   'app.js',
+  'chat-content.mjs',
+  'chat-ui.mjs',
   'stream-health.mjs',
   'audio-diagnostics.mjs',
   'themes.js',

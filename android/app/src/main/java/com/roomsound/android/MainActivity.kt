@@ -75,7 +75,7 @@ class MainActivity : Activity() {
     }
 
     // Same type as the website: Poppins headings, Mukta body (res/font, SIL OFL).
-    private val headingTypeface by lazy { resources.getFont(R.font.poppins_semibold) }
+    private val headingTypeface by lazy { resources.getFont(R.font.mukta_semibold) }
     private val labelTypeface by lazy { resources.getFont(R.font.mukta_medium) }
     private val strongTypeface by lazy { resources.getFont(R.font.mukta_semibold) }
 
@@ -107,6 +107,15 @@ class MainActivity : Activity() {
     // updates) until the next snapshot carries them.
     private val liveChatMessages = linkedMapOf<String, RoomChatMessage>()
     private val reactionOverrides = mutableMapOf<String, Map<String, List<String>>>()
+    private lateinit var chatFeed: LinearLayout
+    private lateinit var chatReplyText: TextView
+    private lateinit var voiceRecordButton: Button
+    private lateinit var voicePreviewRow: LinearLayout
+    private lateinit var voicePreviewPlayButton: Button
+    private var chatReplyTarget: RoomChatMessage? = null
+    private var chatFingerprint = ""
+    private var startVoiceOnResume = false
+    private val voiceNotes by lazy { VoiceNoteController(this, { updateVoiceComposer() }, { message -> android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show() }) }
     private lateinit var chatInput: EditText
     private lateinit var volumeSeekBar: SeekBar
     private lateinit var muteButton: Button
@@ -221,9 +230,16 @@ class MainActivity : Activity() {
         pendingCaptureId = savedInstanceState?.getString(STATE_PENDING_CAPTURE_ID)
         projectionConsentInFlight = savedInstanceState?.getBoolean(STATE_PROJECTION_IN_FLIGHT, false) == true
         nativePage = savedInstanceState?.getString("native-page") ?: "home"
+        renderedRoomId = savedInstanceState?.getString("chat-room-id")
         setContentView(buildContentView())
         savedInstanceState?.let { state ->
             displayNameInput.setText(state.getString("entry-name", "")); roomNameInput.setText(state.getString("entry-room", "")); roomCodeInput.setText(state.getString("entry-code", ""))
+        }
+        savedInstanceState?.let { saved ->
+            chatInput.setText(saved.getString("chat-draft", ""))
+            runCatching { saved.getString("chat-reply")?.let { raw -> val q = org.json.JSONObject(raw); chatReplyTarget = RoomChatMessage(q.getString("id"), "chat", null, q.optString("senderName"), q.optString("text"), 0L) } }
+            runCatching { saved.getString("voice-draft")?.let { raw -> val value = org.json.JSONObject(raw); val note = com.roomsound.android.room.ChatContent.voice(value); voiceNotes.restore(com.roomsound.android.room.RoomVoiceNote(note.getString("mimeType"),note.getLong("durationMs"),note.getString("data")),value.getString("clientMessageId")) } }
+            updateVoiceComposer()
         }
         checkForAppUpdate()
         showPreviousCrashNotice()
@@ -234,6 +250,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         activityResumed = true
+        if (startVoiceOnResume) { startVoiceOnResume = false; voiceNotes.start() }
         ensureCaptureService()
         if (serviceBound) renderAttachedServiceState()
         renderPlaybackHandoffControl()
@@ -241,6 +258,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        if (::voiceRecordButton.isInitialized) voiceNotes.cancelRecording()
         activityResumed = false
         audioRequestDialog?.dismiss()
         super.onPause()
@@ -250,11 +268,16 @@ class MainActivity : Activity() {
         outState.putString(STATE_PENDING_CAPTURE_ID, pendingCaptureId)
         outState.putBoolean(STATE_PROJECTION_IN_FLIGHT, projectionConsentInFlight)
         outState.putString("native-page", nativePage)
+        outState.putString("chat-room-id", latestRoomState?.room?.id)
+        if (::chatInput.isInitialized) outState.putString("chat-draft", chatInput.text.toString())
+        chatReplyTarget?.let { outState.putString("chat-reply", org.json.JSONObject().put("id",it.id).put("senderName",it.senderName).put("text",if(it.voice == null) it.text else "Voice message").toString()) }
+        voiceNotes.draft?.let { outState.putString("voice-draft", org.json.JSONObject().put("mimeType",it.mimeType).put("durationMs",it.durationMs).put("data",it.data).put("clientMessageId",voiceNotes.draftId).toString()) }
         if (::displayNameInput.isInitialized) { outState.putString("entry-name",displayNameInput.text.toString()); outState.putString("entry-room",roomNameInput.text.toString()); outState.putString("entry-code",roomCodeInput.text.toString()) }
         super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
+        if (::voiceRecordButton.isInitialized) voiceNotes.close()
         activityResumed = false
         transportRenderHandler.removeCallbacks(transportRenderRunnable)
         transportRenderPosted = false
@@ -402,6 +425,7 @@ class MainActivity : Activity() {
     private lateinit var nativeEntry: LinearLayout
     private lateinit var nativeSessionControls: LinearLayout
     private fun navigateNative(page: String) {
+        if (page != "chat" && ::voiceRecordButton.isInitialized) voiceNotes.cancelRecording()
         if (page in setOf("create", "join")) {
             if (roomSession?.currentRoomState() != null) {
                 android.widget.Toast.makeText(this, "Leave your current room before starting another", android.widget.Toast.LENGTH_SHORT).show()
@@ -421,10 +445,15 @@ class MainActivity : Activity() {
         nativePanels.forEach { (name, panel) ->
             panel.visibility = if (name == nativePage || (name == "entry" && nativePage in setOf("create", "join", "room")) || (name == "capture" && nativePage == "sound")) View.VISIBLE else View.GONE
         }
-        nativeBack.visibility = if (nativePage == "home") View.GONE else View.VISIBLE
+        nativeBack.visibility = if (nativePage == "home" || compactLandscape) View.GONE else View.VISIBLE
         nativeReturnButton.visibility = if (roomSession?.currentRoomState() != null) View.VISIBLE else View.GONE
         nativeLocalInviteButton.visibility = if (roomSession?.currentEndpoint()?.startsWith("ws://127.0.0.1:") == true) View.VISIBLE else View.GONE
         nativeTabs.visibility = if (roomSession?.currentRoomState() != null && nativePage != "home") View.VISIBLE else View.GONE
+        for (index in 0 until nativeTabs.childCount) {
+            val tab = nativeTabs.getChildAt(index)
+            tab.isSelected = tab.tag == nativePage
+            tab.alpha = if (tab.isSelected) 1f else .7f
+        }
         nativeEntry.visibility = if (nativePage in setOf("create", "join")) View.VISIBLE else View.GONE
         nativeSessionControls.visibility = if (nativePage == "room") View.VISIBLE else View.GONE
         roomNameInput.visibility = if (nativePage == "create") View.VISIBLE else View.GONE
@@ -438,14 +467,16 @@ class MainActivity : Activity() {
         if (nativePage != "home") navigateNative("home") else super.onBackPressed()
     }
 
+    private val compactLandscape get() = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
     private fun buildContentView(): View {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(28))
+            setPadding(dp(16), dp(if (compactLandscape) 8 else 16), dp(16), dp(if (compactLandscape) 12 else 28))
             setBackgroundResource(R.drawable.bg_roomsound_background)
         }
 
-        val header = panelContainer(R.drawable.bg_roomsound_header)
+        val header = panelContainer(R.drawable.bg_roomsound_header).apply { setPadding(dp(4), dp(if (compactLandscape) 0 else 8), dp(4), dp(if (compactLandscape) 0 else 8)) }
         val brandRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -453,21 +484,14 @@ class MainActivity : Activity() {
         brandRow.addView(ImageView(this).apply {
             setImageResource(R.mipmap.ic_launcher)
             contentDescription = getString(R.string.app_name)
-        }, LinearLayout.LayoutParams(dp(52), dp(52)).apply { marginEnd = dp(12) })
-        val brandCopy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        brandCopy.addView(TextView(this).apply {
-            text = getString(R.string.header_eyebrow)
-            textSize = 11f
-            letterSpacing = 0.16f
-            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_brass_bright))
-            setTypeface(labelTypeface)
-        }, matchWrap())
+        }, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(8) })
+        val brandCopy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; isClickable = true; isFocusable = true; contentDescription = "Return to welcome"; setOnClickListener { navigateNative("home") } }
         brandCopy.addView(TextView(this).apply {
             text = getString(R.string.header_title)
-            textSize = 25f
+            textSize = if (compactLandscape) 18f else 21f
             setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream))
-            setTypeface(headingTypeface)
-            setPadding(0, dp(7), 0, dp(5))
+            setTypeface(strongTypeface)
+            setPadding(0, dp(4), 0, dp(4))
         }, matchWrap())
         brandRow.addView(brandCopy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         brandRow.addView(button("Theme", ButtonTone.SECONDARY) {
@@ -475,26 +499,49 @@ class MainActivity : Activity() {
                 .setSingleChoiceItems(AppThemes.names,AppThemes.selected(this)) { dialog,index ->
                     if(index != AppThemes.selected(this)) { AppThemes.save(this,index); dialog.dismiss(); recreate() } else dialog.dismiss()
                 }.setNegativeButton("Cancel",null).show()
-        }, LinearLayout.LayoutParams(dp(88),LinearLayout.LayoutParams.WRAP_CONTENT))
+        }, LinearLayout.LayoutParams(dp(76),LinearLayout.LayoutParams.WRAP_CONTENT))
         header.addView(brandRow, matchWrap())
         content.addView(header, panelLayout())
         nativeBack = button("← Welcome", ButtonTone.SECONDARY) { navigateNative("home") }
         content.addView(nativeBack, panelLayout())
         val welcome = panelContainer()
-        welcome.addView(sectionTitle("Listen together."), matchWrap())
-        welcome.addView(sectionLabel("Choose how you want to connect."), marginLayout())
-        welcome.addView(button("Create a room · Online") { navigateNative("create") }, marginLayout())
-        welcome.addView(button("Join a room · Online", ButtonTone.SECONDARY) { navigateNative("join") }, marginLayout())
-        welcome.addView(button("Play Close · Hotspot / Wi-Fi", ButtonTone.SECONDARY) { navigateNative("nearby") }, marginLayout())
+        welcome.setBackgroundColor(AppThemes.color(this, R.color.roomsound_background_bottom))
+        welcome.setPadding(dp(4), dp(if (compactLandscape) 12 else 20), dp(4), dp(if (compactLandscape) 4 else 8))
+        welcome.addView(sectionLabel("A LITTLE CLOSER, THROUGH MUSIC").apply { textSize = 11f; letterSpacing = 0.12f }, matchWrap())
+        welcome.addView(sectionTitle(if (AppThemes.selected(this) == 0) "Good music.\nBetter company." else "A good place to\ntune in together.").apply {
+            textSize = if (compactLandscape) 28f else 32f
+            setTypeface(android.graphics.Typeface.create("serif", android.graphics.Typeface.NORMAL))
+            letterSpacing = -0.035f
+            setPadding(0, dp(14), 0, dp(12))
+        }, matchWrap())
+        welcome.addView(labelText().apply {
+            text = "Your people. One shared soundtrack.\nListen online, or stay close over a hotspot."
+            textSize = 16f
+            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream_muted))
+            setPadding(0, 0, 0, dp(24))
+        }, matchWrap())
+        welcome.addView(welcomeChoice("Create a room", "Host and listen together online", "create"), matchWrap())
+        welcome.addView(welcomeChoice("Join a room", "Enter an online room code", "join"), matchWrap())
+        welcome.addView(welcomeChoice("Play Close", "Offline rooms over Wi-Fi or hotspot", "nearby"), matchWrap())
         nativeReturnButton = button("Return to your room", ButtonTone.SECONDARY) {
             if (roomSession?.currentRoomState() != null) navigateNative("room") else android.widget.Toast.makeText(this,"Create or join a room first",android.widget.Toast.LENGTH_SHORT).show()
         }
         welcome.addView(nativeReturnButton, marginLayout())
+        if (compactLandscape) {
+            val parts = (0 until welcome.childCount).map { welcome.getChildAt(it) }
+            welcome.removeAllViews(); welcome.orientation = LinearLayout.HORIZONTAL
+            val introduction = verticalContainer()
+            for (index in 0..2) introduction.addView(parts[index], matchWrap())
+            val choices = verticalContainer()
+            for (index in 3 until parts.size) choices.addView(parts[index], matchWrap())
+            welcome.addView(introduction, LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f).apply { marginEnd = dp(24) })
+            welcome.addView(choices, LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
+        }
         nativePanels["home"] = welcome
         content.addView(welcome, panelLayout())
         nativeTabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         listOf("room" to "Room", "chat" to "Chat", "people" to "People", "sound" to "Audio", "status" to "Status").forEach { (page, title) ->
-            nativeTabs.addView(button(title, ButtonTone.SECONDARY) { navigateNative(page) }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            nativeTabs.addView(button(title, ButtonTone.SECONDARY) { navigateNative(page) }.apply { tag = page; textSize = 12f; setPadding(dp(3), 0, dp(3), 0) }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
         content.addView(nativeTabs, panelLayout())
 
@@ -524,8 +571,8 @@ class MainActivity : Activity() {
 
         val nearbyPanel = panelContainer()
         nearbyPanel.addView(sectionTitle("Play Close"), matchWrap())
-        nearbyPanel.addView(sectionLabel("Offline music on the same hotspot or Wi-Fi. Join in the Android app to request control and share device audio. Browser guests can listen and share local music files."), matchWrap())
-        val nearbyName = inputText("Your name for Nearby Vibe", null)
+        nearbyPanel.addView(sectionLabel("Connect to the same Wi-Fi or hotspot. No internet required."), matchWrap())
+        val nearbyName = inputText("Your name", null)
         nearbyPanel.addView(nearbyName, marginLayout())
         nearbyPanel.addView(button("Open hotspot settings", ButtonTone.SECONDARY) {
             runCatching { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }
@@ -614,8 +661,7 @@ class MainActivity : Activity() {
         content.addView(nearbyPanel, panelLayout())
 
         val roomPanel = panelContainer()
-        roomPanel.addView(sectionTitle("Room control"), matchWrap())
-        roomPanel.addView(sectionLabel("Create or join a listening room"), matchWrap())
+        roomPanel.addView(sectionTitle("Your room"), matchWrap())
 
         nativeEntry = verticalContainer()
         roomPanel.addView(nativeEntry, matchWrap())
@@ -719,12 +765,15 @@ class MainActivity : Activity() {
 
         val chatPanel = panelContainer()
         chatPanel.addView(sectionTitle("Chat"), matchWrap())
-        chatText = labelText().apply { setPadding(0, dp(4), 0, dp(4)) }
-        chatText.setBackgroundResource(R.drawable.bg_roomsound_inset)
-        chatText.setPadding(dp(12), dp(12), dp(12), dp(12))
-        chatText.minHeight = dp(70)
-        chatText.setLineSpacing(0f, 1.12f)
+        chatText = labelText().apply { text = "No messages yet." }
         chatPanel.addView(chatText, matchWrap())
+        chatFeed = verticalContainer()
+        chatPanel.addView(android.widget.ScrollView(this).apply {
+            isFillViewport = true
+            addView(chatFeed)
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp((resources.configuration.screenHeightDp * .4f).toInt().coerceIn(120, 360))))
+        chatReplyText = labelText().apply { visibility = View.GONE; setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_brass)); setOnClickListener { chatReplyTarget = null; updateVoiceComposer() } }
+        chatPanel.addView(chatReplyText, marginLayout())
         reactionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -739,6 +788,31 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(dp(88), LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) },
         )
         chatPanel.addView(chatRow, marginLayout())
+        voiceRecordButton = button("Record voice", ButtonTone.SECONDARY) { toggleVoiceRecording() }
+        chatPanel.addView(voiceRecordButton, marginLayout())
+        voicePreviewRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
+        voicePreviewPlayButton = button("Play", ButtonTone.SECONDARY) {
+            if (voiceNotes.playing) voiceNotes.stopPlayback() else voiceNotes.draft?.let(voiceNotes::play)
+        }
+        voicePreviewRow.addView(voicePreviewPlayButton, LinearLayout.LayoutParams(0,dp(48),1f))
+        voicePreviewRow.addView(button("Send") {
+            val note = voiceNotes.draft ?: return@button
+            if (roomSession?.sendChat("", chatReplyTarget?.id, note, voiceNotes.draftId) != true) android.widget.Toast.makeText(this,"Reconnect before sending; your recording is still here.",android.widget.Toast.LENGTH_LONG).show()
+        }, LinearLayout.LayoutParams(0,dp(48),1f).apply { marginStart = dp(6) })
+        voicePreviewRow.addView(button("Discard", ButtonTone.SECONDARY) { voiceNotes.discard() }, LinearLayout.LayoutParams(0,dp(48),1f).apply { marginStart = dp(6) })
+        chatPanel.addView(voicePreviewRow, marginLayout())
+        if (compactLandscape) {
+            val parts = (0 until chatPanel.childCount).map { chatPanel.getChildAt(it) }
+            chatPanel.removeAllViews(); chatPanel.orientation = LinearLayout.HORIZONTAL
+            val historyColumn = verticalContainer()
+            historyColumn.addView(parts[0], matchWrap()); historyColumn.addView(parts[1], matchWrap())
+            historyColumn.addView(parts[2], LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp((resources.configuration.screenHeightDp * .3f).toInt().coerceIn(80, 150))))
+            historyColumn.addView(parts[4], marginLayout())
+            val composerColumn = verticalContainer()
+            for (index in listOf(3,5,6,7)) composerColumn.addView(parts[index], marginLayout())
+            chatPanel.addView(historyColumn, LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1.4f).apply { marginEnd = dp(16) })
+            chatPanel.addView(composerColumn, LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
+        }
         nativePanels["chat"] = chatPanel
         content.addView(chatPanel, panelLayout())
 
@@ -887,7 +961,7 @@ class MainActivity : Activity() {
             links.isNotEmpty() -> "Your offline invite\n\n" + links.joinToString("\n\n") + "\n\nFriends: join this phone's hotspot, then open the link."
             nearbyEndpointOverride != null && roomSession?.currentRoomState() != null -> "No local network address yet. Enable your hotspot or connect to Wi-Fi, then tap Refresh invite."
             nearbyEndpointOverride != null -> "Creating your nearby room… Your invite will appear here when connected."
-            else -> "Your local link appears here after you host a nearby room. The online website cannot generate a link for your phone."
+            else -> "Create a nearby room to get an invite link."
         }
         nearbyCopyButton.isEnabled = links.isNotEmpty()
         nearbyShareButton.isEnabled = links.isNotEmpty()
@@ -1058,6 +1132,7 @@ class MainActivity : Activity() {
                 is RoomSoundEvent.Chat -> {
                     appendRoomEvent("${event.message.senderName ?: "Room"}: ${event.message.text}")
                     liveChatMessages[event.message.id] = event.message
+                    while (liveChatMessages.size > 80) liveChatMessages.remove(liveChatMessages.keys.first())
                     latestRoomState?.let(::renderChat)
                 }
                 is RoomSoundEvent.Reaction -> {
@@ -1123,7 +1198,10 @@ class MainActivity : Activity() {
         latestRoomState = state
         if (state != null && state.room.id != previousRoomId && nativePage in setOf("home", "create", "join", "nearby")) navigateNative("room")
         if (state != null) {
-            if (renderedRoomId != state.room.id) announcedAudioRequests.clear()
+            if (renderedRoomId != state.room.id) {
+                announcedAudioRequests.clear()
+                if (renderedRoomId != null) { voiceNotes.cancelRecording(); voiceNotes.discard(); chatReplyTarget = null; chatInput.setText("") }
+            }
             renderedRoomId = state.room.id
         } else if (roomSession?.currentEndpoint() == null && previousRoomId != null) {
             renderedRoomId = null
@@ -1157,7 +1235,8 @@ class MainActivity : Activity() {
                 moderationContainer.visibility = View.GONE
             }
             renderPeople(null)
-            chatText.text = "—"
+            voiceNotes.cancelRecording()
+            chatText.text = "No active room."
             renderHealth()
             return
         }
@@ -1230,15 +1309,42 @@ class MainActivity : Activity() {
     private fun renderChat(state: RoomState) {
         val messages = (state.messages + liveChatMessages.values)
             .filter { it.kind == "chat" }
-            .distinctBy { it.id }
+            .associateBy { it.id }.values
             .sortedBy { it.createdAt }
-            .takeLast(12)
-        chatText.text = messages.joinToString("\n") { message ->
-            val reactions = (reactionOverrides[message.id] ?: message.reactions)
-                .filterValues { it.isNotEmpty() }
-                .entries.joinToString(" ") { (emoji, members) -> "$emoji${members.size}" }
-            "${message.senderName ?: "Room"}: ${message.text}" + if (reactions.isEmpty()) "" else "   $reactions"
-        }.ifEmpty { "No messages yet." }
+            .takeLast(40)
+        for (message in messages) if (message.senderId == state.self?.id && message.clientMessageId != null && message.clientMessageId == voiceNotes.draftId) { voiceNotes.acknowledge(message.clientMessageId); chatReplyTarget = null; updateVoiceComposer() }
+        updateVoiceComposer()
+        chatText.text = if (messages.isEmpty()) "No messages yet." else "${messages.size} recent messages"
+        val fingerprint = messages.joinToString { "${it.id}:${it.voice?.data?.length}:${reactionOverrides[it.id] ?: it.reactions}" }
+        if (fingerprint != chatFingerprint) {
+            chatFingerprint = fingerprint; chatFeed.removeAllViews()
+            for (message in messages) {
+                val row = verticalContainer().apply { setPadding(dp(4), dp(10), dp(4), dp(10)) }
+                row.tag = message.id
+                val messageHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                messageHeader.addView(labelText().apply { text = message.senderName ?: "Room"; setTypeface(strongTypeface); textSize = 14f }, LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
+                messageHeader.addView(button("Reply", ButtonTone.SECONDARY) { chatReplyTarget = message; updateVoiceComposer(); chatInput.requestFocus() }.apply {
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT); setTextColor(AppThemes.color(this@MainActivity,R.color.roomsound_brass)); textSize = 13f
+                    visibility = if (roomSession?.supportsMessageReplies() == true) View.VISIBLE else View.GONE
+                    contentDescription = "Reply to ${message.senderName}'s message"
+                }, LinearLayout.LayoutParams(dp(64),dp(44)))
+                row.addView(messageHeader, matchWrap())
+                message.replyTo?.let { quote -> row.addView(labelText().apply {
+                    text = "${quote.senderName}: ${quote.text}"; textSize = 13f
+                    setTextColor(AppThemes.color(this@MainActivity,R.color.roomsound_cream_muted))
+                    isFocusable = true; contentDescription = "Reply to ${quote.senderName}. Tap to find the original message."
+                    setOnClickListener {
+                        val target = chatFeed.findViewWithTag<View>(quote.id)
+                        if (target != null) (chatFeed.parent as? ScrollView)?.smoothScrollTo(0,target.top)
+                        else android.widget.Toast.makeText(this@MainActivity,"The original message is no longer in recent history.",android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }, matchWrap()) }
+                if (message.voice != null) {
+                    row.addView(button(if (message.voice.data == null) "Recording no longer available" else "Play voice · ${((message.voice.durationMs + 999) / 1000)} sec", ButtonTone.SECONDARY) { voiceNotes.play(message.voice) }.apply { isEnabled = message.voice.data != null }, marginLayout())
+                } else row.addView(labelText().apply { text = message.text; textSize = 16f }, matchWrap())
+                chatFeed.addView(row, matchWrap())
+            }
+        }
 
         // Quick reactions apply to the newest message; servers without
         // reactions publish no set, so the row stays hidden there.
@@ -1398,7 +1504,7 @@ class MainActivity : Activity() {
             val status = when (grade) { 0 -> "Healthy"; 1 -> "Watch"; 2 -> "Needs attention"; else -> "Informational" }
             health.append("$label: $value · $status\n$ideal\n\n")
             val color = when (grade) { 0 -> R.color.roomsound_success; 1 -> R.color.roomsound_warning; 2 -> R.color.roomsound_danger; else -> R.color.roomsound_cream_muted }
-            health.setSpan(android.text.style.ForegroundColorSpan(getColor(color)), start, health.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            health.setSpan(android.text.style.ForegroundColorSpan(AppThemes.color(this, color)), start, health.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         val connection = session?.connectionState()?.name ?: "NOT CONNECTED"
         factor("Connection", connection, "Ideal: joined and connected", if (connection == "JOINED") 0 else if (room != null) 2 else -1)
@@ -1664,16 +1770,40 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun toggleVoiceRecording() {
+        if (roomSession?.currentRoomState() == null) { appendRoomEvent("Join a room before recording."); return }
+        if (voiceNotes.recording) { voiceNotes.stopRecording(); return }
+        if (voiceNotes.draft != null) { updateVoiceComposer(); return }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 6110); return
+        }
+        voiceNotes.start()
+    }
+
+    private fun updateVoiceComposer() {
+        if (!::voiceRecordButton.isInitialized) return
+        val supported = roomSession?.supportsVoiceMessages() == true
+        voiceRecordButton.isEnabled = supported || voiceNotes.recording || voiceNotes.draft != null
+        voiceRecordButton.text = if (voiceNotes.recording) "Stop recording · ${voiceNotes.elapsedSeconds} / 30 sec" else if (voiceNotes.draft != null) "Review voice message" else if (!supported) "Voice notes unavailable in this room" else "Record voice"
+        if (::voicePreviewPlayButton.isInitialized) voicePreviewPlayButton.text = if (voiceNotes.playing) "Stop" else "Play"
+        if (::voicePreviewRow.isInitialized) voicePreviewRow.visibility = if (voiceNotes.draft != null) View.VISIBLE else View.GONE
+        if (::chatReplyText.isInitialized) {
+            chatReplyText.visibility = if (chatReplyTarget == null) View.GONE else View.VISIBLE
+            chatReplyText.text = chatReplyTarget?.let { "Replying to ${it.senderName}: ${if (it.voice == null) it.text.take(100) else "Voice message"}  · Tap to cancel" }
+        }
+    }
+
     private fun sendChat() {
         val session = roomSession ?: return
         if (session.currentRoomState() == null) {
             appendRoomEvent("Join a room before sending chat.")
             return
         }
-        if (session.sendChat(chatInput.text.toString())) chatInput.setText("")
+        if (session.sendChat(chatInput.text.toString(), chatReplyTarget?.id)) { chatInput.setText(""); chatReplyTarget = null; updateVoiceComposer() }
     }
 
     private fun leaveRoom() {
+        voiceNotes.cancelRecording(); voiceNotes.discard(); chatReplyTarget = null; chatFingerprint = ""; chatFeed.removeAllViews()
         pendingCaptureStart = false
         projectionConsentInFlight = false
         notificationPermissionRequestedRoomId = null
@@ -1761,6 +1891,11 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 6110) {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) { if (activityResumed) voiceNotes.start() else startVoiceOnResume = true }
+            else android.widget.Toast.makeText(this,"Microphone access is needed only for voice messages. Text chat still works.",android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
         if (requestCode == REQUEST_POST_NOTIFICATIONS) {
             notificationPermissionRequestInFlight = false
             return
@@ -2035,12 +2170,39 @@ class MainActivity : Activity() {
         elevation = 0f
     }
 
+    private fun welcomeChoice(title: String, subtitle: String, page: String): View {
+        val wrapper = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        wrapper.addView(View(this).apply { setBackgroundColor(AppThemes.color(this@MainActivity, R.color.roomsound_panel_stroke)) }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)))
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(if (compactLandscape) 10 else 20), dp(8), dp(if (compactLandscape) 10 else 20))
+            setBackgroundResource(R.drawable.bg_roomsound_button_secondary)
+            isFocusable = true
+            isClickable = true
+            contentDescription = "$title. $subtitle"
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            setOnClickListener { navigateNative(page) }
+        }
+        val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS }
+        copy.addView(sectionTitle(title).apply { textSize = if (compactLandscape) 20f else 22f; setPadding(0, 0, 0, dp(2)) }, matchWrap())
+        copy.addView(labelText().apply { text = subtitle; textSize = if (compactLandscape) 12f else 14f; setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream_muted)) }, matchWrap())
+        row.addView(copy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(TextView(this).apply {
+            text = "→"; textSize = 26f; gravity = Gravity.CENTER
+            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_brass))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dp(32), dp(44)))
+        wrapper.addView(row, matchWrap())
+        return wrapper
+    }
+
     private fun sectionTitle(text: String): TextView = TextView(this).apply {
         this.text = text
-        textSize = 18f
+        textSize = 21f
         setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream))
         setTypeface(headingTypeface)
-        letterSpacing = 0.025f
+        letterSpacing = -0.02f
         setPadding(0, 0, 0, dp(8))
     }
 
@@ -2054,7 +2216,7 @@ class MainActivity : Activity() {
 
     private fun panelContainer(background: Int = R.drawable.bg_roomsound_panel) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(20), dp(20), dp(20), dp(22))
+        setPadding(dp(if (compactLandscape) 12 else 20), dp(if (compactLandscape) 12 else 20), dp(if (compactLandscape) 12 else 20), dp(if (compactLandscape) 12 else 22))
         setBackgroundResource(background)
         elevation = 0f
         clipToPadding = true
@@ -2104,7 +2266,7 @@ class MainActivity : Activity() {
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT,
     ).apply {
-        topMargin = dp(12)
+        topMargin = dp(if (compactLandscape) 8 else 12)
         gravity = Gravity.CENTER_HORIZONTAL
     }
 
@@ -2112,7 +2274,7 @@ class MainActivity : Activity() {
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT,
     ).apply {
-        bottomMargin = dp(18)
+        bottomMargin = dp(if (compactLandscape) 8 else 18)
     }
 
     /** Checks GitHub Releases off the main thread; shows a notice only for a newer version. */

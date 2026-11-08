@@ -1,21 +1,23 @@
-import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261107-health1';
-import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261107-health1';
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261107-health1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261107-health1';
+import { RoomChatUI } from './chat-ui.mjs?v=20261108-mehfil1';
+let roomChatUI = null;
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261108-mehfil1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261108-mehfil1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261108-mehfil1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261108-mehfil1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261107-health1';
+} from './capture-tracks.js?v=20261108-mehfil1';
 import {
   decodePcm16Frame,
   encodePcm16Frame,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_SAMPLE_RATE,
-} from './media-relay.mjs?v=20261107-health1';
+} from './media-relay.mjs?v=20261108-mehfil1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -27,8 +29,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261107-health1';
-import { roomPalette } from './room-palette.js?v=20261107-health1';
+} from './ads.mjs?v=20261108-mehfil1';
+import { roomPalette } from './room-palette.js?v=20261108-mehfil1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -627,7 +629,10 @@ function audioLevel(analyser, samples) {
 
 /** Mirrored frequency bars on the source card; flat when nothing is playing. */
 function drawSourceWaveform(analyser) {
-  const canvas = $('#source-waveform');
+  for (const canvas of [$('#source-waveform'), $('#mini-waveform')]) drawAudioBars(canvas, analyser);
+}
+
+function drawAudioBars(canvas, analyser) {
   const context = canvas?.getContext?.('2d');
   if (!context) return;
   const ratio = window.devicePixelRatio || 1;
@@ -640,7 +645,7 @@ function drawSourceWaveform(analyser) {
   }
   context.clearRect(0, 0, width, height);
   const bins = analyser ? new Uint8Array(analyser.frequencyBinCount) : null;
-  if (bins) analyser.getByteFrequencyData(bins);
+  if (bins && !reducedMotionQuery?.matches) analyser.getByteFrequencyData(bins);
   // Bars fade between the two room tints; caret-color carries the second (canvas never shows a caret).
   const styles = getComputedStyle(canvas);
   const color = styles.color || '#ebc979';
@@ -838,7 +843,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261107-health1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261108-mehfil1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -916,7 +921,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261107-health1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261108-mehfil1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1206,7 +1211,11 @@ function addMessages(messages) {
   for (const message of messages || []) {
     const existing = known.get(message.id);
     // A rejoin resends history; keep its newer reaction counts.
-    if (existing) existing.reactions = message.reactions;
+    if (existing) {
+      const previousVoice = existing.voice;
+      Object.assign(existing, message);
+      if (message.voice?.referenceOnly && previousVoice?.data) existing.voice = { ...message.voice, data: previousVoice.data };
+    }
     else state.messages.push(message);
   }
   state.messages.sort((a, b) => a.createdAt - b.createdAt);
@@ -1244,7 +1253,8 @@ function selectEntryTab(entryType) {
 }
 
 function selectRoomTab(tabName) {
-  const selected = ['chat', 'people', 'health'].includes(tabName) ? tabName : 'chat';
+  const selected = ['listen', 'chat', 'people', 'health'].includes(tabName) ? tabName : 'listen';
+  if (selected !== 'chat') roomChatUI?.cancelRecording();
   $('#room-view').dataset.roomTab = selected;
   $$('.room-tab').forEach((tab) => {
     const active = tab.dataset.roomTab === selected;
@@ -1255,6 +1265,7 @@ function selectRoomTab(tabName) {
 }
 
 function resetToLanding(reason = '') {
+  roomChatUI?.reset();
   state.relayPacketProgress = null;
   recentUnderruns.reset();
   recentMissing.reset();
@@ -1283,7 +1294,7 @@ function resetToLanding(reason = '') {
   state.activity = [];
   $('#room-banner').classList.add('hidden');
   applyRoomPalette(null);
-  selectRoomTab('chat');
+  selectRoomTab('listen');
   showWelcomeScreen('home');
   showLanding(reason);
 }
@@ -1448,6 +1459,7 @@ function handleServerMessage(message) {
     try { browserStorage.setItem(reconnectSecretStorageKey, reconnectSecret); } catch {}
   }
   if (message.type === 'error') {
+    roomChatUI?.sendFailed();
     state.pendingRoomEnd = false;
     toast(message.message, 'error');
     if (!state.room) showLanding(message.message);
@@ -1463,7 +1475,6 @@ function handleServerMessage(message) {
     applyRoomState(message.state);
     window.history.replaceState(window.history.state, '', roomUrlForCode(message.state.room.code));
     showRoom();
-    toast(`Room ${message.state.room.code} is ready.`, 'success');
     return;
   }
   if (message.type === 'state') {
@@ -1633,6 +1644,8 @@ function renderSource() {
     ? (starting ? 'Waiting for the source device…' : 'Everyone in the room can listen.')
     : 'Choose an audio source to start sharing with the room.';
   $('#source-status-label').textContent = live ? (starting ? 'Starting' : 'Live') : 'Waiting';
+  $('#mini-source-title').textContent = live ? `${sourceMember.name} is sharing` : 'The room is quiet';
+  $('#mini-source-status').textContent = starting ? 'Connecting · Open audio controls' : live ? 'Live audio · Open controls' : 'Open audio controls';
   const initial = live ? (Array.from(String(sourceMember.name || '').trim())[0] || '').toUpperCase() : '';
   $('#source-cover-initial').textContent = initial;
   $('#source-orb').classList.toggle('has-initial', Boolean(initial));
@@ -1769,14 +1782,17 @@ function insertComposerEmoji(emoji) {
   input.setSelectionRange(caret, caret);
 }
 
+function sendChatPayload(payload) {
+  if (!state.room || state.ws?.readyState !== WebSocket.OPEN || (payload.voice && state.ws.bufferedAmount > 128 * 1024)) {
+    toast('Chat is reconnecting or busy. Your message is still here.'); return false;
+  }
+  try { state.ws.send(JSON.stringify(payload)); return true; } catch { toast('Could not send. Please reconnect and try again.'); return false; }
+}
 function renderChat() {
-  const feed = $('#chat-feed');
-  if (!feed) return;
-  const wasNearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 48;
-  const chat = state.messages.filter((message) => message.kind === 'chat');
+  if (!roomChatUI) roomChatUI = new RoomChatUI({ feed: $('#chat-feed'), input: $('#chat-input'), form: $('#chat-form'), send: sendChatPayload, getMessages: () => state.messages, getSelfId: () => state.self?.id, onError: message => toast(message) });
+  const chat = state.messages.filter(message => message.kind === 'chat');
   $('#chat-count').textContent = chat.length;
-  feed.innerHTML = chat.length ? chat.map((message) => `<div class="chat-message"><div class="avatar">${escapeHtml(initials(message.senderName))}</div><div class="chat-body"><div class="chat-meta"><span class="chat-name">${escapeHtml(message.senderName)}</span><span class="chat-time">${timeLabel(message.createdAt)}</span></div><div class="chat-text">${escapeHtml(message.text)}</div>${chatReactionsHtml(message)}</div></div>`).join('') : '<div class="request-empty">Start the conversation with the room.</div>';
-  if (wasNearBottom) feed.scrollTop = feed.scrollHeight;
+  roomChatUI.render(chat, chatReactionsHtml);
 }
 
 function renderActivity() {
@@ -2792,7 +2808,8 @@ function wireEvents() {
     selectEntryTab(tabs[next].dataset.entryTab);
     tabs[next].focus();
   });
-  $$('.room-tab').forEach((tab) => tab.addEventListener('click', () => selectRoomTab(tab.dataset.roomTab)));
+  $('#mini-player').addEventListener('click', () => { selectRoomTab('listen'); $('#room-tab-listen').focus(); });
+  $$('.room-tab').forEach((tab) => tab.addEventListener('click', () => { selectRoomTab(tab.dataset.roomTab); ensureVisualizerLoop(); }));
   $('#room-tabs')?.addEventListener('keydown', (event) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     const tabs = $$('.room-tab');
@@ -2922,8 +2939,7 @@ function wireEvents() {
     event.preventDefault();
     const text = $('#chat-input').value.trim();
     if (!text) return;
-    send({ type: 'chat', text });
-    $('#chat-input').value = '';
+    if (sendChatPayload(roomChatUI?.payload({ type: 'chat', text }) || { type: 'chat', text })) { $('#chat-input').value = ''; roomChatUI?.clearReply(); }
   });
   $('#member-list').addEventListener('click', (event) => {
     const button = event.target.closest('[data-action]');

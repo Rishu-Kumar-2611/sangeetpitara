@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('.', import.meta.url);
-const assetVersion = '20261107-health1';
+const assetVersion = '20261108-mehfil1';
 
 test('web pages use the selected SangeetPitara logo and cache-busted branding assets', async () => {
   const logoPath = '/branding/sangeetpitara/05-diya-eighth-note.svg';
@@ -81,7 +81,7 @@ test('release download points at GitHub Releases and runtime packages audio modu
   ]);
   // The server redirects this path to the latest GitHub Release asset.
   assert.match(html, /class="apk-download-card" href="\/downloads\/SangeetPitara\.apk"/);
-  assert.match(html, /Download the latest SangeetPitara for playback sharing on Android/);
+  assert.match(html, /Get SangeetPitara for Android/);
   const copies = dockerfile.split(/\r?\n/).filter((line) => /^COPY --chown=node:node /.test(line))
     .map((line) => line.trim().split(/\s+/).slice(2));
   assert.ok(!copies.some((args) => args.some((arg) => /\.apk$|^downloads\//.test(arg))), 'APKs ship via GitHub Releases, not the image');
@@ -216,7 +216,7 @@ test('landing page explains Android sharing and companion browser entry', async 
   assert.doesNotMatch(html, /fonts\.googleapis\.com/);
 });
 
-test('glass redesign: room aura, frosted panels, now-playing hero and phone tabs keep their hooks', async () => {
+test('compact room navigation preserves source hooks and exposes dedicated sections', async () => {
   const [html, css, app] = await Promise.all([
     readFile(new URL('index.html', root), 'utf8'),
     readFile(new URL('styles.css', root), 'utf8'),
@@ -248,10 +248,10 @@ test('glass redesign: room aura, frosted panels, now-playing hero and phone tabs
   assert.match(css, /\.source-waveform \{[^}]*color: var\(--room-tint-1\); caret-color: var\(--room-tint-2\)/);
 
   // Phone tabs: Chat / People / Health, wired by data attributes.
-  assert.match(html, /id="room-view" class="room-view hidden" data-room-tab="chat"/);
+  assert.match(html, /id="room-view" class="room-view hidden" data-room-tab="listen"/);
   assert.match(html, /id="room-tabs" role="tablist"/);
-  for (const tab of ['chat', 'people', 'health']) assert.match(html, new RegExp(`id="room-tab-${tab}"[^>]+data-room-tab="${tab}"[^>]+role="tab"`));
-  assert.match(html, /id="chat-panel" data-room-section="chat"/);
+  for (const tab of ['listen', 'chat', 'people', 'health']) assert.match(html, new RegExp(`id="room-tab-${tab}"[^>]+data-room-tab="${tab}"[^>]+role="tab"`));
+  assert.match(html, /id="chat-panel"[^>]*data-room-section="chat"/);
   assert.match(html, /id="request-panel" data-room-section="people"/);
   assert.match(html, /id="telemetry-panel" data-room-section="health"/);
   assert.match(css, /\.room-tabs \{ display: none; \}/);
