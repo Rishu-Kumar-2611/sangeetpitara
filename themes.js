@@ -1,5 +1,5 @@
 (() => {
-  const choices = [['dark', 'Mehfil · Dark'], ['light', 'Playground · Light']];
+  const choices = [['dark', 'Console · Dark'], ['light', 'Console · Light']];
   let selected = 'dark';
   try {
     const saved = localStorage.getItem('sangeetpitara-theme');
@@ -9,7 +9,7 @@
   const apply = (key) => {
     document.documentElement.dataset.theme = key;
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.content = key === 'light' ? '#f1eee5' : '#191715';
+    if (meta) meta.content = key === 'light' ? '#f5f5f3' : '#0c0d0f';
   };
   apply(selected);
   const attach = () => {

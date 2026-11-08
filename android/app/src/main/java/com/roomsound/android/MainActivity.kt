@@ -75,9 +75,10 @@ class MainActivity : Activity() {
     }
 
     // Same type as the website: Poppins headings, Mukta body (res/font, SIL OFL).
-    private val headingTypeface by lazy { resources.getFont(R.font.mukta_semibold) }
-    private val labelTypeface by lazy { resources.getFont(R.font.mukta_medium) }
-    private val strongTypeface by lazy { resources.getFont(R.font.mukta_semibold) }
+    private val headingTypeface by lazy { resources.getFont(R.font.geist_semibold) }
+    private val labelTypeface by lazy { resources.getFont(R.font.geist_medium) }
+    private val strongTypeface by lazy { resources.getFont(R.font.geist_semibold) }
+    private val monoTypeface by lazy { resources.getFont(R.font.geist_mono_medium) }
 
     private lateinit var statusText: TextView
     private lateinit var handoffControlText: TextView
@@ -507,15 +508,23 @@ class MainActivity : Activity() {
         val welcome = panelContainer()
         welcome.setBackgroundColor(AppThemes.color(this, R.color.roomsound_background_bottom))
         welcome.setPadding(dp(4), dp(if (compactLandscape) 12 else 20), dp(4), dp(if (compactLandscape) 4 else 8))
-        welcome.addView(sectionLabel("A LITTLE CLOSER, THROUGH MUSIC").apply { textSize = 11f; letterSpacing = 0.12f }, matchWrap())
-        welcome.addView(sectionTitle(if (AppThemes.selected(this) == 0) "Good music.\nBetter company." else "A good place to\ntune in together.").apply {
-            textSize = if (compactLandscape) 28f else 32f
-            setTypeface(android.graphics.Typeface.create("serif", android.graphics.Typeface.NORMAL))
+        welcome.addView(sectionLabel("● Live audio rooms · Android + Web").apply {
+            text = android.text.SpannableString(text).apply {
+                setSpan(android.text.style.ForegroundColorSpan(AppThemes.color(this@MainActivity, R.color.roomsound_brass)), 0, 1, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }, matchWrap())
+        val heroLead = "Share your phone's sound."
+        welcome.addView(sectionTitle("$heroLead\nLive, with up to ten people.").apply {
+            text = android.text.SpannableString(text).apply {
+                setSpan(android.text.style.ForegroundColorSpan(AppThemes.color(this@MainActivity, R.color.roomsound_cream_muted)), heroLead.length + 1, length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            textSize = if (compactLandscape) 26f else 30f
             letterSpacing = -0.035f
+            setLineSpacing(0f, 1.04f)
             setPadding(0, dp(14), 0, dp(12))
         }, matchWrap())
         welcome.addView(labelText().apply {
-            text = "Your people. One shared soundtrack.\nListen online, or stay close over a hotspot."
+            text = "Start a room, send the code, press play.\nEveryone hears the same thing at the same time."
             textSize = 16f
             setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream_muted))
             setPadding(0, 0, 0, dp(24))
@@ -709,10 +718,10 @@ class MainActivity : Activity() {
         }
         roomCodePanel.addView(sectionLabel("Room code"), matchWrap())
         roomCodeText = TextView(this).apply {
-            textSize = 30f
+            textSize = 28f
             setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream))
-            setTypeface(headingTypeface)
-            letterSpacing = 0.12f
+            setTypeface(monoTypeface)
+            letterSpacing = 0.16f
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(7), dp(8), dp(7))
             setTextIsSelectable(true)
@@ -2206,11 +2215,20 @@ class MainActivity : Activity() {
         setPadding(0, 0, 0, dp(8))
     }
 
+    // Short labels are console-style mono captions; long guidance stays readable body text.
     private fun sectionLabel(text: String): TextView = TextView(this).apply {
         this.text = text
-        textSize = 15f
-        setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_brass_bright))
-        setTypeface(labelTypeface)
+        if (text.length <= 40) {
+            textSize = 11.5f
+            isAllCaps = true
+            letterSpacing = 0.08f
+            setTypeface(monoTypeface)
+            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream_muted))
+        } else {
+            textSize = 14f
+            setTypeface(labelTypeface)
+            setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream_soft))
+        }
         setPadding(0, dp(3), 0, dp(6))
     }
 

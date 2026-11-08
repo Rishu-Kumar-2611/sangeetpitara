@@ -223,7 +223,7 @@ const securityHeaders = {
 // Only client assets belong to the public HTTP surface. Backend modules,
 // audit evidence, tests and future repository files are private by default.
 const publicFiles = new Set([
-  'chat.css', 'index.html', 'about.html', 'contact.html', 'privacy.html', 'terms.html',
+  'chat.css', 'index.html', 'privacy.html', 'terms.html',
   'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'themes.css', 'themes.js',
   'chat-ui.mjs', 'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
   'room-palette.js', 'media-relay.mjs', 'relay-pcm.js', 'stream-health.mjs', 'audio-diagnostics.mjs',

@@ -23,7 +23,7 @@ production certification; the remaining device/deployment gates still apply.
 - F15: offline participant slots and resolved requests are pruned; expired account sessions receive scheduled cleanup.
 - F16, partial: CPU wake lock has a bounded, lifecycle-renewed lease; modern backup rules added. Battery profiling and optimization require physical devices.
 - F17, partial: app-first landing content, labeled chat/errors, keyboard entry tabs, focus-contained dialogs, and storage-denied fallback. Added desktop/phone browser regression tests and rendered screenshots.
-- F18, partial: published source now uses user-supplied support address rishu2311singh@gmail.com; removed contact-page placeholders and query-string email override. Updated storage/relay disclosures. Consent prompt stays hidden while ads are disabled. Mailbox delivery, retention/legal review remain unverified.
+- F18, partial: published source now uses user-supplied support address [support email]; removed contact-page placeholders and query-string email override. Updated storage/relay disclosures. Consent prompt stays hidden while ads are disabled. Mailbox delivery, retention/legal review remain unverified.
 - F19, partial: real PostgreSQL integration and browser flows added to CI; release.properties triggers Android checks. Further observability, instrumentation and maintainability work remains.
 - Additional real-database bug fixed: session lookup qualifies `sessions.created_at` in its JOIN, avoiding PostgreSQL authentication failures hidden by the memory adapter.
 

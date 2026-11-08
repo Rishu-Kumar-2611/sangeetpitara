@@ -1,4 +1,4 @@
-import { createSafeStorage } from './guest-id.js?v=20261108-continuity1';
+import { createSafeStorage } from './guest-id.js?v=20261108-console1';
 const browserStorage = createSafeStorage();
 
 /**

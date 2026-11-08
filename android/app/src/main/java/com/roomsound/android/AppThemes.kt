@@ -5,7 +5,7 @@ import android.content.Context
 import android.util.TypedValue
 
 object AppThemes {
-    val names = arrayOf("Mehfil · Dark", "Playground · Light")
+    val names = arrayOf("Console · Dark", "Console · Light")
     val keys = arrayOf("dark", "light")
     fun selected(context: Context): Int = when (context.getSharedPreferences("appearance", Context.MODE_PRIVATE).getString("theme", "dark")) {
         "light", "playground", "courtyard" -> 1
