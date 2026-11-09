@@ -1,14 +1,17 @@
 const make = (tag, cls, text) => { const el=document.createElement(tag); if(cls)el.className=cls; if(text!=null)el.textContent=text; return el; };
 const button = (text, action, cls='secondary-button') => { const el=make('button',cls,text);el.type='button';el.addEventListener('click',action);return el; };
 export class RoomChatUI {
-  constructor({feed,input,form,send,getMessages,getSelfId,onError}) {
-    Object.assign(this,{feed,input,form,send,getMessages,getSelfId,onError}); this.urls=new Map(); this.nodes=new Map(); this.generation=0;
+  constructor({feed,input,form,send,getMessages,getSelfId,onError,onVoicePlayback=()=>{}}) {
+    Object.assign(this,{feed,input,form,send,getMessages,getSelfId,onError,onVoicePlayback}); this.urls=new Map(); this.nodes=new Map(); this.generation=0;
     this.reply=make('div','chat-reply-composer');this.reply.hidden=true;form.before(this.reply);
     this.preview=make('div','chat-voice-preview');this.preview.hidden=true;form.before(this.preview);
     // Voice notes work like Telegram: tap the mic to record, tap again to stop and send.
     this.tools=make('div','chat-tools');this.recordButton=button('🎤',()=>this.toggleRecording(),'mic-button');this.setMicState(false);
     const submit=form.querySelector('[type="submit"]');if(submit)submit.before(this.recordButton);else this.tools.append(this.recordButton);form.after(this.tools);
     this.feed.addEventListener('play',e=>{if(e.target.tagName==='AUDIO')for(const audio of this.feed.querySelectorAll('audio'))if(audio!==e.target)audio.pause();},true);
+    // Tell the room when a voice message starts or stops so it can pause the music meanwhile.
+    const voiceState=()=>this.onVoicePlayback([...this.feed.querySelectorAll('audio'),...this.preview.querySelectorAll('audio')].some(a=>!a.paused&&!a.ended));
+    for(const root of [this.feed,this.preview])for(const type of ['play','playing','pause','ended','emptied'])root.addEventListener(type,e=>{if(e.target.tagName==='AUDIO')voiceState();},true);
     this.hideHandler=()=>{if(document.hidden)this.cancelRecording();};document.addEventListener('visibilitychange',this.hideHandler);
     this.pageHandler=()=>this.reset();addEventListener('pagehide',this.pageHandler);
     if(!globalThis.isSecureContext||!navigator.mediaDevices?.getUserMedia||!globalThis.MediaRecorder) {this.recordButton.disabled=true;this.recordButton.title='Voice recording needs HTTPS or the desktop companion. You can still listen and reply.';this.tools.append(make('small','','Recording needs HTTPS or the desktop companion.'));}
