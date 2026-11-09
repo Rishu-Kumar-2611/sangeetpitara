@@ -1113,7 +1113,6 @@ class MainActivity : Activity() {
             setColor(AppThemes.color(this@MainActivity, R.color.roomsound_accent_soft))
         }
         nowPlayingCassette.spinning = live && !paused
-        nowPlayingCassette.contentDescription = null
         nowPlayingCard.contentDescription = "${nowPlayingKicker.text}. ${nowPlayingTitle.text}. $chip"
     }
 

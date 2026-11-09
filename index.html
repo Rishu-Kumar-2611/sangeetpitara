@@ -26,9 +26,9 @@
     <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261109-light1" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="stylesheet" href="/styles.css?v=20261109-light1" />
-  <link rel="stylesheet" href="/themes.css?v=20261109-light1" />
+  <link rel="stylesheet" href="/themes.css?v=20261109-visuals2" />
     <link rel="stylesheet" href="/chat.css?v=20261109-light1" />
-    <script src="/themes.js?v=20261109-light1"></script>
+    <script src="/themes.js?v=20261109-visuals2"></script>
   </head>
   <body>
     <div class="aura" id="aura" aria-hidden="true"><span class="aura-blob aura-blob-one"></span><span class="aura-blob aura-blob-two"></span><span class="aura-blob aura-blob-three"></span></div>
@@ -165,7 +165,16 @@
 
             <section class="now-playing" id="listening-surface" role="tabpanel" aria-labelledby="room-tab-listen">
             <div class="source-card" id="source-card">
-              <div class="source-orb source-cover cassette" id="source-orb" aria-hidden="true"><span class="cassette-label"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261109-light1" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span><span class="cassette-rule"></span></span><span class="cassette-window"><span class="reel"></span><span class="tape-run"></span><span class="reel"></span></span><span class="cassette-foot"></span></div>
+              <div class="cover-visual">
+                <div class="source-orb source-cover cassette" id="source-orb" aria-hidden="true"><span class="cassette-label"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261109-light1" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span><span class="cassette-rule"></span></span><span class="cassette-window"><span class="reel"></span><span class="tape-run"></span><span class="reel"></span></span><span class="cassette-foot"></span><canvas class="cover-visual-canvas" id="cover-visual-canvas" width="640" height="405" hidden></canvas></div>
+                <button class="cover-visual-toggle" id="cover-visual-toggle" type="button" aria-controls="cover-visual-picker" aria-expanded="false" aria-label="Change playback visual"><span>Change visual ▾</span></button>
+                  <div class="cover-visual-picker" id="cover-visual-picker" role="group" aria-label="Playback visual" hidden>
+                    <button type="button" data-visual="cassette">Cassette</button>
+                    <button type="button" data-visual="bike">Bicycle</button>
+                    <button type="button" data-visual="car">Neon sports car</button>
+                    <button type="button" data-visual="radio">Vintage radio</button>
+                    </div>
+              </div>
               <div class="source-card-copy">
                 <div class="source-kicker" id="source-kicker">Nothing playing</div>
                 <h2 id="source-title">The room is quiet</h2>

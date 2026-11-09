@@ -1,6 +1,7 @@
 package com.roomsound.android
 
 import android.animation.ValueAnimator
+import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.DashPathEffect
@@ -26,6 +27,12 @@ class CassetteView(context: Context) : View(context) {
     private val rect = RectF()
     private var angle = 0f
     private var lastFrameNanos = 0L
+    private var artworkStartNanos = 0L
+    private val preferences = context.getSharedPreferences("appearance", Context.MODE_PRIVATE)
+    private var visual = PlaybackVisual.entries.firstOrNull {
+        it.name == preferences.getString("playback_visual", null)
+    } ?: PlaybackVisual.CASSETTE
+    private var artwork = if (visual.asset != null) PlaybackArtwork(context, visual) else null
 
     /** True while audio is live: the reels turn. */
     var spinning = false
@@ -33,11 +40,34 @@ class CassetteView(context: Context) : View(context) {
             if (field == value) return
             field = value
             lastFrameNanos = 0L
+            artworkStartNanos = 0L
             invalidate()
         }
 
     init {
-        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+        isFocusable = true
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+        updateVisualLabel()
+        setOnClickListener {
+            val options = PlaybackVisual.entries
+            AlertDialog.Builder(context)
+                .setTitle("Change playback visual")
+                .setSingleChoiceItems(options.map { it.label }.toTypedArray(), visual.ordinal) { dialog, index ->
+                    visual = options[index]
+                    artwork = if (visual.asset != null) PlaybackArtwork(context, visual) else null
+                    preferences.edit().putString("playback_visual", visual.name).apply()
+                    artworkStartNanos = 0L
+                    updateVisualLabel()
+                    invalidate()
+                    dialog.dismiss()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun updateVisualLabel() {
+        contentDescription = "Change playback visual. Current visual: " + visual.label
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -53,6 +83,17 @@ class CassetteView(context: Context) : View(context) {
         val left = (width - w) / 2f
         val h = height.toFloat()
         val radius = 14 * density
+
+        artwork?.let { current ->
+            val playing = spinning && ValueAnimator.areAnimatorsEnabled()
+            val now = System.nanoTime()
+            if (!playing || artworkStartNanos == 0L) artworkStartNanos = now
+            val seconds = ((now - artworkStartNanos) % 8_000_000_000L) / 1_000_000_000f
+            rect.set(left, 0f, left + w, h)
+            current.draw(canvas, rect, radius, seconds, playing)
+            if (playing) postInvalidateOnAnimation()
+            return
+        }
 
         // Shell.
         rect.set(left, 0f, left + w, h)
@@ -125,6 +166,7 @@ class CassetteView(context: Context) : View(context) {
 
     override fun onDetachedFromWindow() {
         lastFrameNanos = 0L
+        artworkStartNanos = 0L
         super.onDetachedFromWindow()
     }
 }

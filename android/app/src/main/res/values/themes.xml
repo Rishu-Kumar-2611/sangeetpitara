@@ -124,4 +124,148 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">?attr/roomsound_background_bottom</item>
     </style>
+
+    <style name="Theme.RoomSound.Forest" parent="Theme.RoomSound">
+        <item name="roomsound_background_top">#0B1713</item>
+        <item name="roomsound_background_bottom">#0B1713</item>
+        <item name="roomsound_header_top">#0B1713</item>
+        <item name="roomsound_header_bottom">#0B1713</item>
+        <item name="roomsound_field">#0B1713</item>
+        <item name="roomsound_panel_top">#142820</item>
+        <item name="roomsound_panel_bottom">#142820</item>
+        <item name="roomsound_field_focused">#142820</item>
+        <item name="roomsound_button_secondary_top">#142820</item>
+        <item name="roomsound_button_secondary_bottom">#142820</item>
+        <item name="roomsound_panel_stroke">#284538</item>
+        <item name="roomsound_brass_shadow">#284538</item>
+        <item name="roomsound_button_disabled_stroke">#284538</item>
+        <item name="roomsound_inset_stroke">#446957</item>
+        <item name="roomsound_field_stroke">#446957</item>
+        <item name="roomsound_seekbar_track">#446957</item>
+        <item name="roomsound_inset">#1A3429</item>
+        <item name="roomsound_button_disabled">#1A3429</item>
+        <item name="roomsound_button_secondary_pressed_top">#1A3429</item>
+        <item name="roomsound_button_secondary_pressed_bottom">#1A3429</item>
+        <item name="roomsound_cream">#EFF8EF</item>
+        <item name="roomsound_cream_soft">#B6CABB</item>
+        <item name="roomsound_cream_muted">#B6CABB</item>
+        <item name="roomsound_brass">#83D7B1</item>
+        <item name="roomsound_field_focus_stroke">#83D7B1</item>
+        <item name="roomsound_button_primary_top">#83D7B1</item>
+        <item name="roomsound_button_primary_bottom">#83D7B1</item>
+        <item name="roomsound_seekbar_progress">#83D7B1</item>
+        <item name="roomsound_seekbar_thumb_top">#83D7B1</item>
+        <item name="roomsound_seekbar_thumb_bottom">#83D7B1</item>
+        <item name="roomsound_brass_bright">#B1F3D6</item>
+        <item name="roomsound_button_primary_pressed_top">#B1F3D6</item>
+        <item name="roomsound_button_primary_pressed_bottom">#B1F3D6</item>
+        <item name="roomsound_on_accent">#071C12</item>
+        <item name="roomsound_accent_soft">#2283D7B1</item>
+        <item name="roomsound_skin">#B1F3D6</item>
+    </style>
+
+    <style name="Theme.RoomSound.Forest.ControlRequest" parent="Theme.RoomSound.Forest">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">?attr/roomsound_background_bottom</item>
+    </style>
+
+    <style name="Theme.RoomSound.Brass" parent="Theme.RoomSound">
+        <item name="roomsound_background_top">#0E0B0A</item>
+        <item name="roomsound_background_bottom">#0E0B0A</item>
+        <item name="roomsound_header_top">#0E0B0A</item>
+        <item name="roomsound_header_bottom">#0E0B0A</item>
+        <item name="roomsound_field">#0E0B0A</item>
+        <item name="roomsound_panel_top">#1E1815</item>
+        <item name="roomsound_panel_bottom">#1E1815</item>
+        <item name="roomsound_field_focused">#1E1815</item>
+        <item name="roomsound_button_secondary_top">#1E1815</item>
+        <item name="roomsound_button_secondary_bottom">#1E1815</item>
+        <item name="roomsound_panel_stroke">#3D3027</item>
+        <item name="roomsound_brass_shadow">#3D3027</item>
+        <item name="roomsound_button_disabled_stroke">#3D3027</item>
+        <item name="roomsound_inset_stroke">#66503B</item>
+        <item name="roomsound_field_stroke">#66503B</item>
+        <item name="roomsound_seekbar_track">#66503B</item>
+        <item name="roomsound_inset">#2B221D</item>
+        <item name="roomsound_button_disabled">#2B221D</item>
+        <item name="roomsound_button_secondary_pressed_top">#2B221D</item>
+        <item name="roomsound_button_secondary_pressed_bottom">#2B221D</item>
+        <item name="roomsound_cream">#F7F1EA</item>
+        <item name="roomsound_cream_soft">#C4B6A7</item>
+        <item name="roomsound_cream_muted">#C4B6A7</item>
+        <item name="roomsound_brass">#F2A93B</item>
+        <item name="roomsound_field_focus_stroke">#F2A93B</item>
+        <item name="roomsound_button_primary_top">#F2A93B</item>
+        <item name="roomsound_button_primary_bottom">#F2A93B</item>
+        <item name="roomsound_seekbar_progress">#F2A93B</item>
+        <item name="roomsound_seekbar_thumb_top">#F2A93B</item>
+        <item name="roomsound_seekbar_thumb_bottom">#F2A93B</item>
+        <item name="roomsound_brass_bright">#F7C06A</item>
+        <item name="roomsound_button_primary_pressed_top">#F7C06A</item>
+        <item name="roomsound_button_primary_pressed_bottom">#F7C06A</item>
+        <item name="roomsound_on_accent">#1B1206</item>
+        <item name="roomsound_accent_soft">#22F2A93B</item>
+        <item name="roomsound_skin">#F7C06A</item>
+    </style>
+
+    <style name="Theme.RoomSound.Brass.ControlRequest" parent="Theme.RoomSound.Brass">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">?attr/roomsound_background_bottom</item>
+    </style>
+
+    <style name="Theme.RoomSound.Rose" parent="Theme.RoomSound">
+        <item name="roomsound_background_top">#1C1018</item>
+        <item name="roomsound_background_bottom">#1C1018</item>
+        <item name="roomsound_header_top">#1C1018</item>
+        <item name="roomsound_header_bottom">#1C1018</item>
+        <item name="roomsound_field">#1C1018</item>
+        <item name="roomsound_panel_top">#2C1B28</item>
+        <item name="roomsound_panel_bottom">#2C1B28</item>
+        <item name="roomsound_field_focused">#2C1B28</item>
+        <item name="roomsound_button_secondary_top">#2C1B28</item>
+        <item name="roomsound_button_secondary_bottom">#2C1B28</item>
+        <item name="roomsound_panel_stroke">#462D41</item>
+        <item name="roomsound_brass_shadow">#462D41</item>
+        <item name="roomsound_button_disabled_stroke">#462D41</item>
+        <item name="roomsound_inset_stroke">#69475F</item>
+        <item name="roomsound_field_stroke">#69475F</item>
+        <item name="roomsound_seekbar_track">#69475F</item>
+        <item name="roomsound_inset">#372333</item>
+        <item name="roomsound_button_disabled">#372333</item>
+        <item name="roomsound_button_secondary_pressed_top">#372333</item>
+        <item name="roomsound_button_secondary_pressed_bottom">#372333</item>
+        <item name="roomsound_cream">#FFF0F7</item>
+        <item name="roomsound_cream_soft">#CFB1C3</item>
+        <item name="roomsound_cream_muted">#CFB1C3</item>
+        <item name="roomsound_brass">#EDACCC</item>
+        <item name="roomsound_field_focus_stroke">#EDACCC</item>
+        <item name="roomsound_button_primary_top">#EDACCC</item>
+        <item name="roomsound_button_primary_bottom">#EDACCC</item>
+        <item name="roomsound_seekbar_progress">#EDACCC</item>
+        <item name="roomsound_seekbar_thumb_top">#EDACCC</item>
+        <item name="roomsound_seekbar_thumb_bottom">#EDACCC</item>
+        <item name="roomsound_brass_bright">#FFD1E7</item>
+        <item name="roomsound_button_primary_pressed_top">#FFD1E7</item>
+        <item name="roomsound_button_primary_pressed_bottom">#FFD1E7</item>
+        <item name="roomsound_on_accent">#2B0F21</item>
+        <item name="roomsound_accent_soft">#22EDACCC</item>
+        <item name="roomsound_skin">#FFD1E7</item>
+    </style>
+
+    <style name="Theme.RoomSound.Rose.ControlRequest" parent="Theme.RoomSound.Rose">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">?attr/roomsound_background_bottom</item>
+    </style>
 </resources>

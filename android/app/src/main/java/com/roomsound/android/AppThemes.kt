@@ -5,16 +5,24 @@ import android.content.Context
 import android.util.TypedValue
 
 object AppThemes {
-    val names = arrayOf("Console · Dark", "Console · Light")
-    val keys = arrayOf("dark", "light")
-    fun selected(context: Context): Int = when (context.getSharedPreferences("appearance", Context.MODE_PRIVATE).getString("theme", "light")) {
-        "dark" -> 0
-        else -> 1 // Light is the default.
+    val names = arrayOf("Console · Dark", "Console · Light", "Forest", "Brass", "Rose")
+    private val keys = arrayOf("dark", "light", "forest", "brass", "rose")
+    fun selected(context: Context): Int {
+        val saved = context.getSharedPreferences("appearance", Context.MODE_PRIVATE).getString("theme", "light")
+        return keys.indexOf(saved).takeIf { it >= 0 } ?: 1
     }
-    fun save(context: Context, index: Int) { context.getSharedPreferences("appearance", Context.MODE_PRIVATE).edit().putString("theme",keys[index]).apply() }
+    fun save(context: Context, index: Int) {
+        context.getSharedPreferences("appearance", Context.MODE_PRIVATE).edit().putString("theme", keys[index]).apply()
+    }
     fun apply(activity: Activity, control: Boolean = false) {
-        val styles = if(control) intArrayOf(R.style.Theme_RoomSound_ControlRequest,R.style.Theme_RoomSound_Playground_ControlRequest)
-            else intArrayOf(R.style.Theme_RoomSound,R.style.Theme_RoomSound_Playground)
+        val styles = if (control) intArrayOf(
+            R.style.Theme_RoomSound_ControlRequest, R.style.Theme_RoomSound_Playground_ControlRequest,
+            R.style.Theme_RoomSound_Forest_ControlRequest, R.style.Theme_RoomSound_Brass_ControlRequest,
+            R.style.Theme_RoomSound_Rose_ControlRequest,
+        ) else intArrayOf(
+            R.style.Theme_RoomSound, R.style.Theme_RoomSound_Playground,
+            R.style.Theme_RoomSound_Forest, R.style.Theme_RoomSound_Brass, R.style.Theme_RoomSound_Rose,
+        )
         activity.setTheme(styles[selected(activity)])
     }
     private val attributes = mapOf(

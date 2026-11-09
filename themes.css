@@ -33,6 +33,32 @@ html[data-theme=light] {
   --room-color-1: #F5F5F3 !important; --room-color-2: #F5F5F3 !important;
 }
 
+/* Classic palettes on the current Studio Console controls and surfaces. */
+html[data-theme=forest], html[data-theme=brass], html[data-theme=rose] {
+  color-scheme: dark;
+  --glass: var(--surface); --glass-strong: var(--surface); --glass-border: var(--line);
+  --teal: #6FCF97; --teal-text: #8EDCAE; --teal-bg: rgb(111 207 151 / 0.1);
+  --danger-text: #FF9B8F; --danger-bg: rgb(255 120 105 / 0.1); --danger-line: rgb(255 140 125 / 0.35);
+  --health-good: #8EDCAE; --health-warning: #F2B35C; --health-bad: #FF9B8F;
+  --meter-off: var(--raised-strong);
+  --room-color-1: var(--bg) !important; --room-color-2: var(--bg) !important;
+}
+html[data-theme=forest] {
+  --bg: #0B1713; --surface: #142820; --raised: #1A3429; --raised-strong: #224437;
+  --line: #284538; --line-strong: #446957; --text: #EFF8EF; --muted: #B6CABB; --faint: #98B2A2;
+  --accent: #83D7B1; --accent-hover: #B1F3D6; --on-accent: #071C12; --accent-soft: #83D7B122; --accent-line: #83D7B166;
+}
+html[data-theme=brass] {
+  --bg: #0E0B0A; --surface: #1E1815; --raised: #2B221D; --raised-strong: #3A2D24;
+  --line: #3D3027; --line-strong: #66503B; --text: #F7F1EA; --muted: #C4B6A7; --faint: #AD9C8A;
+  --accent: #F2A93B; --accent-hover: #F7C06A; --on-accent: #1B1206; --accent-soft: rgb(242 169 59 / 0.16); --accent-line: rgb(242 169 59 / 0.4);
+}
+html[data-theme=rose] {
+  --bg: #1C1018; --surface: #2C1B28; --raised: #372333; --raised-strong: #472C40;
+  --line: #462D41; --line-strong: #69475F; --text: #FFF0F7; --muted: #CFB1C3; --faint: #BA9AAD;
+  --accent: #EDACCC; --accent-hover: #FFD1E7; --on-accent: #2B0F21; --accent-soft: #EDACCC22; --accent-line: #EDACCC66;
+}
+
 /* ---------- Base ---------- */
 html[data-theme] body { background: var(--bg); color: var(--text); font-family: var(--font-body); font-size: 15px; line-height: 1.5; font-feature-settings: 'ss01', 'tnum' 0; }
 html[data-theme] .aura { display: none; }
@@ -407,3 +433,19 @@ html[data-theme] body:has(#local-health) button { box-shadow: none; border-radiu
   html[data-theme] body:has(.room-view:not(.hidden)) .toast-stack { bottom: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .source-waveform, .mini-player canvas { opacity: .75; } html[data-theme] .reel, html[data-theme] .tape-run, html[data-theme] .hero-eq span { animation: none !important; } }
+
+/* Playback artwork uses the cassette's existing slot in the room layout. */
+html[data-theme] .cover-visual { position: relative; width: 100%; min-width: 0; }
+html[data-theme] .cover-visual .source-cover.cassette { width: 100%; }
+html[data-theme] .source-cover[data-visual=radio] { transform: none !important; }
+.cover-visual-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #171717; z-index: 1; }
+.source-cover[data-visual=radio] .cover-visual-canvas { background: #231910; }
+.cover-visual-toggle { position: absolute; inset: 0; z-index: 2; border: 0; border-radius: 14px; background: transparent; padding: 0; cursor: pointer; text-align: right; }
+.cover-visual-toggle span { position: absolute; bottom: 8px; right: 8px; padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); font: 500 11px var(--font-body); }
+.cover-visual-picker { position: absolute; inset: calc(100% + 6px) 0 auto; z-index: 20; display: grid; gap: 2px; padding: 5px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+.cover-visual-picker[hidden], .cover-visual-canvas[hidden] { display: none; }
+.cover-visual-picker button { border: 0; border-radius: 6px; background: transparent; padding: 8px 10px; text-align: left; color: var(--text); font: 500 13px var(--font-body); cursor: pointer; }
+.cover-visual-picker button:hover, .cover-visual-picker button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
+@media (max-width: 720px) {
+  html[data-theme] .cover-visual { width: min(100%, 300px); justify-self: center; }
+}
