@@ -12,7 +12,7 @@ sessions remain compatible. It includes:
   `/downloads/SangeetPitara.apk`, which redirects to the latest GitHub Release
   (see "Android releases" below)
 - Device-local guest identity
-- Up to 10 people in a room
+- No limit on how many people join a room (server-wide connection caps still apply)
 - Host, co-host, participant, and active-source state
 - Binary PCM16 WebSocket media relay for browser audio, enabled by default for
   cross-NAT phone-to-laptop playback

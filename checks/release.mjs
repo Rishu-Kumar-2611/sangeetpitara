@@ -14,7 +14,7 @@ const controller = new AbortController();
 const budget = setTimeout(() => controller.abort(), 260_000);
 const normalize = (text) => text.replace(/\r\n/g, '\n');
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const assetVersion = '20261108-voice1';
+const assetVersion = '20261109-rooms1';
 const releaseProperties = await readFile(new URL('../release.properties', import.meta.url), 'utf8');
 const expectedVersion = releaseProperties.match(/^VERSION_NAME=(.+)$/m)?.[1]?.trim();
 assert.match(expectedVersion || '', /^\d+\.\d+\.\d+$/, 'release.properties must define VERSION_NAME');

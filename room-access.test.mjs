@@ -202,3 +202,17 @@ test('a liveness ping is answered with a pong, outside the message budget', asyn
   await new Promise((resolve) => setTimeout(resolve, 300));
   await assert.rejects(host.next((message) => message.type === 'error', 300));
 });
+
+test('a room has no member limit', async (t) => {
+  // 25 people in one room; the per-address cap is raised so one test machine can hold them.
+  const url = await startServer(t, { MAX_CONNECTIONS_PER_IP: '40' });
+  const { host, code } = await createRoom(t, url);
+  for (let i = 1; i <= 24; i += 1) {
+    const { reply } = await join(t, url, code, `listener${i}`);
+    assert.equal(reply.type, 'joined', `listener ${i}: ${reply.message || ''}`);
+  }
+  const full = await host.next((message) => message.type === 'state' && message.state.members.length === 25, 5_000);
+  assert.equal(full.state.members.filter((member) => member.online).length, 25);
+  const config = await fetch(url.replace('ws:', 'http:') + '/config').then((response) => response.json());
+  assert.equal(config.maxMembers, null);
+});

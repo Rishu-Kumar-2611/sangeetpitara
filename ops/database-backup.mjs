@@ -6,8 +6,9 @@ import { readFile,writeFile,stat,rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { encryptBackup,decryptBackup } from './backup-crypto.mjs';
 const action=process.argv[2],arg=name=>process.argv[process.argv.indexOf(name)+1];
-const key=process.env.BACKUP_ENCRYPTION_KEY;
-if(!/^[a-f\d]{64}$/i.test(key||''))throw new Error('Supply BACKUP_ENCRYPTION_KEY securely; never send it in chat or put it in command arguments.');
+// Copying the key from a terminal often adds a trailing newline or spaces; ignore them.
+const key=(process.env.BACKUP_ENCRYPTION_KEY||'').trim();
+if(!/^[a-f\d]{64}$/i.test(key||''))throw new Error('BACKUP_ENCRYPTION_KEY must be exactly 64 hex characters (0-9, a-f), e.g. from crypto.randomBytes(32).toString("hex"). Never send it in chat or put it in command arguments.');
 function tool(name,args=[],env={}){
  const child=spawn('docker',['run','--rm','-i',...Object.keys(env).flatMap(k=>['--env',k]),'postgres:18-alpine',name,...args],{env:{...process.env,...env},stdio:['pipe','pipe','pipe']});
  child.stdin.on('error',()=>{});
