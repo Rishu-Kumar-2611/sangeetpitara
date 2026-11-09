@@ -601,6 +601,24 @@ class Pcm16RelayPlayerTest {
     }
 
     @Test
+    fun playbackHealthReportsTheLevelOfTheAudioHandedToTheOutput() {
+        // Diagnostics use this to tell "played silence" apart from "played but not heard".
+        val output = Output(capacity = 1_920)
+        player(output, adaptive = true).use { player ->
+            player.start(Pcm16RelayPlayer.FORMAT, EPOCH)
+            assertEquals(0.0, player.playbackHealth()!!.levelPeak, 0.0)
+            for (sequence in 0L until 20L) {
+                val half = ShortArray(960) { if (it % 2 == 0) 16_384 else (-16_384).toShort() }
+                player.play(Pcm16RelayPacketCodec.decode(Pcm16RelayPacketCodec.encode(half, sourceEpoch = EPOCH, sequence = sequence)))
+            }
+            val health = player.playbackHealth()!!
+            assertEquals(0.5, health.levelPeak, 0.01)
+            assertEquals(0.5, health.levelRms, 0.05)
+            player.stop()
+        }
+    }
+
+    @Test
     fun smallLatePacketsDoNotPinALargeCushionAfterAStall() {
         // Recorded on a real session: after one long stall the delay stayed at
         // 2 s because every later ~120 ms hiccup restarted the release wait.

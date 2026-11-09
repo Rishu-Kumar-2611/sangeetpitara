@@ -2,7 +2,9 @@ package com.roomsound.android.transport
 
 /** Local numeric telemetry only. Never accepts free-form strings or identities. */
 class AudioDiagnosticHistory(private val clock: () -> Long = System::currentTimeMillis) {
-    private val allowed = setOf("sentPackets", "receivedPackets", "missingPackets", "underruns", "bufferMs", "targetMs", "jitterMs", "packetAgeMs", "queueMs", "epoch", "acceptedCaptureFrames", "rejectedCaptureFrames")
+    private val allowed = setOf("sentPackets", "receivedPackets", "missingPackets", "underruns", "bufferMs", "targetMs", "jitterMs", "packetAgeMs", "queueMs", "epoch", "acceptedCaptureFrames", "rejectedCaptureFrames",
+        // What the listener actually hears: decoded level, app volume, playback gate, pause and the phone's media volume.
+        "rms", "peak", "appVolume", "playbackAllowed", "listeningPaused", "mediaVolumePercent")
     private val samples = ArrayDeque<Map<String, Any>>()
     private val events = ArrayDeque<Map<String, Any>>()
     private var previous: Map<String, Any>? = null
