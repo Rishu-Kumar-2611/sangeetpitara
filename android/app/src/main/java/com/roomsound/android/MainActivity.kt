@@ -120,6 +120,7 @@ class MainActivity : Activity() {
     private lateinit var voicePreviewPlayButton: Button
     private var chatReplyTarget: RoomChatMessage? = null
     private var chatFingerprint = ""
+    private var chatUnread = 0
     private var startVoiceOnResume = false
     private val voiceNotes by lazy { VoiceNoteController(this, { updateVoiceComposer() }, { message -> android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show() }) }
     private lateinit var chatInput: EditText
@@ -303,6 +304,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         activityResumed = true
+        if (nativePage == "chat" && chatUnread > 0) { chatUnread = 0; renderChatUnread() }
         if (::nativeBack.isInitialized && nativePage == "status") { transportRenderHandler.removeCallbacks(statusTicker); transportRenderHandler.post(statusTicker) }
         if (startVoiceOnResume) { startVoiceOnResume = false; voiceNotes.start() }
         ensureCaptureService()
@@ -479,7 +481,26 @@ class MainActivity : Activity() {
     private lateinit var nativeReturnButton: Button
     private lateinit var nativeEntry: LinearLayout
     private lateinit var nativeSessionControls: LinearLayout
+    /** Shows an unread count after "Chat" on the tab, like a messaging app. */
+    private fun renderChatUnread() {
+        if (!::nativeTabs.isInitialized) return
+        val tab = nativeTabs.findViewWithTag<Button>("chat") ?: return
+        if (chatUnread <= 0) {
+            tab.text = "Chat"
+            tab.contentDescription = "Chat"
+            return
+        }
+        val count = if (chatUnread > 99) "99+" else chatUnread.toString()
+        val label = android.text.SpannableString("Chat \u25CF$count")
+        val start = 5
+        label.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.rgb(31, 157, 85)), start, label.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        label.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, label.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        tab.text = label
+        tab.contentDescription = "Chat, $count unread"
+    }
+
     private fun navigateNative(page: String) {
+        if (page == "chat" && chatUnread > 0) { chatUnread = 0; renderChatUnread() }
         if (page != "chat" && ::voiceRecordButton.isInitialized) voiceNotes.cancelRecording()
         if (page in setOf("create", "join")) {
             if (roomSession?.currentRoomState() != null) {
@@ -903,6 +924,7 @@ class MainActivity : Activity() {
         voiceStatusRow.addView(button("Cancel", ButtonTone.SECONDARY) { voiceNotes.cancelRecording() }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)).apply { marginStart = dp(8) })
         chatPanel.addView(voiceStatusRow, marginLayout())
         voiceNotes.onDraftReady = { sendVoiceDraft() }
+        voiceNotes.onPlaybackChanged = { playing -> roomSession?.setVoiceNotePlaying(playing) }
         voicePreviewRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
         voicePreviewPlayButton = button("Play", ButtonTone.SECONDARY) {
             if (voiceNotes.playing) voiceNotes.stopPlayback() else voiceNotes.draft?.let(voiceNotes::play)
@@ -1320,6 +1342,13 @@ class MainActivity : Activity() {
                 is RoomSoundEvent.LocalError -> appendRoomEvent("Not sent: ${event.message}")
                 is RoomSoundEvent.Chat -> {
                     appendRoomEvent("${event.message.senderName ?: "Room"}: ${event.message.text}")
+                    // A new message from someone else while Chat is not open counts as unread.
+                    if (event.message.kind == "chat" && event.message.senderId != latestRoomState?.self?.id &&
+                        event.message.id !in liveChatMessages && !(nativePage == "chat" && activityResumed)
+                    ) {
+                        chatUnread += 1
+                        renderChatUnread()
+                    }
                     liveChatMessages[event.message.id] = event.message
                     while (liveChatMessages.size > 80) liveChatMessages.remove(liveChatMessages.keys.first())
                     latestRoomState?.let(::renderChat)
@@ -1390,6 +1419,7 @@ class MainActivity : Activity() {
             if (renderedRoomId != state.room.id) {
                 announcedAudioRequests.clear()
                 if (renderedRoomId != null) { voiceNotes.cancelRecording(); voiceNotes.discard(); chatReplyTarget = null; chatInput.setText("") }
+                if (chatUnread > 0) { chatUnread = 0; renderChatUnread() }
             }
             renderedRoomId = state.room.id
         } else if (roomSession?.currentEndpoint() == null && previousRoomId != null) {

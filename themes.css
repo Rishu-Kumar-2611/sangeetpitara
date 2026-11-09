@@ -198,6 +198,9 @@ html[data-theme] .room-tab { min-height: 48px; padding: 0 2px; border: 0; border
 html[data-theme] .room-tab:hover { color: var(--text); }
 html[data-theme] .room-tab.active { color: var(--text); border-bottom-color: var(--accent); background: transparent; box-shadow: none; }
 html[data-theme] .room-tab-badge { border-radius: 5px; font: 600 11px/18px var(--font-mono); }
+/* Unread chat count, like a messaging app: a round green bubble after "Chat". */
+html[data-theme] .room-tab-badge.unread-badge { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 999px; background: #1f9d55; color: #ffffff; font: 700 11px/18px var(--font-body); text-align: center; vertical-align: 1px; }
+html[data-theme] .room-tab-badge.unread-badge[hidden] { display: none; }
 html[data-theme] .topbar { position: relative; top: auto; margin: 0 0 24px; padding: 14px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none; }
 html[data-theme] .topbar .brand-mark span { display: none; }
 html[data-theme] .crumb-room-name { font-family: var(--font-body); font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }

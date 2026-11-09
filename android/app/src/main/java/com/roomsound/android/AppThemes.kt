@@ -7,9 +7,9 @@ import android.util.TypedValue
 object AppThemes {
     val names = arrayOf("Console · Dark", "Console · Light")
     val keys = arrayOf("dark", "light")
-    fun selected(context: Context): Int = when (context.getSharedPreferences("appearance", Context.MODE_PRIVATE).getString("theme", "dark")) {
-        "light", "playground", "courtyard" -> 1
-        else -> 0 // All previous palettes were dark.
+    fun selected(context: Context): Int = when (context.getSharedPreferences("appearance", Context.MODE_PRIVATE).getString("theme", "light")) {
+        "dark" -> 0
+        else -> 1 // Light is the default.
     }
     fun save(context: Context, index: Int) { context.getSharedPreferences("appearance", Context.MODE_PRIVATE).edit().putString("theme",keys[index]).apply() }
     fun apply(activity: Activity, control: Boolean = false) {

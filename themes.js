@@ -1,10 +1,9 @@
 (() => {
   const choices = [['dark', 'Console · Dark'], ['light', 'Console · Light']];
-  let selected = 'dark';
+  // Light is the default; only an explicit earlier choice of Dark keeps it.
+  let selected = 'light';
   try {
-    const saved = localStorage.getItem('sangeetpitara-theme');
-    // Older palettes were dark; also accept the light design-preview names.
-    if (['light', 'playground', 'courtyard'].includes(saved)) selected = 'light';
+    if (localStorage.getItem('sangeetpitara-theme') === 'dark') selected = 'dark';
   } catch {}
   const apply = (key) => {
     document.documentElement.dataset.theme = key;

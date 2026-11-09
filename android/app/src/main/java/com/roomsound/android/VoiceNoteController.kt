@@ -29,6 +29,8 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
         private set
     /** Called when a recording has just become a draft (Telegram-style: stop means send). */
     var onDraftReady: (() -> Unit)? = null
+    /** Called with true when a voice message starts playing and false when it stops. */
+    var onPlaybackChanged: ((Boolean) -> Unit)? = null
     val recording get() = recorder != null
     val playing get() = player != null
     val elapsedSeconds get() = ((SystemClock.elapsedRealtime() - started) / 1000).toInt().coerceIn(0,30)
@@ -76,7 +78,13 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
     fun discard() { stopPlayback(); draft = null; draftId = null; changed() }
     fun acknowledge(id: String?) { if (id != null && id == draftId) discard() }
     fun restore(note: RoomVoiceNote, id: String) { draft = note; draftId = id; changed() }
-    fun stopPlayback() { val previous = player; player = null; previous?.let { runCatching { it.stop() }; it.release() }; playingFile?.delete(); playingFile = null; changed() }
+    fun stopPlayback() {
+        val previous = player; player = null
+        previous?.let { runCatching { it.stop() }; it.release() }
+        playingFile?.delete(); playingFile = null
+        if (previous != null) onPlaybackChanged?.invoke(false)
+        changed()
+    }
     fun play(note: RoomVoiceNote) {
         stopPlayback()
         try {
@@ -86,6 +94,7 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
             val file = File.createTempFile("listen-", if (note.mimeType.contains("mp4")) ".m4a" else ".webm", directory)
             file.writeBytes(bytes); playingFile = file
             val media = MediaPlayer(); player = media
+            onPlaybackChanged?.invoke(true)
             media.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE).build())
             media.setDataSource(file.absolutePath)
             media.setOnPreparedListener { if (player === it) runCatching { it.start() }.onFailure { stopPlayback(); error("This recording could not be played.") } }

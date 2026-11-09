@@ -1,16 +1,16 @@
-import { RoomChatUI } from './chat-ui.mjs?v=20261109-steady1';
+import { RoomChatUI } from './chat-ui.mjs?v=20261109-light1';
 let roomChatUI = null;
-import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261109-steady1';
-import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261109-steady1';
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261109-steady1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261109-steady1';
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261109-light1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261109-light1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261109-light1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261109-light1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261109-steady1';
+} from './capture-tracks.js?v=20261109-light1';
 import {
   decodeOpusFrame,
   decodePcm16Frame,
@@ -21,8 +21,8 @@ import {
   MEDIA_RELAY_VERSION_OPUS,
   RelaySequenceTracker,
   relayFrameVersion,
-} from './media-relay.mjs?v=20261109-steady1';
-import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261109-steady1';
+} from './media-relay.mjs?v=20261109-light1';
+import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261109-light1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -34,8 +34,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261109-steady1';
-import { roomPalette } from './room-palette.js?v=20261109-steady1';
+} from './ads.mjs?v=20261109-light1';
+import { roomPalette } from './room-palette.js?v=20261109-light1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -651,8 +651,10 @@ function createRoomAudioContext() {
 }
 
 function applyOutputVolume() {
-  if (state.audioElement) state.audioElement.volume = state.muted ? 0 : state.volume;
-  if (state.relayPlaybackGain) state.relayPlaybackGain.gain.value = state.muted || state.listeningPaused ? 0 : state.volume;
+  // A voice message being played pauses the room music on this device; it comes back when the message ends.
+  const silenced = state.muted || state.listeningPaused || state.voiceNotePlaying;
+  if (state.audioElement) state.audioElement.volume = silenced ? 0 : state.volume;
+  if (state.relayPlaybackGain) state.relayPlaybackGain.gain.value = silenced ? 0 : state.volume;
 }
 
 const WAVEFORM_BARS = 48;
@@ -930,7 +932,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261109-steady1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261109-light1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -1008,7 +1010,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261109-steady1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261109-light1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1339,8 +1341,12 @@ function addActivity(text, force = false) {
 
 function addMessages(messages) {
   const known = new Map(state.messages.map((message) => [message.id, message]));
+  const chatOpen = $('#room-view')?.dataset.roomTab === 'chat' && !document.hidden;
+  let unread = 0;
   for (const message of messages || []) {
     const existing = known.get(message.id);
+    // History delivered on (re)join is not "new"; live messages from others are.
+    if (!existing && !state.loadingChatHistory && !chatOpen && message.kind === 'chat' && message.senderId && message.senderId !== state.self?.id) unread += 1;
     // A rejoin resends history; keep its newer reaction counts.
     if (existing) {
       const previousVoice = existing.voice;
@@ -1351,6 +1357,7 @@ function addMessages(messages) {
   }
   state.messages.sort((a, b) => a.createdAt - b.createdAt);
   state.messages = state.messages.slice(-80);
+  if (unread) { state.chatUnread = (state.chatUnread || 0) + unread; renderChatUnread(); }
   renderChat();
   renderActivity();
 }
@@ -1383,8 +1390,29 @@ function selectEntryTab(entryType) {
   });
 }
 
+function setVoiceNotePlaying(playing) {
+  if (state.voiceNotePlaying === playing) return;
+  state.voiceNotePlaying = playing;
+  // Lets styles and tests see that the music is paused for a voice message.
+  if (playing) $('#room-view').dataset.voicePlaying = 'true';
+  else delete $('#room-view').dataset.voicePlaying;
+  applyOutputVolume();
+}
+
+// Unread chat: messages from others that arrived while the Chat tab was not open.
+function renderChatUnread() {
+  const badge = $('#chat-unread-badge');
+  const count = state.chatUnread || 0;
+  if (badge) {
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.hidden = count === 0;
+  }
+  $('#room-tab-chat')?.setAttribute('aria-label', count ? `Chat, ${count} unread` : 'Chat');
+}
+
 function selectRoomTab(tabName) {
   const selected = ['listen', 'chat', 'people', 'health'].includes(tabName) ? tabName : 'listen';
+  if (selected === 'chat' && state.chatUnread) { state.chatUnread = 0; renderChatUnread(); }
   if (selected !== 'chat') roomChatUI?.cancelRecording();
   $('#room-view').dataset.roomTab = selected;
   $$('.room-tab').forEach((tab) => {
@@ -1396,6 +1424,9 @@ function selectRoomTab(tabName) {
 }
 
 function resetToLanding(reason = '') {
+  state.chatUnread = 0;
+  renderChatUnread();
+  state.voiceNotePlaying = false;
   roomChatUI?.reset();
   state.listeningPaused = false;
   closeOpusEncoder();
@@ -1662,7 +1693,8 @@ function handleServerMessage(message) {
     state.pendingRoomEnd = false;
     state.lastRoomCode = message.state.room.code;
     $('#room-banner').classList.add('hidden');
-    applyRoomState(message.state);
+    state.loadingChatHistory = true;
+    try { applyRoomState(message.state); } finally { state.loadingChatHistory = false; }
     window.history.replaceState(window.history.state, '', roomUrlForCode(message.state.room.code));
     showRoom();
     announceRelayCodecs();
@@ -2011,7 +2043,7 @@ function sendChatPayload(payload) {
   try { state.ws.send(JSON.stringify(payload)); return true; } catch { toast('Could not send. Please reconnect and try again.'); return false; }
 }
 function renderChat() {
-  if (!roomChatUI) roomChatUI = new RoomChatUI({ feed: $('#chat-feed'), input: $('#chat-input'), form: $('#chat-form'), send: sendChatPayload, getMessages: () => state.messages, getSelfId: () => state.self?.id, onError: message => toast(message) });
+  if (!roomChatUI) roomChatUI = new RoomChatUI({ feed: $('#chat-feed'), input: $('#chat-input'), form: $('#chat-form'), send: sendChatPayload, getMessages: () => state.messages, getSelfId: () => state.self?.id, onError: message => toast(message), onVoicePlayback: setVoiceNotePlaying });
   const chat = state.messages.filter(message => message.kind === 'chat');
   $('#chat-count').textContent = chat.length;
   roomChatUI.render(chat, chatReactionsHtml);

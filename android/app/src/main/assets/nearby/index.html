@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="app-version" content="1.1.22"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="app-version" content="1.1.23"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nearby Vibe · SangeetPitara</title><style>body{background:#101917;color:#fff4dd;font:18px system-ui;max-width:660px;margin:auto;padding:24px}button,input{font:inherit;padding:12px;border-radius:12px;margin:6px 0;box-sizing:border-box;width:100%}button{background:#f5ac36;color:#19150d;border:0}small{color:#abc8be}#chat{max-height:220px;overflow:auto}li{padding:6px;overflow-wrap:anywhere}
 body{background:radial-gradient(ellipse at top left,#19322c 0,transparent 55%),#100d0b;color:#f7f1ea;max-width:640px;padding:clamp(20px,5vw,40px);line-height:1.55}
 h1{font-size:clamp(32px,8vw,44px);letter-spacing:-.045em;margin:12px 0 8px;color:#f5bd68}
 h2{font-size:21px;letter-spacing:-.02em;margin-top:28px}p{color:#d0c2b3}small{display:block;font-size:13px;color:#c4b6a7}
@@ -207,6 +207,9 @@ html[data-theme] .room-tab { min-height: 48px; padding: 0 2px; border: 0; border
 html[data-theme] .room-tab:hover { color: var(--text); }
 html[data-theme] .room-tab.active { color: var(--text); border-bottom-color: var(--accent); background: transparent; box-shadow: none; }
 html[data-theme] .room-tab-badge { border-radius: 5px; font: 600 11px/18px var(--font-mono); }
+/* Unread chat count, like a messaging app: a round green bubble after "Chat". */
+html[data-theme] .room-tab-badge.unread-badge { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 999px; background: #1f9d55; color: #ffffff; font: 700 11px/18px var(--font-body); text-align: center; vertical-align: 1px; }
+html[data-theme] .room-tab-badge.unread-badge[hidden] { display: none; }
 html[data-theme] .topbar { position: relative; top: auto; margin: 0 0 24px; padding: 14px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none; }
 html[data-theme] .topbar .brand-mark span { display: none; }
 html[data-theme] .crumb-room-name { font-family: var(--font-body); font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
@@ -470,11 +473,10 @@ html[data-theme] .local-panel #chat { border-block-color:var(--line); }
 body{background:radial-gradient(ellipse at top left,var(--room-color-1),transparent 65%),var(--bg);color:var(--text)}h1,a{color:var(--accent)}p,small{color:var(--muted)}input{background:var(--bg);color:var(--text)}button{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}#status{background:var(--surface);color:var(--text)}#leave{color:var(--accent)}aside{border:1px solid #ffffff22;border-radius:16px;padding:16px;margin:16px 0;font-size:15px}.theme-bar{padding:8px 0;background:var(--surface)}
 </style><script data-shared-theme>(() => {
   const choices = [['dark', 'Console · Dark'], ['light', 'Console · Light']];
-  let selected = 'dark';
+  // Light is the default; only an explicit earlier choice of Dark keeps it.
+  let selected = 'light';
   try {
-    const saved = localStorage.getItem('sangeetpitara-theme');
-    // Older palettes were dark; also accept the light design-preview names.
-    if (['light', 'playground', 'courtyard'].includes(saved)) selected = 'light';
+    if (localStorage.getItem('sangeetpitara-theme') === 'dark') selected = 'dark';
   } catch {}
   const apply = (key) => {
     document.documentElement.dataset.theme = key;
@@ -514,14 +516,17 @@ body{background:radial-gradient(ellipse at top left,var(--room-color-1),transpar
 <script data-shared-chat>const make = (tag, cls, text) => { const el=document.createElement(tag); if(cls)el.className=cls; if(text!=null)el.textContent=text; return el; };
 const button = (text, action, cls='secondary-button') => { const el=make('button',cls,text);el.type='button';el.addEventListener('click',action);return el; };
 class RoomChatUI {
-  constructor({feed,input,form,send,getMessages,getSelfId,onError}) {
-    Object.assign(this,{feed,input,form,send,getMessages,getSelfId,onError}); this.urls=new Map(); this.nodes=new Map(); this.generation=0;
+  constructor({feed,input,form,send,getMessages,getSelfId,onError,onVoicePlayback=()=>{}}) {
+    Object.assign(this,{feed,input,form,send,getMessages,getSelfId,onError,onVoicePlayback}); this.urls=new Map(); this.nodes=new Map(); this.generation=0;
     this.reply=make('div','chat-reply-composer');this.reply.hidden=true;form.before(this.reply);
     this.preview=make('div','chat-voice-preview');this.preview.hidden=true;form.before(this.preview);
     // Voice notes work like Telegram: tap the mic to record, tap again to stop and send.
     this.tools=make('div','chat-tools');this.recordButton=button('🎤',()=>this.toggleRecording(),'mic-button');this.setMicState(false);
     const submit=form.querySelector('[type="submit"]');if(submit)submit.before(this.recordButton);else this.tools.append(this.recordButton);form.after(this.tools);
     this.feed.addEventListener('play',e=>{if(e.target.tagName==='AUDIO')for(const audio of this.feed.querySelectorAll('audio'))if(audio!==e.target)audio.pause();},true);
+    // Tell the room when a voice message starts or stops so it can pause the music meanwhile.
+    const voiceState=()=>this.onVoicePlayback([...this.feed.querySelectorAll('audio'),...this.preview.querySelectorAll('audio')].some(a=>!a.paused&&!a.ended));
+    for(const root of [this.feed,this.preview])for(const type of ['play','playing','pause','ended','emptied'])root.addEventListener(type,e=>{if(e.target.tagName==='AUDIO')voiceState();},true);
     this.hideHandler=()=>{if(document.hidden)this.cancelRecording();};document.addEventListener('visibilitychange',this.hideHandler);
     this.pageHandler=()=>this.reset();addEventListener('pagehide',this.pageHandler);
     if(!globalThis.isSecureContext||!navigator.mediaDevices?.getUserMedia||!globalThis.MediaRecorder) {this.recordButton.disabled=true;this.recordButton.title='Voice recording needs HTTPS or the desktop companion. You can still listen and reply.';this.tools.append(make('small','','Recording needs HTTPS or the desktop companion.'));}
