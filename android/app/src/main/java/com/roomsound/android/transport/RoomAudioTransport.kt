@@ -32,6 +32,14 @@ data class RoomAudioTransportSnapshot(
     val droppedRelayStaleEpochFrames: Long = 0L,
     val droppedRelayMalformedFrames: Long = 0L,
     val droppedRelayUnavailableFrames: Long = 0L,
+    /** Frames refused as duplicate or out of order. */
+    val droppedRelaySequenceFrames: Long = 0L,
+    /** Opus frames whose decode produced no audio yet. */
+    val emptyDecodeFrames: Long = 0L,
+    /** Frames that threw while being handled (previously silent). */
+    val failedRelayFrames: Long = 0L,
+    /** Every binary frame that reached this transport from the socket. */
+    val binaryFramesSeen: Long = 0L,
 )
 
 /**
@@ -79,6 +87,10 @@ class RoomAudioTransport(
     private var droppedRelayStaleEpochFrames = 0L
     private var droppedRelayMalformedFrames = 0L
     private var droppedRelayUnavailableFrames = 0L
+    private var droppedRelaySequenceFrames = 0L
+    private var emptyDecodeFrames = 0L
+    @Volatile private var failedRelayFrames = 0L
+    @Volatile private var binaryFramesSeen = 0L
 
     // PCM16 and Opus frames share one continuous numbering for the player, so a
     // codec switch mid-stream is not mistaken for reordering; wire gaps remain gaps.
@@ -127,7 +139,19 @@ class RoomAudioTransport(
     }
 
     override fun onBinaryFrame(frame: ByteString) {
+        binaryFramesSeen += 1
         if (relayPlayer == null) return
+        // The socket client swallows listener exceptions; count them here so a
+        // failing frame path is visible in Status and diagnostics.
+        try {
+            handleBinaryFrame(frame)
+        } catch (error: Throwable) {
+            failedRelayFrames += 1
+            android.util.Log.w("RoomSound", "Relay frame failed: ${error.javaClass.simpleName}: ${error.message}")
+        }
+    }
+
+    private fun handleBinaryFrame(frame: ByteString) {
         if (Pcm16RelayPacketCodec.frameVersion(frame) == Pcm16RelayPacketCodec.VERSION_OPUS) {
             onOpusFrame(frame)
             return
@@ -183,7 +207,10 @@ class RoomAudioTransport(
                 // A sender that restarted its numbering mid-epoch would otherwise
                 // be rejected forever; adopt the new numbering after a short run.
                 backwardsRun += 1
-                if (backwardsRun < RESYNC_AFTER_BACKWARDS_FRAMES) return -1L
+                if (backwardsRun < RESYNC_AFTER_BACKWARDS_FRAMES) {
+                    droppedRelaySequenceFrames += 1
+                    return -1L
+                }
                 1L
             } else {
                 distance
@@ -252,7 +279,10 @@ class RoomAudioTransport(
             synchronized(lock) { if (!closed) droppedRelayUnavailableFrames += 1 }
             return
         }
-        if (pcm.isEmpty()) return
+        if (pcm.isEmpty()) {
+            synchronized(lock) { if (!closed) emptyDecodeFrames += 1 }
+            return
+        }
 
         synchronized(lock) {
             val player = relayPlayer ?: return
@@ -336,6 +366,10 @@ class RoomAudioTransport(
             droppedRelayStaleEpochFrames = droppedRelayStaleEpochFrames,
             droppedRelayMalformedFrames = droppedRelayMalformedFrames,
             droppedRelayUnavailableFrames = droppedRelayUnavailableFrames,
+            droppedRelaySequenceFrames = droppedRelaySequenceFrames,
+            emptyDecodeFrames = emptyDecodeFrames,
+            failedRelayFrames = failedRelayFrames,
+            binaryFramesSeen = binaryFramesSeen,
         )
     }
 

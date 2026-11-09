@@ -754,7 +754,8 @@ class RoomSoundWebSocketClient(
 
     companion object {
         private const val NORMAL_CLOSE = 1000
-        private const val INITIAL_RECONNECT_DELAY_MS = 1_000L
+        // Most drops are brief: retry almost at once, then double up to the cap.
+        private const val INITIAL_RECONNECT_DELAY_MS = 250L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
         private const val CONFIG_TIMEOUT_SECONDS = 20L
         // Bound congestion memory while allowing several seconds of recoverable

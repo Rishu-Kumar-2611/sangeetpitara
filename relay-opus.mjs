@@ -1,7 +1,7 @@
 // Opus over the room relay, using the browser's WebCodecs encoder/decoder.
 // Rooms switch to Opus only when every listener can decode it; anything that
 // fails here falls back to PCM16, which every client supports.
-import { encodeOpusFrame } from './media-relay.mjs?v=20261109-rooms1';
+import { encodeOpusFrame } from './media-relay.mjs?v=20261109-steady1';
 
 const SAMPLE_RATE = 48_000;
 const CHANNELS = 1;

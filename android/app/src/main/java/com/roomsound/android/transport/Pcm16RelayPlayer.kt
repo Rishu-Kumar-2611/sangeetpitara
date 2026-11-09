@@ -69,6 +69,10 @@ class Pcm16RelayPlayer internal constructor(
         var holdNeedBytes = 0
         var holdSince: Long? = null
         var jitterMs = 0.0
+        // Smoothed level of the audio handed to the output (0..1, before volume),
+        // so diagnostics can tell "played silence" from "played but not heard".
+        var levelRms = 0.0
+        var levelPeak = 0.0
         var playbackStarted = false
         var crossfadeNext = false
         @Volatile var cancelled = false
@@ -110,7 +114,24 @@ class Pcm16RelayPlayer internal constructor(
         val output = synchronized(session.outputLock) {
             if (session.cancelled || session.released) null else session.output.outputHealth()
         }
-        return Pcm16PlaybackHealth(software, output?.let { software + it.bufferedMs }, output?.let { target + it.targetMs }, age, jitter, gaps, output?.underruns, output?.running)
+        val (rms, peak) = synchronized(lock) { session.levelRms to session.levelPeak }
+        return Pcm16PlaybackHealth(software, output?.let { software + it.bufferedMs }, output?.let { target + it.targetMs }, age, jitter, gaps, output?.underruns, output?.running, rms, peak)
+    }
+
+    private fun measureLevel(session: Session, packet: Pcm16RelayPacket) {
+        val samples = packet.samples
+        if (samples.isEmpty()) return
+        var sumSquares = 0.0
+        var peak = 0
+        for (value in samples) {
+            val v = value.toInt()
+            sumSquares += v.toDouble() * v
+            val magnitude = if (v < 0) -v else v
+            if (magnitude > peak) peak = magnitude
+        }
+        val rms = kotlin.math.sqrt(sumSquares / samples.size) / 32768.0
+        session.levelRms += (rms - session.levelRms) * 0.2
+        session.levelPeak = maxOf(peak / 32768.0, session.levelPeak * 0.95)
     }
 
     override fun underrunCount(): Int? {
@@ -239,6 +260,7 @@ class Pcm16RelayPlayer internal constructor(
             }
         }
         session.lastPacketAt = now
+        measureLevel(session, packet)
         if (session.firstPacketAt == null) session.firstPacketAt = now
         // Bound duration as well as packet count: 10 ms and 20 ms publishers
         // receive the same configured maximum software backlog.
@@ -477,4 +499,16 @@ class Pcm16RelayPlayer internal constructor(
     }
 }
 
-data class Pcm16PlaybackHealth(val softwareBufferMs: Double, val bufferMs: Double?, val targetMs: Double?, val packetAgeMs: Double?, val jitterMs: Double, val missingPackets: Long, val underruns: Int?, val running: Boolean?)
+data class Pcm16PlaybackHealth(
+    val softwareBufferMs: Double,
+    val bufferMs: Double?,
+    val targetMs: Double?,
+    val packetAgeMs: Double?,
+    val jitterMs: Double,
+    val missingPackets: Long,
+    val underruns: Int?,
+    val running: Boolean?,
+    /** Level of the audio handed to the output, 0..1, before any volume. */
+    val levelRms: Double = 0.0,
+    val levelPeak: Double = 0.0,
+)

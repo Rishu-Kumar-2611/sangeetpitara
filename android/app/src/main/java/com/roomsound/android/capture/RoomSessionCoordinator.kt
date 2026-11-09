@@ -100,6 +100,12 @@ class RoomSessionCoordinator(
             "packetAgeMs" to if (sender) null else playback?.packetAgeMs,
             "jitterMs" to if (sender) null else playback?.jitterMs,
             "missingPackets" to if (sender) null else playback?.missingPackets,
+            "rms" to if (sender) null else playback?.levelRms,
+            "peak" to if (sender) null else playback?.levelPeak,
+            "appVolume" to if (playbackAllowed && !listeningPaused) volume else 0.0,
+            "playbackAllowed" to if (playbackAllowed) 1 else 0,
+            "listeningPaused" to if (listeningPaused) 1 else 0,
+            "mediaVolumePercent" to mediaVolumePercent(),
         ), if (room?.room?.activeSourceId == null) "idle" else if (sender) "sender" else "listener",
             if (connectionState() == RoomConnectionState.JOINED) "connected" else "offline",
             when (playback?.running) { true -> "running"; false -> "suspended"; null -> "unavailable" },
@@ -543,6 +549,16 @@ class RoomSessionCoordinator(
     }
 
     fun isListeningPaused(): Boolean = listeningPaused
+
+    /** True when the room may play on this phone (audio focus held, not paused by the user or a call). */
+    fun isPlaybackAllowed(): Boolean = playbackAllowed
+
+    /** The phone's own media volume as 0..100, or null if Android does not report it. */
+    fun mediaVolumePercent(): Int? = runCatching {
+        val audio = appContext.getSystemService(android.media.AudioManager::class.java) ?: return null
+        val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+        if (max <= 0) null else audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) * 100 / max
+    }.getOrNull()
 
     /**
      * Pause or resume room audio on this device only. The room keeps playing

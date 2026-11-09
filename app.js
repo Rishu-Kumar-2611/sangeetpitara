@@ -1,16 +1,16 @@
-import { RoomChatUI } from './chat-ui.mjs?v=20261109-rooms1';
+import { RoomChatUI } from './chat-ui.mjs?v=20261109-steady1';
 let roomChatUI = null;
-import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261109-rooms1';
-import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261109-rooms1';
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261109-rooms1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261109-rooms1';
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261109-steady1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261109-steady1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261109-steady1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261109-steady1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261109-rooms1';
+} from './capture-tracks.js?v=20261109-steady1';
 import {
   decodeOpusFrame,
   decodePcm16Frame,
@@ -21,8 +21,8 @@ import {
   MEDIA_RELAY_VERSION_OPUS,
   RelaySequenceTracker,
   relayFrameVersion,
-} from './media-relay.mjs?v=20261109-rooms1';
-import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261109-rooms1';
+} from './media-relay.mjs?v=20261109-steady1';
+import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261109-steady1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -34,8 +34,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261109-rooms1';
-import { roomPalette } from './room-palette.js?v=20261109-rooms1';
+} from './ads.mjs?v=20261109-steady1';
+import { roomPalette } from './room-palette.js?v=20261109-steady1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -61,6 +61,7 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
   channels: MEDIA_RELAY_CHANNELS,
 };
 const SOCKET_PING_INTERVAL_MS = 2000;
+const LOSS_NOTICE_DELAY_MS = 2500; // A reconnect faster than this is not announced.
 const SOCKET_STALL_MS = 6000; // An unanswered ping this old means the connection froze.
 const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
 const SYNC_OFFSET_MAX_MS = 1000; // Matches the #sync-offset slider max and the worklet's target ceiling.
@@ -929,7 +930,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261109-rooms1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261109-steady1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -1007,7 +1008,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261109-rooms1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261109-steady1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1436,10 +1437,13 @@ function resetToLanding(reason = '') {
 function scheduleReconnect() {
   if (state.explicitLeave) return;
   if (!state.lastRoomCode || !state.lastDisplayName) return;
-  if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
-  const delay = Math.min(1000 * Math.pow(1.7, state.reconnectAttempts), 30_000);
+  // A failing socket reports both "error" and "close": keep the retry already pending.
+  if (state.reconnectTimer) return;
+  // Most drops are brief: retry almost at once, then back off.
+  const delay = state.reconnectAttempts === 0 ? 150 : Math.min(600 * Math.pow(1.7, state.reconnectAttempts - 1), 30_000);
   state.reconnectAttempts += 1;
   state.reconnectTimer = setTimeout(() => {
+    state.reconnectTimer = null;
     if (state.ws && state.ws.readyState === WebSocket.OPEN) return;
     setConnection(`Reconnecting (${state.reconnectAttempts})`, false);
     connectAnd({ type: 'join', code: state.lastRoomCode }, true);
@@ -1583,11 +1587,19 @@ function connectAnd(action, isReconnect = false) {
       closePeerConnections();
       // Let already buffered relay audio bridge a temporary socket loss.
       if (state.room.activeSourceId === state.self?.id && state.captureStream) state.captureRecoveryPending = true;
-      $('#room-banner').textContent = 'Connection lost — reconnecting…';
-      $('#room-banner').classList.remove('hidden');
-      addActivity('Connection lost — reconnecting…', true);
       scheduleReconnect();
-      toast('Connection lost. Reconnecting…', 'bad');
+      // Buffered audio keeps playing while we reconnect, and most drops recover
+      // within a second or two: only announce a drop that lasts.
+      state.socketJoined = false;
+      clearTimeout(state.lossNoticeTimer);
+      state.lossNoticeTimer = setTimeout(() => {
+        state.lossNoticeTimer = null;
+        if (state.socketJoined || !state.room) return;
+        $('#room-banner').textContent = 'Connection lost — reconnecting…';
+        $('#room-banner').classList.remove('hidden');
+        addActivity('Connection lost — reconnecting…', true);
+        toast('Connection lost. Reconnecting…', 'bad');
+      }, LOSS_NOTICE_DELAY_MS);
     } else {
       if (state.lastRoomCode && !state.explicitLeave) scheduleReconnect();
     }
@@ -1644,6 +1656,9 @@ function handleServerMessage(message) {
     return;
   }
   if (message.type === 'joined') {
+    state.socketJoined = true;
+    clearTimeout(state.lossNoticeTimer);
+    state.lossNoticeTimer = null;
     state.pendingRoomEnd = false;
     state.lastRoomCode = message.state.room.code;
     $('#room-banner').classList.add('hidden');

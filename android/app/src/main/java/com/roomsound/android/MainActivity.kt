@@ -137,6 +137,8 @@ class MainActivity : Activity() {
     private lateinit var nowPlayingSubtitle: TextView
     private lateinit var nowPlayingChip: TextView
     private lateinit var nowPlayingCard: LinearLayout
+    // The source epoch we last warned about a muted phone for (one toast per share).
+    private var mutedWarningEpoch: Long? = null
     private lateinit var leaveRoomButton: Button
     private lateinit var endRoomButton: Button
     private lateinit var roomAccessRow: LinearLayout
@@ -167,6 +169,15 @@ class MainActivity : Activity() {
     private val transportRenderHandler = Handler(Looper.getMainLooper())
     private var transportRenderPosted = false
     private var lastTransportRenderAt = 0L
+    // The Status tab's numbers are live measurements: redraw them every second
+    // while the tab is open (they used to change only when a room update arrived).
+    private val statusTicker = object : Runnable {
+        override fun run() {
+            if (nativePage != "status" || !activityResumed) return
+            renderTransport()
+            transportRenderHandler.postDelayed(this, 1000)
+        }
+    }
     private val transportRenderRunnable = Runnable {
         transportRenderPosted = false
         lastTransportRenderAt = SystemClock.uptimeMillis()
@@ -292,6 +303,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         activityResumed = true
+        if (::nativeBack.isInitialized && nativePage == "status") { transportRenderHandler.removeCallbacks(statusTicker); transportRenderHandler.post(statusTicker) }
         if (startVoiceOnResume) { startVoiceOnResume = false; voiceNotes.start() }
         ensureCaptureService()
         if (serviceBound) renderAttachedServiceState()
@@ -321,6 +333,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         if (::voiceRecordButton.isInitialized) voiceNotes.close()
         activityResumed = false
+        transportRenderHandler.removeCallbacks(statusTicker)
         transportRenderHandler.removeCallbacks(transportRenderRunnable)
         transportRenderPosted = false
         rewardedAccessHandle?.cancel()
@@ -503,6 +516,8 @@ class MainActivity : Activity() {
         roomCodeInput.visibility = if (nativePage == "join") View.VISIBLE else View.GONE
         joinRoomButton.visibility = if (nativePage == "join") View.VISIBLE else View.GONE
         updatePanel.visibility = if (nativePage == "status" && updateApkUrl != null) View.VISIBLE else View.GONE
+        transportRenderHandler.removeCallbacks(statusTicker)
+        if (nativePage == "status" && activityResumed) transportRenderHandler.post(statusTicker)
     }
     @Deprecated("Legacy back dispatcher")
     override fun onBackPressed() {
@@ -1050,8 +1065,15 @@ class MainActivity : Activity() {
             selfIsSource -> "You are sharing"
             else -> "${sourceName ?: "Someone"} is sharing"
         }
+        val listening = room.activeSourceId != null && !selfIsSource
+        val mediaMuted = listening && roomSession?.mediaVolumePercent() == 0
+        if (mediaMuted && mutedWarningEpoch != room.sourceEpoch) {
+            mutedWarningEpoch = room.sourceEpoch
+            android.widget.Toast.makeText(this, "This phone's media volume is off. Turn it up to hear the room.", android.widget.Toast.LENGTH_LONG).show()
+        }
         nowPlayingSubtitle.text = when {
             room.activeSourceId == null -> "Share audio, or ask the host to play something for the room."
+            mediaMuted && !paused -> "This phone's media volume is off. Turn it up to hear the room."
             paused -> "Paused on this phone. Others keep listening."
             selfIsSource -> "Everyone in the room hears this phone."
             else -> "Everyone in the room can listen."
@@ -1721,7 +1743,18 @@ class MainActivity : Activity() {
             factor("Arrival jitter", "${playback.jitterMs.toInt()} ms", "Ideal: <=20 ms; tolerable: <=60 ms", if (playback.packetAgeMs == null) -1 else if (playback.jitterMs <= 20) 0 else if (playback.jitterMs <= 60) 1 else 2)
             factor("Missing packets (total)", playback.missingPackets.toString(), "Ideal: 0; history includes earlier source/transport gaps", -1)
         }
-        factor("Format", if (transport?.mediaRelayEnabled == true) "48 kHz PCM16 mono" else "Direct WebRTC", "Source format; does not certify audible quality", -1)
+        transport?.playbackHealth?.let { playback ->
+            val percent = (playback.levelPeak * 100).toInt()
+            factor("Room audio level", if (playback.packetAgeMs == null) "Waiting" else "$percent% peak", "Ideal: moves with the music; 0% means the source is sending silence", if (playback.packetAgeMs == null) -1 else if (playback.levelPeak > 0.01) 0 else 1)
+        }
+        session?.mediaVolumePercent()?.let { media ->
+            factor("Phone media volume", "$media%", "Ideal: above 0%. At 0% the room plays silently on this phone", if (media == 0) 2 else if (media < 20) 1 else 0)
+        }
+        if (session != null && room?.room?.activeSourceId != null && room.room.activeSourceId != room.self?.id) {
+            val allowed = session.isPlaybackAllowed() && !session.isListeningPaused()
+            factor("Room playback on this phone", if (allowed) "On" else if (session.isListeningPaused()) "Paused by you" else "Held (audio focus or call)", "Ideal: On while someone else shares", if (allowed) 0 else 1)
+        }
+        factor("Format", if (transport?.mediaRelayEnabled == true) "48 kHz relay mono" else "Direct WebRTC", "Source format; does not certify audible quality", -1)
         health.append(buildString {
             append("Connection: ")
                 .append(session?.connectionState()?.name?.lowercase(Locale.US) ?: "not connected")
@@ -1753,7 +1786,11 @@ class MainActivity : Activity() {
                     transport.droppedUnavailableFrames,
             )
             if (transport.mediaRelayEnabled) {
+                append("\nFrames from server: ").append(transport.binaryFramesSeen)
                 append("\nReceived relay: ").append(transport.receivedRelayFrames)
+                append(" · out of order: ").append(transport.droppedRelaySequenceFrames)
+                append(" · empty decode: ").append(transport.emptyDecodeFrames)
+                append(" · failed: ").append(transport.failedRelayFrames)
                 append(" · rejected: ").append(
                     transport.droppedRelayUnauthorizedFrames +
                         transport.droppedRelayStaleEpochFrames +
