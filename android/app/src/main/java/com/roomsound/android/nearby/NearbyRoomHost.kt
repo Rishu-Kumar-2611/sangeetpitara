@@ -135,7 +135,6 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
                 if(existing.secret!=json.optString("reconnectSecret")) { error(p,"This identity is already connected."); return@synchronized }
                 existing.peer?.disconnect(); existing
             } else {
-                if(members.size>=10) { error(p,"Nearby room limit: 10 people."); return@synchronized }
                 Member(UUID.randomUUID().toString(),guest,json.optString("reconnectSecret").takeIf { it.length in 32..80 } ?: UUID.randomUUID().toString(),name,p).also { members[it.id]=it }
             }
             m.name=name; m.peer=p; p.member=m

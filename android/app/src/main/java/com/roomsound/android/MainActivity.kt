@@ -555,7 +555,7 @@ class MainActivity : Activity() {
             }
         }, matchWrap())
         val heroLead = "Share your phone's sound."
-        welcome.addView(sectionTitle("$heroLead\nLive, with up to ten people.").apply {
+        welcome.addView(sectionTitle("$heroLead\nLive, with everyone you invite.").apply {
             text = android.text.SpannableString(text).apply {
                 setSpan(android.text.style.ForegroundColorSpan(AppThemes.color(this@MainActivity, R.color.roomsound_cream_muted)), heroLead.length + 1, length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
             }

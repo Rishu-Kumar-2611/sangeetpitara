@@ -1053,11 +1053,9 @@ async function joinRoom(ws, message) {
     return sendError(ws, 'This room is locked by the host. Ask them to unlock it before joining.');
   }
 
-  const onlineCount = [...room.members.values()].filter((member) => member.ws).length;
-  const totalCount = room.members.size;
-  if (onlineCount >= 10 || totalCount >= 14) {
-    return sendError(ws, 'This room is full. The limit is 10 people.');
-  }
+  // Rooms have no member limit. Audio goes through the relay, so each listener
+  // costs the server the same whatever the room size; the server-wide
+  // MAX_CONNECTIONS and MAX_CONNECTIONS_PER_IP caps still protect the host.
 
   const accountId = ws.authenticatedUser?.id || null;
   const role = accountId && room.hostUserId === accountId
@@ -1767,7 +1765,7 @@ const server = http.createServer(async (req, res) => {
       mediaRelay,
       chatReactions: CHAT_REACTIONS,
       chatFeatures: { voiceMessages: true, messageReplies: true, maxVoiceDurationMs: 30000, maxVoiceBytes: 192 * 1024 },
-      maxMembers: 10,
+      maxMembers: null, // No per-room limit.
       requestTtlMs,
       authRequired: roomAuthRequired,
       rewardedAccess,
