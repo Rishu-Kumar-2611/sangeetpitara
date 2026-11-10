@@ -196,6 +196,12 @@ class RoomSoundWebSocketClient(
         return sendRoomCommand(message)
     }
 
+    fun editChat(messageId: String, text: String): Boolean =
+        sendRoomCommand(JSONObject().put("type", "edit-chat").put("messageId", messageId).put("text", text))
+
+    fun deleteChat(messageId: String): Boolean =
+        sendRoomCommand(JSONObject().put("type", "delete-chat").put("messageId", messageId))
+
     /** Toggles this member's [emoji] reaction on a chat message. */
     fun sendReaction(messageId: String, emoji: String): Boolean =
         sendRoomCommand(JSONObject().put("type", "react").put("messageId", messageId).put("emoji", emoji))
@@ -521,9 +527,15 @@ class RoomSoundWebSocketClient(
                     }
                 }
                 "chat" -> {
-                    val chat = parseChatMessage(message.objectOrEmpty("message"))
-                    synchronized(lock) { roomState = roomState?.let { current -> current.copy(messages = (current.messages.filterNot { it.id == chat.id } + chat).sortedBy { it.createdAt }.takeLast(80)) } }
-                    emit(RoomSoundEvent.Chat(chat))
+                    val incoming = parseChatMessage(message.objectOrEmpty("message"))
+                    val chat = synchronized(lock) {
+                        val current = roomState ?: return@synchronized incoming
+                        val merged = mergeChatVoiceReferences(current.messages, listOf(incoming)).single()
+                        roomState = current.copy(messages = (current.messages.filterNot { it.id == merged.id } + merged)
+                            .sortedBy { it.createdAt }.takeLast(80))
+                        merged
+                    }
+                    emit(RoomSoundEvent.Chat(chat, message.optBoolean("updated")))
                 }
                 "reaction" -> message.stringOrNull("messageId")?.let { id ->
                     emit(RoomSoundEvent.Reaction(id, parseReactions(message.optJSONObject("reactions"))))

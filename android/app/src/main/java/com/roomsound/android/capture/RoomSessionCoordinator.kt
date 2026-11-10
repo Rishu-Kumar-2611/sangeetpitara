@@ -146,6 +146,7 @@ class RoomSessionCoordinator(
     private var mediaRelayConfig = RoomMediaRelayConfig.DEFAULT
     private var voiceMessages = false
     private var messageReplies = false
+    private var messageMutations = false
     private var chatReactions: List<String> = emptyList()
     private var mediaConfigured = false
     private var pendingRoomAction: ((RoomSoundWebSocketClient) -> Unit)? = null
@@ -181,6 +182,14 @@ class RoomSessionCoordinator(
     /** Empty until /config arrives, and on servers that do not support reactions. */
     fun supportsVoiceMessages(): Boolean = voiceMessages
     fun supportsMessageReplies(): Boolean = messageReplies
+    fun supportsMessageMutations(): Boolean = messageMutations
+
+    fun editChat(messageId: String, text: String): Boolean =
+        messageMutations && joinedState() != null && text.isNotBlank() &&
+            client?.editChat(messageId, text.trim().take(280)) == true
+
+    fun deleteChat(messageId: String): Boolean =
+        messageMutations && joinedState() != null && client?.deleteChat(messageId) == true
     fun currentChatReactions(): List<String> = chatReactions
     fun pendingCapture(): PendingCapture? = attempt?.let { PendingCapture(it.id, it.phase) }
     fun isTakeoverPending(): Boolean = takeover != null
@@ -252,6 +261,7 @@ class RoomSessionCoordinator(
             chatReactions = fetchedConfig.chatReactions
             voiceMessages = fetchedConfig.voiceMessages
             messageReplies = fetchedConfig.messageReplies
+            messageMutations = fetchedConfig.messageMutations
             val relayEnabled = fetchedConfig.mediaRelay.enabled
             if (relayEnabled) {
                 require(fetchedConfig.mediaRelay.isPcm16Enabled) {
@@ -876,6 +886,7 @@ class RoomSessionCoordinator(
         chatReactions = emptyList()
         voiceMessages = false
         messageReplies = false
+        messageMutations = false
         mediaConfigured = false
         pendingRoomAction = null
         connectPending = false

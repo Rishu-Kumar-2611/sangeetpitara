@@ -1,16 +1,16 @@
-import { RoomChatUI } from './chat-ui.mjs?v=20261110-continuity1';
+import { RoomChatUI } from './chat-ui.mjs?v=20261110-chat-review1';
 let roomChatUI = null;
-import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261110-continuity1';
-import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261110-continuity1';
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261110-continuity1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261110-continuity1';
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261110-chat-review1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261110-chat-review1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261110-chat-review1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261110-chat-review1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261110-continuity1';
+} from './capture-tracks.js?v=20261110-chat-review1';
 import {
   decodeOpusFrame,
   decodePcm16Frame,
@@ -21,8 +21,8 @@ import {
   MEDIA_RELAY_VERSION_OPUS,
   RelaySequenceTracker,
   relayFrameVersion,
-} from './media-relay.mjs?v=20261110-continuity1';
-import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261110-continuity1';
+} from './media-relay.mjs?v=20261110-chat-review1';
+import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261110-chat-review1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -34,8 +34,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261110-continuity1';
-import { roomPalette } from './room-palette.js?v=20261110-continuity1';
+} from './ads.mjs?v=20261110-chat-review1';
+import { roomPalette } from './room-palette.js?v=20261110-chat-review1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -101,6 +101,8 @@ const CHAT_COMPOSER_EMOJI = ['😀', '😂', '😍', '🥹', '😎', '🙌', '�
 
 const state = {
   chatReactions: [...DEFAULT_CHAT_REACTIONS],
+  chatMutations: false,
+  voiceMaxBytes: 192 * 1024,
   ws: null,
   room: null,
   self: null,
@@ -277,6 +279,9 @@ async function loadClientConfig() {
     if (Array.isArray(j.iceServers) && j.iceServers.length) rtcConfig = { iceServers: j.iceServers };
     const wasMediaRelayEnabled = isMediaRelayEnabled();
     state.mediaRelay = normalizeMediaRelayConfig(j.mediaRelay);
+    state.chatMutations = j.chatFeatures?.messageMutations === true;
+    const voiceMaxBytes = j.chatFeatures?.maxVoiceBytes;
+    if (Number.isInteger(voiceMaxBytes) && voiceMaxBytes > 0) state.voiceMaxBytes = Math.min(voiceMaxBytes, 512 * 1024);
     if (Array.isArray(j.chatReactions)) {
       const reactions = j.chatReactions.filter((emoji) => typeof emoji === 'string' && emoji.length <= 16).slice(0, 12);
       if (reactions.length) state.chatReactions = reactions;
@@ -965,7 +970,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261110-continuity1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261110-chat-review1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -1043,7 +1048,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261110-continuity1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261110-chat-review1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1373,14 +1378,14 @@ function addActivity(text, force = false) {
   renderActivity();
 }
 
-function addMessages(messages) {
+function addMessages(messages, updated = false) {
   const known = new Map(state.messages.map((message) => [message.id, message]));
   const chatOpen = $('#room-view')?.dataset.roomTab === 'chat' && !document.hidden;
   let unread = 0;
   for (const message of messages || []) {
     const existing = known.get(message.id);
     // History delivered on (re)join is not "new"; live messages from others are.
-    if (!existing && !state.loadingChatHistory && !chatOpen && message.kind === 'chat' && message.senderId && message.senderId !== state.self?.id) unread += 1;
+    if (!existing && !updated && !state.loadingChatHistory && !chatOpen && message.kind === 'chat' && message.senderId && message.senderId !== state.self?.id) unread += 1;
     // A rejoin resends history; keep its newer reaction counts.
     if (existing) {
       const previousVoice = existing.voice;
@@ -1758,7 +1763,7 @@ function handleServerMessage(message) {
     return;
   }
   if (message.type === 'chat') {
-    addMessages([message.message]);
+    addMessages([message.message], message.updated === true);
     if (message.message.kind === 'system') toast(message.message.text, 'success');
     return;
   }
@@ -2133,7 +2138,7 @@ function sendChatPayload(payload) {
   try { state.ws.send(JSON.stringify(payload)); return true; } catch { toast('Could not send. Please reconnect and try again.'); return false; }
 }
 function renderChat() {
-  if (!roomChatUI) roomChatUI = new RoomChatUI({ feed: $('#chat-feed'), input: $('#chat-input'), form: $('#chat-form'), send: sendChatPayload, getMessages: () => state.messages, getSelfId: () => state.self?.id, onError: message => toast(message), onVoicePlayback: setVoiceNotePlaying, onVoiceRecording: setVoiceNoteRecording, canManageMember, onMemberMenu: openMemberMenu });
+  if (!roomChatUI) roomChatUI = new RoomChatUI({ feed: $('#chat-feed'), input: $('#chat-input'), form: $('#chat-form'), send: sendChatPayload, getMessages: () => state.messages, getSelfId: () => state.self?.id, onError: message => toast(message), onVoicePlayback: setVoiceNotePlaying, onVoiceRecording: setVoiceNoteRecording, canManageMember, onMemberMenu: openMemberMenu, canMutate: () => state.chatMutations, voiceMaxBytes: () => state.voiceMaxBytes });
   const chat = state.messages.filter(message => message.kind === 'chat');
   $('#chat-count').textContent = chat.length;
   roomChatUI.render(chat, chatReactionsHtml);
@@ -3306,6 +3311,22 @@ function wireEvents() {
     const open = bar.classList.toggle('open');
     $('#emoji-toggle').setAttribute('aria-expanded', String(open));
   });
+  const chatInput = $('#chat-input');
+  chatInput.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+    event.preventDefault();
+    $('#chat-form').requestSubmit();
+  });
+  const keepChatInputVisible = () => {
+    if (document.activeElement !== chatInput) return;
+    const viewport = window.visualViewport;
+    const box = chatInput.getBoundingClientRect();
+    if (!viewport || box.bottom > viewport.offsetTop + viewport.height - 12 || box.top < viewport.offsetTop) {
+      chatInput.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }
+  };
+  chatInput.addEventListener('focus', () => requestAnimationFrame(keepChatInputVisible));
+  window.visualViewport?.addEventListener('resize', () => requestAnimationFrame(keepChatInputVisible));
   $('#chat-form').addEventListener('submit', (event) => {
     event.preventDefault();
     const text = $('#chat-input').value.trim();

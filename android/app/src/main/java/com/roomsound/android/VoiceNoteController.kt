@@ -27,7 +27,7 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
         private set
     var draftId: String? = null
         private set
-    /** Called when a recording has just become a draft (Telegram-style: stop means send). */
+    /** Manual stop sends immediately; the time limit instead leaves a draft for review. */
     var onDraftReady: (() -> Unit)? = null
     /** Called with true when a voice message starts playing and false when it stops. */
     var onPlaybackChanged: ((Boolean) -> Unit)? = null
@@ -35,7 +35,7 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
     val recording get() = recorder != null
     val playing get() = player != null
     val elapsedSeconds get() = ((SystemClock.elapsedRealtime() - started) / 1000).toInt().coerceIn(0,30)
-    private val tick = object : Runnable { override fun run() { if (!recording) return; changed(); if (elapsedSeconds >= 30) stopRecording() else handler.postDelayed(this, 250) } }
+    private val tick = object : Runnable { override fun run() { if (!recording) return; changed(); if (elapsedSeconds >= 30) stopRecording(review = true) else handler.postDelayed(this, 250) } }
     @Suppress("DEPRECATION")
     fun start() {
         if (recording || draft != null) return
@@ -48,16 +48,14 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
             capture.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             capture.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             capture.setAudioChannels(1); capture.setAudioSamplingRate(16000); capture.setAudioEncodingBitRate(24000)
-            capture.setMaxDuration(ChatContent.MAX_DURATION_MS); capture.setMaxFileSize(ChatContent.MAX_VOICE_BYTES.toLong())
             capture.setOutputFile(file.absolutePath)
-            capture.setOnInfoListener { _, what, _ -> if (recorder === capture && (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED || what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED)) stopRecording() }
             capture.setOnErrorListener { _, _, _ -> if (recorder === capture) { cancelRecording(); error("Recording failed. Please try again.") } }
             onRecordingChanged?.invoke(true)
             capture.prepare(); capture.start(); started = SystemClock.elapsedRealtime(); handler.post(tick)
             changed()
         } catch (_: Exception) { cancelRecording(); error("The microphone is unavailable. Close other recording apps and try again.") }
     }
-    fun stopRecording() {
+    fun stopRecording(review: Boolean = false) {
         val capture = recorder ?: return
         recorder = null; handler.removeCallbacks(tick)
         val file = recordingFile; recordingFile = null
@@ -69,7 +67,7 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
             draftId = UUID.randomUUID().toString()
         } catch (_: Exception) { error("Record between 1 and 30 seconds, then try again.") }
         finally { runCatching { capture.release() }; onRecordingChanged?.invoke(false); file?.delete(); changed() }
-        if (draft != null) onDraftReady?.invoke()
+        if (!review && draft?.durationMs?.let { it < ChatContent.MAX_DURATION_MS } == true) onDraftReady?.invoke()
     }
     fun cancelRecording() {
         handler.removeCallbacks(tick)

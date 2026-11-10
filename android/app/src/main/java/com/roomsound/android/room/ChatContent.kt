@@ -5,13 +5,13 @@ import java.util.Base64
 
 /** The same bounded, ephemeral chat contract as the internet room server. */
 object ChatContent {
-    const val MAX_VOICE_BYTES = 192 * 1024
+    const val MAX_VOICE_BYTES = 512 * 1024
     const val MAX_DURATION_MS = 30_000
     fun voice(input: JSONObject): JSONObject {
         val mime = input.optString("mimeType").lowercase().replace(" ", "")
         require(mime in setOf("audio/webm", "audio/webm;codecs=opus", "audio/ogg", "audio/ogg;codecs=opus", "audio/mp4")) { "Unsupported recording format." }
         val data = input.optString("data")
-        require(data.length <= ((MAX_VOICE_BYTES + 2) / 3) * 4 && data.matches(Regex("(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?"))) { "Recording is too large or invalid." }
+        require(data.length <= ((MAX_VOICE_BYTES + 2) / 3) * 4 && data.length % 4 == 0 && data.matches(Regex("[A-Za-z0-9+/]+={0,2}"))) { "Recording is too large or invalid." }
         val bytes = Base64.getDecoder().decode(data)
         require(bytes.size in 12..MAX_VOICE_BYTES && Base64.getEncoder().encodeToString(bytes) == data) { "Invalid recording data." }
         val duration = input.optDouble("durationMs", Double.NaN)

@@ -75,6 +75,8 @@ data class RoomChatMessage(
     val replyTo: RoomChatReply? = null,
     val voice: RoomVoiceNote? = null,
     val clientMessageId: String? = null,
+    val edited: Boolean = false,
+    val deleted: Boolean = false,
 )
 
 data class RoomState(
@@ -132,6 +134,7 @@ data class RoomServerConfig(
     val chatReactions: List<String> = emptyList(),
     val voiceMessages: Boolean = false,
     val messageReplies: Boolean = false,
+    val messageMutations: Boolean = false,
 ) {
     companion object {
         val DEFAULT = RoomServerConfig()
@@ -173,7 +176,7 @@ sealed interface RoomSoundEvent {
     data class State(val state: RoomState) : RoomSoundEvent
     data class Error(val message: String) : RoomSoundEvent
     data class LocalError(val message: String) : RoomSoundEvent
-    data class Chat(val message: RoomChatMessage) : RoomSoundEvent
+    data class Chat(val message: RoomChatMessage, val updated: Boolean = false) : RoomSoundEvent
     data class Reaction(val messageId: String, val reactions: Map<String, List<String>>) : RoomSoundEvent
     data class ControlRequested(val request: RoomRequest) : RoomSoundEvent
     data class RequestResult(val status: String, val request: RoomRequest?) : RoomSoundEvent
@@ -260,6 +263,8 @@ internal fun parseChatMessage(json: JSONObject): RoomChatMessage = RoomChatMessa
     replyTo = json.optJSONObject("replyTo")?.let { RoomChatReply(it.optString("id"), it.optString("senderName"), it.optString("text")) },
     voice = json.optJSONObject("voice")?.let { RoomVoiceNote(it.optString("mimeType"), it.optLong("durationMs"), it.stringOrNull("data"), it.optBoolean("unavailable"), it.optBoolean("referenceOnly")) },
     clientMessageId = json.stringOrNull("clientMessageId"),
+    edited = json.optBoolean("edited"),
+    deleted = json.optBoolean("deleted"),
 )
 
 /** `{"🔥": ["memberId", …]}`; anything malformed is skipped, never thrown. */
@@ -348,6 +353,7 @@ internal fun parseRoomServerConfig(json: JSONObject): RoomServerConfig = RoomSer
     mediaRelay = parseMediaRelayConfig(json),
     voiceMessages = json.optJSONObject("chatFeatures")?.optBoolean("voiceMessages", false) == true,
     messageReplies = json.optJSONObject("chatFeatures")?.optBoolean("messageReplies", false) == true,
+    messageMutations = json.optJSONObject("chatFeatures")?.optBoolean("messageMutations", false) == true,
     chatReactions = buildList {
         val reactions = json.arrayOrEmpty("chatReactions")
         for (index in 0 until minOf(reactions.length(), 12)) {

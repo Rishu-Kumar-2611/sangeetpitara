@@ -66,3 +66,17 @@ html[data-theme] .local-panel #chat { border-block-color:var(--line); }
 .member-menu-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; overflow-wrap: anywhere; }
 .member-menu-actions { display: grid; gap: 8px; }
 .member-menu-actions button, .member-menu-heading button { min-height: 44px; }
+
+.chat-own-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-own-actions[hidden], .chat-own-actions button[hidden], .chat-quote[hidden], .chat-reply-button[hidden] { display: none; }
+.chat-edit-form { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-block: 6px; }
+html[data-theme] textarea.chat-input {
+  display: block; width: 100%; height: auto; min-height: 46px; padding: 8px 12px;
+  font: inherit; line-height: 1.35; caret-color: var(--text); resize: vertical;
+}
+.chat-edit-form textarea { flex: 1 0 100%; }
+@media (max-width: 760px) {
+  html[data-theme] .chat-form { display: grid; grid-template-columns: repeat(2, auto) 1fr; }
+  html[data-theme] .chat-form textarea { grid-row: 1; grid-column: 1 / -1; font-size: 16px; }
+  html[data-theme] .chat-form .send-button { justify-self: end; }
+}

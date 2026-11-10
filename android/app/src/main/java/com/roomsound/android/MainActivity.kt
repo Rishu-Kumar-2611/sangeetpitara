@@ -912,9 +912,19 @@ class MainActivity : Activity() {
             visibility = View.GONE
         }
         chatPanel.addView(reactionRow, marginLayout())
-        val chatRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        chatInput = inputText("Message", null)
-        chatRow.addView(chatInput, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val chatComposer = verticalContainer()
+        val chatRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        chatInput = inputText("Message", null).apply {
+            setSingleLine(false)
+            setHorizontallyScrolling(false)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            minLines = 2
+            maxLines = 4
+            filters = arrayOf(android.text.InputFilter.LengthFilter(280))
+            gravity = Gravity.TOP or Gravity.START
+            setOnFocusChangeListener { view, focused -> if (focused) view.post { showChatInput() } }
+        }
+        chatComposer.addView(chatInput, matchWrap())
         // Voice notes work like Telegram: tap the mic to record, tap again to stop and send.
         voiceRecordButton = button("\uD83C\uDFA4", ButtonTone.SECONDARY) { toggleVoiceRecording() }
         chatRow.addView(voiceRecordButton, LinearLayout.LayoutParams(dp(56), LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) })
@@ -922,7 +932,8 @@ class MainActivity : Activity() {
             button("Send") { sendChat() },
             LinearLayout.LayoutParams(dp(88), LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) },
         )
-        chatPanel.addView(chatRow, marginLayout())
+        chatComposer.addView(chatRow, matchWrap())
+        chatPanel.addView(chatComposer, marginLayout())
         voiceStatusRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
         voiceStatusText = labelText()
         voiceStatusRow.addView(voiceStatusText, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -1030,11 +1041,19 @@ class MainActivity : Activity() {
         return ScrollView(this).apply {
             nativeScroll = this
             applySystemInsets()
+            addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+                if (bottom - top < oldBottom - oldTop && chatInput.hasFocus()) chatInput.post { showChatInput() }
+            }
             isFillViewport = true
             isVerticalScrollBarEnabled = false
             setBackgroundResource(R.drawable.bg_roomsound_background)
             addView(content)
         }
+    }
+
+    private fun showChatInput() {
+        if (!::chatInput.isInitialized || !chatInput.hasFocus()) return
+        chatInput.requestRectangleOnScreen(android.graphics.Rect(0, 0, chatInput.width, chatInput.height), false)
     }
 
     private fun createRoom() {
@@ -1346,14 +1365,15 @@ class MainActivity : Activity() {
                 is RoomSoundEvent.Error -> appendRoomEvent("Server error: ${event.message}")
                 is RoomSoundEvent.LocalError -> appendRoomEvent("Not sent: ${event.message}")
                 is RoomSoundEvent.Chat -> {
-                    appendRoomEvent("${event.message.senderName ?: "Room"}: ${event.message.text}")
                     // A new message from someone else while Chat is not open counts as unread.
-                    if (event.message.kind == "chat" && event.message.senderId != latestRoomState?.self?.id &&
+                    if (!event.updated && event.message.kind == "chat" && event.message.senderId != latestRoomState?.self?.id &&
                         event.message.id !in liveChatMessages && !(nativePage == "chat" && activityResumed)
                     ) {
                         chatUnread += 1
                         renderChatUnread()
                     }
+                    if (event.message.deleted && chatReplyTarget?.id == event.message.id) chatReplyTarget = null
+                    if (event.message.deleted) reactionOverrides.remove(event.message.id)
                     liveChatMessages[event.message.id] = event.message
                     while (liveChatMessages.size > 80) liveChatMessages.remove(liveChatMessages.keys.first())
                     latestRoomState?.let(::renderChat)
@@ -1586,9 +1606,10 @@ class MainActivity : Activity() {
         for (message in messages) if (message.senderId == state.self?.id && message.clientMessageId != null && message.clientMessageId == voiceNotes.draftId) { voiceNotes.acknowledge(message.clientMessageId); chatReplyTarget = null; updateVoiceComposer() }
         updateVoiceComposer()
         chatText.text = if (messages.isEmpty()) "No messages yet." else "${messages.size} recent messages"
-        val fingerprint = messages.joinToString { "${it.id}:${it.voice?.data?.length}:${reactionOverrides[it.id] ?: it.reactions}" }
+        val fingerprint = messages.joinToString { "${it.id}:${it.text}:${it.edited}:${it.deleted}:${it.replyTo?.text}:${it.voice?.data?.length}:${reactionOverrides[it.id] ?: it.reactions}" }
         val manageable = state.members.filter { canManageMember(state, it.id) }.map { it.id }.toSet()
-        val chatLayoutKey = fingerprint + "|" + manageable.sorted().joinToString()
+        val mutations = roomSession?.supportsMessageMutations() == true
+        val chatLayoutKey = fingerprint + "|" + manageable.sorted().joinToString() + "|" + mutations
         if (chatLayoutKey != chatFingerprint) {
             chatFingerprint = chatLayoutKey; chatFeed.removeAllViews()
             for (message in messages) {
@@ -1598,11 +1619,16 @@ class MainActivity : Activity() {
                 messageHeader.addView(labelText().apply { text = message.senderName ?: "Room"; setTypeface(strongTypeface); textSize = 14f }, LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
                 messageHeader.addView(button("Reply", ButtonTone.SECONDARY) { chatReplyTarget = message; updateVoiceComposer(); chatInput.requestFocus() }.apply {
                     setBackgroundColor(android.graphics.Color.TRANSPARENT); setTextColor(AppThemes.color(this@MainActivity,R.color.roomsound_brass)); textSize = 13f
-                    visibility = if (roomSession?.supportsMessageReplies() == true) View.VISIBLE else View.GONE
+                    visibility = if (!message.deleted && roomSession?.supportsMessageReplies() == true) View.VISIBLE else View.GONE
                     contentDescription = "Reply to ${message.senderName}'s message"
                 }, LinearLayout.LayoutParams(dp(64),dp(44)))
                 message.senderId?.takeIf { it in manageable }?.let { id ->
                     messageHeader.addView(memberMenuButton(id, message.senderName ?: "participant"), LinearLayout.LayoutParams(dp(48), dp(48)))
+                }
+                if (mutations && !message.deleted && message.senderId == state.self?.id) {
+                    messageHeader.addView(button("⋯", ButtonTone.SECONDARY) { showOwnChatActions(message.id) }.apply {
+                        contentDescription = "Edit or delete your message"
+                    }, LinearLayout.LayoutParams(dp(48), dp(48)))
                 }
                 row.addView(messageHeader, matchWrap())
                 message.replyTo?.let { quote -> row.addView(labelText().apply {
@@ -1617,7 +1643,7 @@ class MainActivity : Activity() {
                 }, matchWrap()) }
                 if (message.voice != null) {
                     row.addView(button(if (message.voice.data == null) "Recording no longer available" else "Play voice · ${((message.voice.durationMs + 999) / 1000)} sec", ButtonTone.SECONDARY) { voiceNotes.play(message.voice) }.apply { isEnabled = message.voice.data != null }, marginLayout())
-                } else row.addView(labelText().apply { text = message.text; textSize = 16f }, matchWrap())
+                } else row.addView(labelText().apply { text = message.text + if (message.edited && !message.deleted) " · Edited" else ""; textSize = 16f }, matchWrap())
                 chatFeed.addView(row, matchWrap())
             }
         }
@@ -1625,7 +1651,7 @@ class MainActivity : Activity() {
         // Quick reactions apply to the newest message; servers without
         // reactions publish no set, so the row stays hidden there.
         val emojis = roomSession?.currentChatReactions().orEmpty()
-        val target = messages.lastOrNull()
+        val target = messages.lastOrNull { !it.deleted }
         reactionRow.removeAllViews()
         reactionRow.visibility = if (emojis.isEmpty() || target == null) View.GONE else View.VISIBLE
         if (target == null) return
@@ -1646,6 +1672,41 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(6) },
             )
         }
+    }
+
+    private fun showOwnChatActions(id: String) {
+        val session = roomSession ?: return
+        val state = session.currentRoomState() ?: return
+        val message = (liveChatMessages[id] ?: state.messages.firstOrNull { it.id == id }) ?: return
+        if (!session.supportsMessageMutations() || message.deleted || message.senderId != state.self?.id) return
+        val actions = if (message.voice == null) arrayOf("Edit", "Delete") else arrayOf("Delete")
+        android.app.AlertDialog.Builder(this).setTitle("Your message").setItems(actions) { _, index ->
+            if (actions[index] == "Edit") {
+                val input = inputText("Edit message", message.text).apply {
+                    setSingleLine(false)
+                    filters = arrayOf(android.text.InputFilter.LengthFilter(280))
+                    selectAll()
+                }
+                val dialog = android.app.AlertDialog.Builder(this).setTitle("Edit message").setView(input)
+                    .setNegativeButton("Cancel", null).setPositiveButton("Save", null).create()
+                dialog.setOnShowListener {
+                    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        if (input.text.isBlank()) input.error = "Enter a message"
+                        else if (session.editChat(id, input.text.toString())) dialog.dismiss()
+                        else input.error = "Could not save. Check your connection."
+                    }
+                    input.requestFocus()
+                }
+                dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+                dialog.show()
+            } else {
+                android.app.AlertDialog.Builder(this).setTitle("Delete message?")
+                    .setMessage("This removes the message for everyone in the room.")
+                    .setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ ->
+                        if (!session.deleteChat(id)) showRoomActionMessage("Could not delete the message. Check your connection.")
+                    }.show()
+            }
+        }.setNegativeButton(android.R.string.cancel, null).show()
     }
 
     private fun renderApprovalControls(state: RoomState, isModerator: Boolean) {
@@ -2117,8 +2178,8 @@ class MainActivity : Activity() {
         }
         val sending = voiceNotes.draft != null && voiceSendingId != null && voiceSendingId == voiceNotes.draftId
         if (::voiceStatusRow.isInitialized) {
-            voiceStatusRow.visibility = if (voiceNotes.recording || sending) View.VISIBLE else View.GONE
-            voiceStatusText.text = if (voiceNotes.recording) "Recording ${voiceNotes.elapsedSeconds} / 30 sec · room audio paused · tap \u27A4 to send" else "Sending voice message..."
+            voiceStatusRow.visibility = if (voiceNotes.recording || sending || voiceNotes.draft?.durationMs == 30_000L) View.VISIBLE else View.GONE
+            voiceStatusText.text = if (voiceNotes.recording) "Recording ${voiceNotes.elapsedSeconds} / 30 sec · room audio paused · tap \u27A4 to send" else if (sending) "Sending voice message..." else "Review 30 sec voice note"
             voiceStatusRow.getChildAt(1).visibility = if (voiceNotes.recording) View.VISIBLE else View.GONE
         }
         if (::voicePreviewPlayButton.isInitialized) voicePreviewPlayButton.text = if (voiceNotes.playing) "Stop" else "Play"

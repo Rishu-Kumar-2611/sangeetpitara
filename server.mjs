@@ -1,4 +1,4 @@
-import { chatContent, boundVoiceHistory, chatSnapshot } from './chat-content.mjs';
+import { chatContent, boundVoiceHistory, chatSnapshot, VOICE_MAX_BYTES, VOICE_MAX_DURATION_MS } from './chat-content.mjs';
 import { clientAddress } from './client-address.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -92,7 +92,7 @@ const requestJitterMs = 5_000;
 const MAX_MESSAGES = 200;
 const MAX_MESSAGE_KEEP = 100;
 const MAX_PAYLOAD_BYTES = 64 * 1024;
-const MAX_CHAT_PAYLOAD_BYTES = 300 * 1024;
+const MAX_CHAT_PAYLOAD_BYTES = Math.ceil(VOICE_MAX_BYTES / 3) * 4 + 8 * 1024;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 120;
 const STATIC_RATE_LIMIT_MAX = 600;
@@ -1290,10 +1290,36 @@ async function handleMessage(ws, message) {
     return;
   }
 
+  if (type === 'edit-chat' || type === 'delete-chat') {
+    const target = room.messages.find(item => item.kind === 'chat' && item.id === message.messageId);
+    if (!target || target.senderId !== member.id || target.deleted) {
+      return sendError(ws, 'You can only change your own messages that are still in this room.');
+    }
+    if (type === 'edit-chat') {
+      if (target.voice) return sendError(ws, 'Voice notes can be deleted but cannot be edited.');
+      try { target.text = chatContent({ text: message.text }, []).text; }
+      catch (error) { return sendError(ws, error.message); }
+      target.edited = true;
+    } else {
+      target.text = 'Message deleted';
+      target.deleted = true;
+      target.voice = null;
+      target.replyTo = null;
+      target.reactions = {};
+    }
+    broadcast(room, { type: 'chat', message: target, updated: true });
+    for (const reply of room.messages) {
+      if (reply.replyTo?.id !== target.id) continue;
+      reply.replyTo.text = Array.from(target.text).slice(0, 160).join('');
+      broadcast(room, { type: 'chat', message: chatSnapshot(reply, false), updated: true });
+    }
+    return;
+  }
+
   if (type === 'react') {
     const emoji = CHAT_REACTIONS.includes(message.emoji) ? message.emoji : null;
     const target = room.messages.find((item) => item.kind === 'chat' && item.id === message.messageId);
-    if (!emoji || !target) return sendError(ws, 'That reaction is not available.');
+    if (!emoji || !target || target.deleted) return sendError(ws, 'That reaction is not available.');
     // Toggle: reacting again with the same emoji removes it.
     const reactions = { ...(target.reactions || {}) };
     const members = new Set(reactions[emoji] || []);
@@ -1764,7 +1790,7 @@ const server = http.createServer(async (req, res) => {
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...(turn ? [turn] : [])],
       mediaRelay,
       chatReactions: CHAT_REACTIONS,
-      chatFeatures: { voiceMessages: true, messageReplies: true, maxVoiceDurationMs: 30000, maxVoiceBytes: 192 * 1024 },
+      chatFeatures: { voiceMessages: true, messageReplies: true, messageMutations: true, maxVoiceDurationMs: VOICE_MAX_DURATION_MS, maxVoiceBytes: VOICE_MAX_BYTES },
       maxMembers: null, // No per-room limit.
       requestTtlMs,
       authRequired: roomAuthRequired,
@@ -1890,7 +1916,7 @@ server.maxHeadersCount = 100;
 const wss = new WebSocketServer({
   server,
   perMessageDeflate: false,
-  maxPayload: 512 * 1024,
+  maxPayload: MAX_CHAT_PAYLOAD_BYTES,
   verifyClient: (info, cb) => {
     if (databaseMaintenance) { cb(false, 503, 'Database migration in progress'); return; }
     const allowed = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean) : null;
