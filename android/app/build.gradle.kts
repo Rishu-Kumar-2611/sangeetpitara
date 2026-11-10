@@ -44,9 +44,9 @@ val inviteLinkHost = Regex("^wss://([^/:]+)").find(configuredDefaultEndpoint)?.g
     ?: "sangeet-pitaraa.onrender.com"
 // The release workflow derives both from the pushed v<major>.<minor>.<patch> tag.
 val configuredVersionName = configuredValue("ROOMSOUND_VERSION_NAME")
-    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.23")
+    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.24")
 val configuredVersionCode = configuredValue("ROOMSOUND_VERSION_CODE")?.toInt()
-    ?: releaseProperties.getProperty("VERSION_CODE", "10123").toInt()
+    ?: releaseProperties.getProperty("VERSION_CODE", "10124").toInt()
 // GitHub repository whose latest release the app checks for an update notice.
 val configuredReleasesRepository = configuredValue("ROOMSOUND_RELEASES_REPOSITORY")
     ?: "Rishu-Kumar-2611/sangeetpitara"

@@ -1,16 +1,16 @@
-import { RoomChatUI } from './chat-ui.mjs?v=20261110-people1';
+import { RoomChatUI } from './chat-ui.mjs?v=20261110-continuity1';
 let roomChatUI = null;
-import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261109-light1';
-import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261109-light1';
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261109-light1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261109-light1';
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261110-continuity1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261110-continuity1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261110-continuity1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261110-continuity1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261109-light1';
+} from './capture-tracks.js?v=20261110-continuity1';
 import {
   decodeOpusFrame,
   decodePcm16Frame,
@@ -21,8 +21,8 @@ import {
   MEDIA_RELAY_VERSION_OPUS,
   RelaySequenceTracker,
   relayFrameVersion,
-} from './media-relay.mjs?v=20261109-light1';
-import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261109-light1';
+} from './media-relay.mjs?v=20261110-continuity1';
+import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261110-continuity1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -34,8 +34,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261109-light1';
-import { roomPalette } from './room-palette.js?v=20261109-light1';
+} from './ads.mjs?v=20261110-continuity1';
+import { roomPalette } from './room-palette.js?v=20261110-continuity1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -62,6 +62,8 @@ const DEFAULT_MEDIA_RELAY_CONFIG = {
 };
 const SOCKET_PING_INTERVAL_MS = 2000;
 const LOSS_NOTICE_DELAY_MS = 2500; // A reconnect faster than this is not announced.
+const RELAY_RECONNECT_BUFFER_MS = 2500;
+const RELAY_RECONNECT_BUFFER_FRAMES = 125;
 const SOCKET_STALL_MS = 6000; // An unanswered ping this old means the connection froze.
 const RELAY_PROCESSOR_BUFFER_SAMPLES = 2048; // Compatibility only; primary capture uses the audio rendering thread.
 const SYNC_OFFSET_MAX_MS = 1000; // Matches the #sync-offset slider max and the worklet's target ceiling.
@@ -136,6 +138,7 @@ const state = {
   relayPlaybackContext: null,
   relayPlaybackGain: null,
   relayPlaybackAnalyser: null,
+  relayReconnectFrames: [],
   relayPlaybackWorklet: null,
   relayPlaybackWorkletReady: false,
   relayPlaybackWorkletLoading: null,
@@ -652,9 +655,13 @@ function createRoomAudioContext() {
   }
 }
 
+function isListeningSuspended() {
+  return state.listeningPaused || state.voiceNoteRecording;
+}
+
 function applyOutputVolume() {
   // A voice message being played pauses the room music on this device; it comes back when the message ends.
-  const silenced = state.muted || state.listeningPaused || state.voiceNotePlaying || state.voiceNoteRecording;
+  const silenced = state.muted || isListeningSuspended() || state.voiceNotePlaying;
   if (state.fileAudioMonitor) state.fileAudioMonitor.gain.value = state.voiceNoteRecording ? 0 : 1;
   if (state.audioElement) {
     state.audioElement.muted = state.voiceNoteRecording;
@@ -813,18 +820,52 @@ function ensureVisualizerLoop() {
   state.visualizerRaf = requestAnimationFrame(updateSourceOrbVisualizer);
 }
 
-function sendRelayEncodedFrame(frame, sourceEpoch) {
-  if (!isMediaRelayEnabled() || !isSelfSource() || state.room?.sourceEpoch !== sourceEpoch || state.room?.sourceStatus !== 'LIVE') return;
-  if (state.ws?.readyState !== WebSocket.OPEN) return;
-  if ((Number(state.ws.bufferedAmount) || 0) + frame.byteLength > MEDIA_RELAY_MAX_BACKLOG_BYTES) { state.relaySocketDrops = (state.relaySocketDrops || 0) + 1; return; }
+function canSendRelayFrame(sourceEpoch) {
+  return isMediaRelayEnabled() && isSelfSource() &&
+    state.room?.sourceEpoch === sourceEpoch && state.room?.sourceStatus === 'LIVE';
+}
+
+function sendRelayFrameOnSocket(frame, sourceEpoch) {
+  if (!state.socketJoined || state.ws?.readyState !== WebSocket.OPEN) return false;
+  if ((Number(state.ws.bufferedAmount) || 0) + frame.byteLength > MEDIA_RELAY_MAX_BACKLOG_BYTES) return false;
   try {
     state.ws.send(frame);
     state.relaySentFrames += 1;
     state.relaySentBytes = (state.relaySentBytes || 0) + frame.byteLength;
     state.relayPacketProgress = { at: Date.now(), epoch: sourceEpoch, sender: true };
-  } catch (error) {
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function trimRelayReconnectFrames(now) {
+  const queue = state.relayReconnectFrames;
+  while (queue.length > RELAY_RECONNECT_BUFFER_FRAMES ||
+    (queue.length && now - queue[0].at > RELAY_RECONNECT_BUFFER_MS)) {
+    queue.shift();
     state.relaySocketDrops = (state.relaySocketDrops || 0) + 1;
-    console.warn('[SangeetPitara] Opus relay frame was not sent', error);
+  }
+}
+
+function flushRelayReconnectFrames(sourceEpoch) {
+  if (!canSendRelayFrame(sourceEpoch)) return;
+  trimRelayReconnectFrames(performance.now());
+  const queue = state.relayReconnectFrames;
+  while (queue.length && sendRelayFrameOnSocket(queue[0].frame, sourceEpoch)) queue.shift();
+}
+
+function sendRelayEncodedFrame(frame, sourceEpoch) {
+  if (!canSendRelayFrame(sourceEpoch)) return;
+  const queue = state.relayReconnectFrames;
+  const disconnected = !state.socketJoined || state.ws?.readyState !== WebSocket.OPEN;
+  if (disconnected || queue.length) {
+    queue.push({ frame, at: performance.now() });
+    flushRelayReconnectFrames(sourceEpoch);
+    return;
+  }
+  if (!sendRelayFrameOnSocket(frame, sourceEpoch)) {
+    state.relaySocketDrops = (state.relaySocketDrops || 0) + 1;
   }
 }
 
@@ -856,30 +897,15 @@ function sendRelayOpusFrame(samples, sourceEpoch) {
 }
 
 function sendRelayPcmFrame(samples, sourceEpoch, capturedSequence = null) {
-  if (!isMediaRelayEnabled() || !isSelfSource() || state.room?.sourceEpoch !== sourceEpoch || state.room?.sourceStatus !== 'LIVE') return;
-  if (state.ws?.readyState !== WebSocket.OPEN) return;
+  if (!canSendRelayFrame(sourceEpoch)) return;
   if (sendRelayOpusFrame(samples, sourceEpoch)) return;
   const sequence = capturedSequence ?? state.relaySequence;
   state.relaySequence = (sequence + 1) >>> 0;
-  const frameBytes = 20 + samples.byteLength;
-  if ((Number(state.ws.bufferedAmount) || 0) + frameBytes > MEDIA_RELAY_MAX_BACKLOG_BYTES) { state.relaySocketDrops = (state.relaySocketDrops || 0) + 1; return; }
-  try {
-    const frame = encodePcm16Frame({
-      sourceEpoch,
-      sequence,
-      samples,
-    });
-    state.ws.send(frame);
-    state.relaySentFrames += 1;
-    state.relaySentBytes = (state.relaySentBytes || 0) + frame.byteLength;
-    state.relayPacketProgress = { at: Date.now(), epoch: sourceEpoch, sender: true };
-  } catch (error) {
-    state.relaySocketDrops = (state.relaySocketDrops || 0) + 1;
-    console.warn('[SangeetPitara] PCM16 relay frame was not sent', error);
-  }
+  sendRelayEncodedFrame(encodePcm16Frame({ sourceEpoch, sequence, samples }), sourceEpoch);
 }
 
 function stopRelayCapture() {
+  state.relayReconnectFrames.length = 0;
   closeOpusEncoder();
   state.relayPublisherGeneration += 1;
   state.relayPublisherStarting = null;
@@ -908,6 +934,7 @@ function syncRelayCaptureLease() {
   const epoch = isSelfSource() && state.room?.sourceStatus === 'LIVE' ? state.room.sourceEpoch : null;
   if (state.relayCaptureEpoch === epoch) return;
   state.relayCaptureEpoch = epoch;
+  state.relayReconnectFrames.length = 0;
   state.relaySequence = 0;
   state.relayPacketizer?.reset();
   state.relayProcessor?.port?.postMessage({ type: 'lease', epoch });
@@ -938,7 +965,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261109-light1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261110-continuity1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -1016,7 +1043,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261109-light1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261110-continuity1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1169,7 +1196,7 @@ function closeRelayPlayback() {
 }
 
 function handleRelayFrame(data) {
-  if (!isMediaRelayEnabled() || state.listeningPaused) return;
+  if (!isMediaRelayEnabled() || isListeningSuspended()) return;
   if (relayFrameVersion(data) === MEDIA_RELAY_VERSION_OPUS) { handleOpusRelayFrame(data); return; }
   let frame;
   try {
@@ -1233,6 +1260,7 @@ function acceptRelayFrame(frame, codec) {
 }
 
 function playRelaySamples(frame) {
+  if (isListeningSuspended()) return;
   const context = ensureRelayPlaybackContext();
   if (!context || !state.relayPlaybackGain) return;
   ensureVisualizerLoop();
@@ -1397,8 +1425,11 @@ function selectEntryTab(entryType) {
 }
 
 function setVoiceNoteRecording(recording) {
+  if (state.voiceNoteRecording === recording) return;
+  const wasSuspended = isListeningSuspended();
   state.voiceNoteRecording = recording;
   applyOutputVolume();
+  updateListeningSuspension(wasSuspended);
 }
 
 function setVoiceNotePlaying(playing) {
@@ -1712,7 +1743,8 @@ function handleServerMessage(message) {
     showRoom();
     announceRelayCodecs();
     // A reconnect gets a fresh socket that is listening; keep a pause in force.
-    if (state.listeningPaused) send({ type: 'set-listening', listening: false });
+    if (isListeningSuspended()) send({ type: 'set-listening', listening: false });
+    flushRelayReconnectFrames(state.room.sourceEpoch);
     return;
   }
   if (message.type === 'state') {
@@ -1897,12 +1929,19 @@ function renderSource() {
 
 // Listener pause is local: the server stops sending to this device, and
 // resuming rejoins the live stream instead of playing old audio.
-function setListeningPaused(paused, { announce = true } = {}) {
-  state.listeningPaused = paused;
+function updateListeningSuspension(wasSuspended, announce = true) {
+  const suspended = isListeningSuspended();
+  if (suspended === wasSuspended) return;
   resetRelayPlaybackQueue(state.room?.sourceEpoch ?? null);
   closeOpusDecoder();
+  if (announce && state.socketJoined) send({ type: 'set-listening', listening: !suspended });
+}
+
+function setListeningPaused(paused, { announce = true } = {}) {
+  const wasSuspended = isListeningSuspended();
+  state.listeningPaused = paused;
   applyOutputVolume();
-  if (announce) send({ type: 'set-listening', listening: !paused });
+  updateListeningSuspension(wasSuspended, announce);
   renderControls();
 }
 

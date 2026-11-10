@@ -11,6 +11,8 @@ const CATCH_UP_EXCESS_SAMPLES = 48_000; // Skip ahead once more than 1 s behind 
 const CATCH_UP_PERSIST_SAMPLES = 48_000; // ...for one continuous second
 const CATCH_UP_LANDING_EXTRA = 4_800; // Land 100 ms above the target
 const STABLE_BEFORE_DECAY_SECONDS = 8;
+const RECURRING_GAP_HOLD_SECONDS = 40;
+const LONG_GAP_SECONDS = 0.5;
 const DECAY_SAMPLES_PER_BLOCK = 32; // About 250 ms of cushion released per second
 const MIN_PREFILL_SAMPLES = 1_920; // 40 ms initial prefill
 const EXCESS_HEADROOM_SAMPLES = 3_840; // Detect a burst 80 ms above the learned target
@@ -48,6 +50,8 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this._smoothedRate = 1.0;
     this.holdNeed = 0;
     this.holdSince = -Infinity;
+    this.holdSeconds = STABLE_BEFORE_DECAY_SECONDS;
+    this.lastLongGap = null;
     this.burstSamples = 0;
     this.excessRendered = 0;
 
@@ -91,6 +95,8 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     this.jitterSeconds = 0.002;
     this.holdNeed = 0;
     this.holdSince = -Infinity;
+    this.holdSeconds = STABLE_BEFORE_DECAY_SECONDS;
+    this.lastLongGap = null;
     this.burstSamples = 0;
     this.excessRendered = 0;
     this._smoothedRate = 1;
@@ -105,7 +111,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
   noteInstability(need, now) {
     const bounded = Math.max(0, Math.min(MAX_TARGET_FILL - this.baseTargetFill, Math.ceil(need)));
     this.adaptiveExtraFill = Math.max(this.adaptiveExtraFill, bounded);
-    if (bounded >= this.holdNeed || now - this.holdSince > STABLE_BEFORE_DECAY_SECONDS) {
+    if (bounded >= this.holdNeed || now - this.holdSince > this.holdSeconds) {
       this.holdNeed = bounded;
       this.holdSince = now;
     }
@@ -129,6 +135,18 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       // Only update jitter when packets arrive in distinct audio blocks (not same-tick TCP burst tail)
       if (actualInterval >= expectedInterval * 0.25) {
         const deviation = Math.abs(actualInterval - expectedInterval);
+        if (actualInterval >= LONG_GAP_SECONDS && actualInterval <= PAUSE_GAP_SECONDS) {
+          const previous = this.lastLongGap;
+          const recurring = previous && now - previous.at <= RECURRING_GAP_HOLD_SECONDS &&
+            actualInterval >= previous.duration * 0.75;
+          if (recurring) {
+            this.holdSeconds = RECURRING_GAP_HOLD_SECONDS;
+            this.holdSince = now;
+          } else if (now - this.holdSince > this.holdSeconds) {
+            this.holdSeconds = STABLE_BEFORE_DECAY_SECONDS;
+          }
+          this.lastLongGap = { at: now, duration: actualInterval };
+        }
         if (actualInterval > 0.08 && actualInterval <= PAUSE_GAP_SECONDS) {
           this.noteInstability((actualInterval + 0.08) * 48_000 - this.baseTargetFill, now);
         }
@@ -213,7 +231,7 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
     }
 
     // Keep the cushion through repeated stalls; release it within seconds once stable.
-    const holdFloor = currentTime - this.holdSince <= STABLE_BEFORE_DECAY_SECONDS ? this.holdNeed : 0;
+    const holdFloor = currentTime - this.holdSince <= this.holdSeconds ? this.holdNeed : 0;
     if (this.adaptiveExtraFill > holdFloor && this.available >= MIN_PREFILL_SAMPLES) {
       this.adaptiveExtraFill = Math.max(holdFloor, this.adaptiveExtraFill - DECAY_SAMPLES_PER_BLOCK);
       this.updateTargetFill();

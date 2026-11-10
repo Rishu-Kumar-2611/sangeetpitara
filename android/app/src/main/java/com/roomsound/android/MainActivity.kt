@@ -453,6 +453,7 @@ class MainActivity : Activity() {
     }
 
     private fun detachFromService() {
+        roomSession?.setVoiceNoteRecording(false)
         roomSession?.removeListener(roomListener)
         captureService?.removeListener(serviceListener)
         roomSession = null
@@ -2117,7 +2118,7 @@ class MainActivity : Activity() {
         val sending = voiceNotes.draft != null && voiceSendingId != null && voiceSendingId == voiceNotes.draftId
         if (::voiceStatusRow.isInitialized) {
             voiceStatusRow.visibility = if (voiceNotes.recording || sending) View.VISIBLE else View.GONE
-            voiceStatusText.text = if (voiceNotes.recording) "Recording ${voiceNotes.elapsedSeconds} / 30 sec - tap \u27A4 to send" else "Sending voice message..."
+            voiceStatusText.text = if (voiceNotes.recording) "Recording ${voiceNotes.elapsedSeconds} / 30 sec · room audio paused · tap \u27A4 to send" else "Sending voice message..."
             voiceStatusRow.getChildAt(1).visibility = if (voiceNotes.recording) View.VISIBLE else View.GONE
         }
         if (::voicePreviewPlayButton.isInitialized) voicePreviewPlayButton.text = if (voiceNotes.playing) "Stop" else "Play"

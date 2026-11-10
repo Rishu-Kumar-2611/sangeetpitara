@@ -654,7 +654,7 @@ class Pcm16RelayPlayerTest {
     @Test
     fun weakNetworkEarnsCushionAndPreservesBufferedPacketOrder() {
         val clock = java.util.concurrent.atomic.AtomicLong(0)
-        val output = Output(capacity = 1_920)
+        val output = Output(capacity = 1_920, manualConsumption = true)
         Pcm16RelayPlayer(
             outputFactory = { output }, audioThreadPriority = {},
             maxQueuedFrames = 400, maxQueuedBytes = 384_000,
@@ -664,12 +664,20 @@ class Pcm16RelayPlayerTest {
             val packets = (0L..30L).map { packet(it, 960) }
             player.play(packets.first())
             output.await { byteCount == 1_920 && playCount == 1 }
+            output.consume(1_920)
             clock.set(TimeUnit.MILLISECONDS.toNanos(500))
             packets.drop(1).forEach { player.play(it) }
-            output.await { byteCount == 3_840 }
+            assertTrue(player.cushionMillis() >= 500.0)
+
+            // The hardware continues playing the buffered audio even while no
+            // more packets arrive. The old gate withheld the cushion here.
+            for (index in 2..packets.size) {
+                output.await { byteCount >= index * 1_920 }
+                output.consume(1_920)
+            }
+            assertEquals(0, output.underrunBytes)
             assertEquals(0L, player.droppedFrames())
-            assertArrayEquals(concat(packets.take(2)), output.bytes())
-            // Stop must wake the adaptive wait and revoke every buffered packet.
+            assertArrayEquals(concat(packets), output.bytes())
             player.stop()
             output.await { closeCount == 1 }
         }

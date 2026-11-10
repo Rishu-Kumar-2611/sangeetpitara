@@ -178,3 +178,19 @@ test('partial recovery waits for earned cushion and counts short starvation', as
   p.flush(20);
   assert.equal(p.node.refilling, false);
 });
+
+test('playout bridges a repeated 1.5 s stall after learning its 25 s cadence', async () => {
+  const p = await playout();
+  p.run(2_000);
+  for (let i = 0; i < 2; i++) {
+    p.run(1_500, { connected: false });
+    p.run(23_500);
+  }
+  const underruns = p.node.underruns;
+  const skipped = p.node.skippedSamples;
+  p.run(1_500, { connected: false });
+  p.run(2_000);
+  assert.equal(p.node.underruns, underruns, 'the learned buffer must span the third stall');
+  assert.equal(p.node.skippedSamples, skipped, 'no music is dropped after the cadence is learned');
+  assert.equal(p.node.playing, true);
+});

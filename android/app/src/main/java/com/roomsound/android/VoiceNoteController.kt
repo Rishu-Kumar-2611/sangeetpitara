@@ -52,7 +52,8 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
             capture.setOutputFile(file.absolutePath)
             capture.setOnInfoListener { _, what, _ -> if (recorder === capture && (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED || what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED)) stopRecording() }
             capture.setOnErrorListener { _, _, _ -> if (recorder === capture) { cancelRecording(); error("Recording failed. Please try again.") } }
-            capture.prepare(); onRecordingChanged?.invoke(true); capture.start(); started = SystemClock.elapsedRealtime(); handler.post(tick)
+            onRecordingChanged?.invoke(true)
+            capture.prepare(); capture.start(); started = SystemClock.elapsedRealtime(); handler.post(tick)
             changed()
         } catch (_: Exception) { cancelRecording(); error("The microphone is unavailable. Close other recording apps and try again.") }
     }

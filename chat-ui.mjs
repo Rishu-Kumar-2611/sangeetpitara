@@ -11,7 +11,7 @@ export class RoomChatUI {
     this.feed.addEventListener('play',e=>{if(e.target.tagName==='AUDIO')for(const audio of this.feed.querySelectorAll('audio'))if(audio!==e.target)audio.pause();},true);
     // Tell the room when a voice message starts or stops so it can pause the music meanwhile.
     const voiceState=()=>this.onVoicePlayback([...this.feed.querySelectorAll('audio'),...this.preview.querySelectorAll('audio')].some(a=>!a.paused&&!a.ended));
-    for(const root of [this.feed,this.preview])for(const type of ['play','playing','pause','ended','emptied'])root.addEventListener(type,e=>{if(e.target.tagName==='AUDIO'){if(type==='play'&&this.stream)e.target.pause();voiceState();}},true);
+    for(const root of [this.feed,this.preview])for(const type of ['play','playing','pause','ended','emptied'])root.addEventListener(type,e=>{if(e.target.tagName==='AUDIO'){if(type==='play'&&(this.requesting||this.stream))e.target.pause();voiceState();}},true);
     this.hideHandler=()=>{if(document.hidden)this.cancelRecording();};document.addEventListener('visibilitychange',this.hideHandler);
     this.pageHandler=()=>this.reset();addEventListener('pagehide',this.pageHandler);
     if(!globalThis.isSecureContext||!navigator.mediaDevices?.getUserMedia||!globalThis.MediaRecorder) {this.recordButton.disabled=true;this.recordButton.title='Voice recording needs HTTPS or the desktop companion. You can still listen and reply.';this.tools.append(make('small','','Recording needs HTTPS or the desktop companion.'));}
@@ -64,13 +64,13 @@ export class RoomChatUI {
     if(this.draft){this.showDraft();return;}
     if(this.requesting||this.stream)return;this.requesting=true;const generation=++this.generation;
     try {
+      for(const audio of this.feed.querySelectorAll('audio'))audio.pause();
+      this.onVoiceRecording(true);
       const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true},video:false});
       if(generation!==this.generation){stream.getTracks().forEach(t=>t.stop());return;}
       const mimeType=['audio/webm;codecs=opus','audio/mp4','audio/ogg;codecs=opus'].find(t=>MediaRecorder.isTypeSupported(t));
       if(!mimeType){stream.getTracks().forEach(t=>t.stop());throw Error('Voice recording is not supported in this browser.');}
       this.stream=stream;this.chunks=[];this.bytes=0;this.cancelled=false;this.started=performance.now();
-      for(const audio of this.feed.querySelectorAll('audio'))audio.pause();
-      this.onVoiceRecording(true);
       this.recorder=new MediaRecorder(stream,{mimeType,audioBitsPerSecond:24000});
       this.recorder.ondataavailable=e=>{if(this.cancelled)return;if(e.data.size){this.bytes+=e.data.size;this.chunks.push(e.data);if(this.bytes>192*1024){this.cancelled=true;if(this.recorder.state==='recording')this.recorder.stop();this.onError('Recording is too large. Try a shorter voice note.');}}};
       this.recorder.onerror=()=>{this.cancelled=true;if(this.recorder.state==='recording')this.recorder.stop();this.onError('The microphone recording failed. Please try again.');};
@@ -89,7 +89,7 @@ export class RoomChatUI {
         if(!this.sendDraft())this.showDraft();
       };
       this.recorder.start(250);this.preview.hidden=false;const label=make('span','chat-recording');label.setAttribute('role','status');this.preview.replaceChildren(label,button('Cancel',()=>this.cancelRecording()));
-      const tick=()=>{const elapsed=Math.round((performance.now()-this.started)/1000);label.textContent=`Recording ${Math.min(30,elapsed)} / 30 sec · tap ➤ to send`;if(elapsed>=30&&this.recorder.state==='recording')this.recorder.stop();};
+      const tick=()=>{const elapsed=Math.round((performance.now()-this.started)/1000);label.textContent=`Recording ${Math.min(30,elapsed)} / 30 sec · room audio paused · tap ➤ to send`;if(elapsed>=30&&this.recorder.state==='recording')this.recorder.stop();};
       tick();this.recordTimer=setInterval(tick,250);this.setMicState(true);
     }catch(error){this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;this.onVoiceRecording(false);this.onError(error.name==='NotAllowedError'?'Microphone access was denied. You can still send text messages.':error.message||'The microphone is unavailable.');}
     finally {this.requesting=false;}

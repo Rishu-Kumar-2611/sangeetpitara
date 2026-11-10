@@ -68,6 +68,9 @@ class Pcm16RelayPlayer internal constructor(
         // Largest recent cushion need and when it was seen (see play()).
         var holdNeedBytes = 0
         var holdSince: Long? = null
+        var holdDurationNanos = STABLE_BEFORE_RELEASE_NANOS
+        var lastLongGapAt: Long? = null
+        var lastLongGapMs = 0L
         var jitterMs = 0.0
         // Smoothed level of the audio handed to the output (0..1, before volume),
         // so diagnostics can tell "played silence" from "played but not heard".
@@ -238,7 +241,19 @@ class Pcm16RelayPlayer internal constructor(
         }
         if (adaptiveBuffering) session.lastPacketAt?.let { previous ->
             val gapMs = TimeUnit.NANOSECONDS.toMillis((now - previous).coerceAtLeast(0))
-            val holding = session.holdSince?.let { now - it < STABLE_BEFORE_RELEASE_NANOS } == true
+            if (gapMs in LONG_GAP_MS..PAUSE_GAP_MS) {
+                val recurring = session.lastLongGapAt?.let { now - it <= RECURRING_HOLD_NANOS } == true &&
+                    gapMs * 4 >= session.lastLongGapMs * 3
+                if (recurring) {
+                    session.holdDurationNanos = RECURRING_HOLD_NANOS
+                    session.holdSince = now
+                } else if (session.holdSince?.let { now - it < session.holdDurationNanos } != true) {
+                    session.holdDurationNanos = STABLE_BEFORE_RELEASE_NANOS
+                }
+                session.lastLongGapAt = now
+                session.lastLongGapMs = gapMs
+            }
+            val holding = session.holdSince?.let { now - it < session.holdDurationNanos } == true
             if (gapMs in 81..PAUSE_GAP_MS) {
                 // Network jitter earns cushion, capped at 2 s; a longer gap is a
                 // paused source and must not leave a lasting delay.
@@ -367,6 +382,7 @@ class Pcm16RelayPlayer internal constructor(
         val targetBytes = session.output.bufferCapacityBytes
         check(targetBytes > 0 && targetBytes % 2 == 0) { "Invalid output buffer capacity." }
         var primedBytes = 0
+        var fillingCushion = true
         var playing = false
         var payload: ByteArray? = null
         var offset = 0
@@ -387,19 +403,23 @@ class Pcm16RelayPlayer internal constructor(
             if (payload == null) {
                 synchronized(lock) {
                     if (session.cancelled) return
-                    // Retain the earned cushion after a stall instead of draining
-                    // every TCP burst and underrunning again before the next one.
-                    if (session.cushionBytes > 0 && session.queuedBytes < session.cushionBytes + 1_920) {
+                    // Build the cushion after starvation, then spend it during
+                    // the next gap rather than withholding already-buffered audio.
+                    if (fillingCushion && session.cushionBytes > 0 &&
+                        session.queuedBytes < session.cushionBytes + 1_920
+                    ) {
                         waitLocked(TimeUnit.MILLISECONDS.toNanos(20))
                     } else {
                         payload = session.queue.pollFirst()
                         if (payload != null) {
+                            fillingCushion = false
                             session.queuedBytes -= payload!!.size
                             if (session.crossfadeNext) {
                                 session.crossfadeNext = false
                                 crossfadeFrom(lastSample, payload!!)
                             }
                         } else {
+                            fillingCushion = true
                             // Only startup has a timed prefill wait. After play(),
                             // the next single frame is written immediately.
                             val remaining = if (!playing && firstPacketAt != null) {
@@ -489,6 +509,8 @@ class Pcm16RelayPlayer internal constructor(
         private const val MAX_CUSHION_MS = 2_000L
         private const val CATCH_UP_EXCESS_BYTES = 48_000 * 2 // 1 s above the cushion
         private const val CATCH_UP_LANDING_EXTRA_BYTES = 48_000 * 2 / 10 // land 100 ms above it
+        private const val LONG_GAP_MS = 500L
+        private val RECURRING_HOLD_NANOS = TimeUnit.SECONDS.toNanos(40)
         private val STABLE_BEFORE_RELEASE_NANOS = TimeUnit.SECONDS.toNanos(8)
         private const val CATCH_UP_CROSSFADE_SAMPLES = 240 // 5 ms at 48 kHz
         val FORMAT = Pcm16AudioFormat(48_000, 1)

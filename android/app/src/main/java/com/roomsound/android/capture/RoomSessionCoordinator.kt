@@ -571,10 +571,10 @@ class RoomSessionCoordinator(
         val state = joinedState() ?: return false
         if (paused && state.self?.id == state.room.activeSourceId) return false
         if (listeningPaused == paused) return true
+        val wasSuspended = isListeningSuspended()
         listeningPaused = paused
-        client?.setListeningPaused(paused)
-        transport?.restartRelayPlayback()
         applyPlaybackVolume()
+        updateListeningSuspension(wasSuspended)
         changed()
         return true
     }
@@ -587,12 +587,23 @@ class RoomSessionCoordinator(
 
     fun setVoiceNoteRecording(recording: Boolean) {
         if (voiceNoteRecording == recording) return
+        val wasSuspended = isListeningSuspended()
         voiceNoteRecording = recording
         applyPlaybackVolume()
+        updateListeningSuspension(wasSuspended)
+    }
+
+    private fun isListeningSuspended(): Boolean = listeningPaused || voiceNoteRecording
+
+    private fun updateListeningSuspension(wasSuspended: Boolean) {
+        val suspended = isListeningSuspended()
+        if (suspended == wasSuspended) return
+        client?.setListeningPaused(suspended)
+        transport?.restartRelayPlayback()
     }
 
     private fun effectivePlaybackVolume(): Double =
-        if (playbackAllowed && !listeningPaused && !voiceNotePlaying && !voiceNoteRecording) volume else 0.0
+        if (playbackAllowed && !isListeningSuspended() && !voiceNotePlaying) volume else 0.0
 
     private fun applyPlaybackVolume() {
         val effectiveVolume = effectivePlaybackVolume()
