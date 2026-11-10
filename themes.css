@@ -252,26 +252,28 @@ html[data-theme] .room-banner, html[data-theme] .legal-warning { border: 1px sol
 html[data-theme] .room-view[data-room-tab="listen"] .room-layout { display: block; max-width: none; margin-inline: 0; }
 /* Inside a room the page uses the full window width. */
 html[data-theme] .shell:has(> #room-view:not(.hidden)) { width: 100%; max-width: none; }
-@media (min-width: 1200px) {
-  html[data-theme] .room-view[data-room-tab="listen"] .source-card { grid-template-columns: minmax(240px, 340px) minmax(0, 1fr); gap: 40px; }
-}
 html[data-theme] .now-playing { padding: 28px; }
-html[data-theme] .source-card { grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 32px; align-items: center; }
+html[data-theme] .source-card { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: clamp(20px, 3vw, 48px); align-items: center; }
 html[data-theme] .source-cover.cassette { width: 100%; aspect-ratio: 1.58; border: 0; border-radius: 14px; place-items: initial; animation: none; }
 html[data-theme] .source-cover.cassette .cassette-label { justify-content: flex-start; }
 html[data-theme] .source-cover .cover-logo { width: 26px; height: 26px; padding: 0; border-radius: 6px; background: transparent; filter: none; }
 html[data-theme] .cover-initial { display: none; place-items: center; width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font: 600 13px var(--font-mono); text-shadow: none; letter-spacing: 0; }
 html[data-theme] .source-cover.has-initial .cover-initial { display: grid; animation: none; }
 html[data-theme] .source-cover .reel, html[data-theme] .source-cover .tape-run { animation-play-state: paused; }
-html[data-theme] .source-card.live:not(.listening-paused) .source-cover .reel, html[data-theme] .source-card.live:not(.listening-paused) .source-cover .tape-run { animation-play-state: running; }
+html[data-theme] .source-card[data-playback=playing] .source-cover .reel, html[data-theme] .source-card[data-playback=playing] .source-cover .tape-run { animation-play-state: running; }
 html[data-theme] .source-card.live .source-cover { box-shadow: 0 0 0 1px var(--accent-line) inset; transform: none; }
 html[data-theme] .source-card.listening-paused .source-cover { opacity: .6; }
 html[data-theme] .source-card.live .source-kicker { color: var(--accent); }
 html[data-theme] .source-card h2 { font-size: clamp(28px, 3.2vw, 40px); font-weight: 600; line-height: 1.08; letter-spacing: -0.035em; }
 html[data-theme] .source-card p { font-size: 15px; color: var(--muted); }
-html[data-theme] .source-status { height: 26px; padding: 0 9px; border-radius: 6px; background: var(--raised); color: var(--muted); font: 500 11px var(--font-mono); letter-spacing: 0.06em; }
-html[data-theme] .source-card.live .source-status { background: var(--accent-soft); color: var(--accent); box-shadow: none; }
-html[data-theme] .source-card.live .status-pulse { background: var(--accent); }
+html[data-theme] .source-card .source-status {
+  height: auto; min-height: 34px; max-width: 100%; margin: 0 0 8px; padding: 5px 12px;
+  border: 1px solid var(--line-strong); border-radius: 999px; background: var(--raised); color: var(--text);
+  font: 600 14px/1.3 var(--font-body); letter-spacing: 0; text-transform: none; white-space: normal; box-shadow: none;
+}
+html[data-theme] .source-card .source-status .status-pulse { flex: 0 0 8px; background: currentColor; animation: none; }
+html[data-theme] .source-card[data-playback=playing] .source-status { background: var(--teal-bg); color: var(--teal-text); border-color: currentColor; }
+html[data-theme] .source-card[data-playback=connecting] .source-status { background: var(--accent-soft); color: var(--health-warning); }
 /* app.js reads color and caret-color as the two waveform tints. */
 html[data-theme] .source-waveform { height: 120px; margin: 26px 0; padding: 10px 0; border-block: 1px solid var(--line); color: var(--text); caret-color: var(--accent); }
 
@@ -416,9 +418,6 @@ html[data-theme] body:has(#local-health) button { box-shadow: none; border-radiu
   html[data-theme] .crumb-room-name { flex: 1; min-width: 0; }
   html[data-theme] .room-actions-menu { top: 72px; }
   html[data-theme] .now-playing { padding: 18px 16px; }
-  html[data-theme] .source-card { grid-template-columns: minmax(0, 1fr); gap: 18px; text-align: left; justify-items: stretch; }
-  html[data-theme] .source-cover.cassette { width: min(100%, 300px); justify-self: center; }
-  html[data-theme] .source-card-copy { align-items: flex-start; }
   html[data-theme] .source-card h2 { font-size: 26px; }
   html[data-theme] .source-card p { font-size: 14px; }
   html[data-theme] .source-waveform { height: 80px; margin: 18px 0; }
@@ -446,6 +445,7 @@ html[data-theme] .source-cover[data-visual=radio] { transform: none !important; 
 .cover-visual-picker[hidden], .cover-visual-canvas[hidden] { display: none; }
 .cover-visual-picker button { border: 0; border-radius: 6px; background: transparent; padding: 8px 10px; text-align: left; color: var(--text); font: 500 13px var(--font-body); cursor: pointer; }
 .cover-visual-picker button:hover, .cover-visual-picker button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
-@media (max-width: 720px) {
-  html[data-theme] .cover-visual { width: min(100%, 300px); justify-self: center; }
+@media (max-width: 760px) {
+  html[data-theme] .source-card { grid-template-columns: minmax(0, 1fr); gap: 16px; text-align: left; justify-items: stretch; }
+  html[data-theme] .source-card-copy { grid-row: 1; align-items: flex-start; }
 }

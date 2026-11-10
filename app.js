@@ -1,4 +1,4 @@
-import { RoomChatUI } from './chat-ui.mjs?v=20261109-light1';
+import { RoomChatUI } from './chat-ui.mjs?v=20261110-people1';
 let roomChatUI = null;
 import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261109-light1';
 import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261109-light1';
@@ -110,6 +110,8 @@ const state = {
   captureType: null,
   captureLabel: null,
   fileAudioElement: null,
+  fileAudioMonitor: null,
+  voiceNoteRecording: false,
   fileAudioObjectUrl: null,
   audioContext: null,
   audioElement: null,
@@ -652,8 +654,12 @@ function createRoomAudioContext() {
 
 function applyOutputVolume() {
   // A voice message being played pauses the room music on this device; it comes back when the message ends.
-  const silenced = state.muted || state.listeningPaused || state.voiceNotePlaying;
-  if (state.audioElement) state.audioElement.volume = silenced ? 0 : state.volume;
+  const silenced = state.muted || state.listeningPaused || state.voiceNotePlaying || state.voiceNoteRecording;
+  if (state.fileAudioMonitor) state.fileAudioMonitor.gain.value = state.voiceNoteRecording ? 0 : 1;
+  if (state.audioElement) {
+    state.audioElement.muted = state.voiceNoteRecording;
+    state.audioElement.volume = silenced ? 0 : state.volume;
+  }
   if (state.relayPlaybackGain) state.relayPlaybackGain.gain.value = silenced ? 0 : state.volume;
 }
 
@@ -1390,6 +1396,11 @@ function selectEntryTab(entryType) {
   });
 }
 
+function setVoiceNoteRecording(recording) {
+  state.voiceNoteRecording = recording;
+  applyOutputVolume();
+}
+
 function setVoiceNotePlaying(playing) {
   if (state.voiceNotePlaying === playing) return;
   state.voiceNotePlaying = playing;
@@ -1414,6 +1425,7 @@ function selectRoomTab(tabName) {
   const selected = ['listen', 'chat', 'people', 'health'].includes(tabName) ? tabName : 'listen';
   if (selected === 'chat' && state.chatUnread) { state.chatUnread = 0; renderChatUnread(); }
   if (selected !== 'chat') roomChatUI?.cancelRecording();
+  $('#member-menu')?.close();
   $('#room-view').dataset.roomTab = selected;
   $$('.room-tab').forEach((tab) => {
     const active = tab.dataset.roomTab === selected;
@@ -1427,6 +1439,7 @@ function resetToLanding(reason = '') {
   state.chatUnread = 0;
   renderChatUnread();
   state.voiceNotePlaying = false;
+  $('#member-menu')?.close();
   roomChatUI?.reset();
   state.listeningPaused = false;
   closeOpusEncoder();
@@ -1868,12 +1881,11 @@ function renderSource() {
   const starting = state.room.sourceStatus === 'STARTING';
   const card = $('#source-card');
   card.classList.toggle('live', live);
-  $('#source-kicker').textContent = live ? (starting ? 'Connecting…' : `Now playing · ${sourceLabel(state.room.activeSourceType)}`) : 'Nothing playing';
+  $('#source-kicker').textContent = live ? sourceLabel(state.room.activeSourceType) : 'Room audio';
   $('#source-title').textContent = live ? `${sourceMember.name} is sharing` : 'The room is quiet';
   $('#source-detail').textContent = live
     ? (starting ? 'Waiting for the source device…' : 'Everyone in the room can listen.')
     : 'Choose an audio source to start sharing with the room.';
-  $('#source-status-label').textContent = live ? (starting ? 'Starting' : 'Live') : 'Waiting';
   $('#mini-source-title').textContent = live ? `${sourceMember.name} is sharing` : 'The room is quiet';
   $('#mini-source-status').textContent = starting ? 'Connecting · Open audio controls' : live ? 'Live audio · Open controls' : 'Open audio controls';
   const initial = live ? (Array.from(String(sourceMember.name || '').trim())[0] || '').toUpperCase() : '';
@@ -1901,7 +1913,21 @@ function renderListenToggle() {
   toggle.hidden = !canPause;
   toggle.setAttribute('aria-pressed', String(Boolean(state.listeningPaused)));
   $('#listen-toggle-label').textContent = state.listeningPaused ? 'Resume live' : 'Pause';
-  $('#source-card')?.classList.toggle('listening-paused', Boolean(state.listeningPaused && canPause));
+  const card = $('#source-card');
+  const paused = Boolean(state.listeningPaused && canPause);
+  card.classList.toggle('listening-paused', paused);
+  const playback = !card.classList.contains('live') ? 'idle'
+    : paused ? 'paused'
+    : state.room?.sourceStatus === 'STARTING' ? 'connecting' : 'playing';
+  if (card.dataset.playback !== playback) card.dataset.playback = playback;
+  const label = {
+    idle: 'Not playing',
+    paused: 'Paused on this device',
+    connecting: 'Connecting audio',
+    playing: 'Playing live',
+  }[playback];
+  const status = $('#source-status-label');
+  if (status.textContent !== label) status.textContent = label;
 }
 
 function renderControls() {
@@ -1964,6 +1990,43 @@ function renderControls() {
   }
 }
 
+function canManageMember(id) {
+  return Boolean(id && state.room && isModerator() && id !== state.self?.id &&
+    id !== state.room.hostId && state.members.some(member => member.id === id));
+}
+
+function memberCommands(member) {
+  const commands = [];
+  if (member.id === state.room.activeSourceId && state.room.sourceStatus !== 'NONE') {
+    commands.push(['stop-member-source', 'Stop audio']);
+  } else if (member.online) {
+    commands.push(['grant-source', 'Allow to play']);
+  }
+  if (state.self?.role === 'HOST' && member.online) {
+    commands.push(['cohost', member.id === state.room.cohostId ? 'Remove co-host' : 'Make co-host']);
+  }
+  commands.push(['remove', member.online ? 'Remove' : 'Clear'], ['ban', 'Ban']);
+  return commands;
+}
+
+function openMemberMenu(id) {
+  if (!canManageMember(id)) return;
+  const target = state.members.find(member => member.id === id);
+  const dialog = $('#member-menu');
+  if (dialog.open) dialog.close();
+  $('#member-menu-title').textContent = target.name;
+  $('#member-menu-actions').replaceChildren(...memberCommands(target).map(([action, label]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = action === 'ban' ? 'tiny-button danger-tiny' : 'tiny-button';
+    button.dataset.action = action;
+    button.dataset.memberId = target.id;
+    button.textContent = label;
+    return button;
+  }));
+  dialog.showModal();
+}
+
 function renderMembers() {
   const host = state.room.hostId;
   const cohost = state.room.cohostId;
@@ -1975,22 +2038,10 @@ function renderMembers() {
     const baseRole = isHost ? 'Host' : isCohost ? 'Co-host' : isSource ? 'Sharing now' : 'Listener';
     const role = !member.online ? `${baseRole} · Offline` : member.paused ? `${baseRole} · Paused` : baseRole;
     const roleClass = !member.online ? '' : (isHost || isSource ? 'green-role' : isCohost ? 'orange-role' : '');
-    const canManage = isModerator() && member.id !== state.self?.id && !isHost;
-    let actions = '';
-    if (canManage) {
-      const grantBtn = member.online && !isSource
-        ? `<button class="tiny-button primary-tiny" data-action="grant-source" data-member-id="${member.id}">Allow to play</button>`
-        : isSource
-          ? `<button class="tiny-button" data-action="stop-member-source" data-member-id="${member.id}">Stop audio</button>`
-          : '';
-      const cohostBtn = state.self?.role === 'HOST' && member.online
-        ? `<button class="tiny-button" data-action="cohost" data-member-id="${member.id}">${isCohost ? 'Remove co-host' : 'Make co-host'}</button>`
-        : '';
-      const removeBtn = `<button class="tiny-button" data-action="remove" data-member-id="${member.id}" title="They can rejoin with the room code">${member.online ? 'Remove' : 'Clear'}</button>`;
-      const banBtn = `<button class="tiny-button danger-tiny" data-action="ban" data-member-id="${member.id}" title="They cannot rejoin this room">Ban</button>`;
-      actions = `<div class="member-actions">${grantBtn}${cohostBtn}${removeBtn}${banBtn}</div>`;
-    }
-    return `<div class="member-item ${member.online ? '' : 'member-offline'}"><div class="member-avatar">${escapeHtml(initials(member.name))}</div><div class="member-info"><div class="member-name-row"><span class="member-name">${escapeHtml(member.name)}</span>${member.id === state.self?.id ? '<span class="member-you">YOU</span>' : ''}</div><div class="member-role"><span class="role-badge ${roleClass}">${role}</span></div>${actions}</div><span class="member-state ${member.online ? 'online' : ''} ${isSource ? 'source' : ''}" title="${member.online ? 'Online' : 'Offline'}"></span></div>`;
+    const actions = canManageMember(member.id)
+      ? `<button type="button" class="member-more" data-member-menu="${escapeHtml(member.id)}" aria-label="Actions for ${escapeHtml(member.name)}" aria-haspopup="dialog">⋯</button>`
+      : '';
+    return `<div class="member-item ${member.online ? '' : 'member-offline'}"><div class="member-avatar">${escapeHtml(initials(member.name))}</div><div class="member-info"><div class="member-name-row"><span class="member-name">${escapeHtml(member.name)}</span>${member.id === state.self?.id ? '<span class="member-you">YOU</span>' : ''}</div><div class="member-role"><span class="role-badge ${roleClass}">${role}</span></div></div><span class="member-state ${member.online ? 'online' : ''} ${isSource ? 'source' : ''}" title="${member.online ? 'Online' : 'Offline'}"></span>${actions}</div>`;
   }).join('') || '<div class="request-empty">No one is here yet.</div>';
 }
 
@@ -2043,7 +2094,7 @@ function sendChatPayload(payload) {
   try { state.ws.send(JSON.stringify(payload)); return true; } catch { toast('Could not send. Please reconnect and try again.'); return false; }
 }
 function renderChat() {
-  if (!roomChatUI) roomChatUI = new RoomChatUI({ feed: $('#chat-feed'), input: $('#chat-input'), form: $('#chat-form'), send: sendChatPayload, getMessages: () => state.messages, getSelfId: () => state.self?.id, onError: message => toast(message), onVoicePlayback: setVoiceNotePlaying });
+  if (!roomChatUI) roomChatUI = new RoomChatUI({ feed: $('#chat-feed'), input: $('#chat-input'), form: $('#chat-form'), send: sendChatPayload, getMessages: () => state.messages, getSelfId: () => state.self?.id, onError: message => toast(message), onVoicePlayback: setVoiceNotePlaying, onVoiceRecording: setVoiceNoteRecording, canManageMember, onMemberMenu: openMemberMenu });
   const chat = state.messages.filter(message => message.kind === 'chat');
   $('#chat-count').textContent = chat.length;
   roomChatUI.render(chat, chatReactionsHtml);
@@ -2436,7 +2487,10 @@ async function startLocalFileCapture(file) {
     const streamDest = context.createMediaStreamDestination();
     // Connect to both local speakers and the capture MediaStream so the host
     // hears the music track while streaming bit-perfect PCM to the room.
-    elementSource.connect(context.destination);
+    const monitor = context.createGain();
+    monitor.gain.value = state.voiceNoteRecording ? 0 : 1;
+    elementSource.connect(monitor);
+    monitor.connect(context.destination);
     elementSource.connect(streamDest);
     await player.play();
     if (nonce !== state.captureNonce) {
@@ -2445,6 +2499,8 @@ async function startLocalFileCapture(file) {
       return;
     }
     state.fileAudioElement = player;
+    state.fileAudioMonitor = monitor;
+    applyOutputVolume();
     state.fileAudioObjectUrl = objectUrl;
     state.captureStream = streamDest.stream;
     state.captureType = 'DEVICE_AUDIO';
@@ -2546,6 +2602,7 @@ function stopLocalCapture(stopServer = true) {
   if (state.fileAudioElement) {
     try { state.fileAudioElement.pause(); state.fileAudioElement.src = ''; } catch {}
     state.fileAudioElement = null;
+    state.fileAudioMonitor = null;
   }
   if (state.fileAudioObjectUrl) {
     try { URL.revokeObjectURL(state.fileAudioObjectUrl); } catch {}
@@ -2762,8 +2819,7 @@ async function handleRtcSignal(message) {
       const audio = ensureAudioElement();
       const inbound = event.streams?.[0] || new MediaStream([event.track]);
       audio.srcObject = inbound;
-      audio.volume = state.muted ? 0 : state.volume;
-      audio.muted = false;
+      applyOutputVolume();
       audio.play().then(() => {
         if (!isCurrentPeerEntry(from, entry)) return;
         state.audioNeedsGesture = false;
@@ -3218,10 +3274,18 @@ function wireEvents() {
     if (sendChatPayload(roomChatUI?.payload({ type: 'chat', text }) || { type: 'chat', text })) { $('#chat-input').value = ''; roomChatUI?.clearReply(); }
   });
   $('#member-list').addEventListener('click', (event) => {
+    const trigger = event.target.closest('[data-member-menu]');
+    if (trigger) openMemberMenu(trigger.dataset.memberMenu);
+  });
+  $('#member-menu').addEventListener('click', (event) => {
     const button = event.target.closest('[data-action]');
     if (!button) return;
     const memberId = button.dataset.memberId;
     const target = state.members.find((member) => member.id === memberId);
+    if (!target || !canManageMember(memberId) || !memberCommands(target).some(([action]) => action === button.dataset.action)) {
+      $('#member-menu').close();
+      return;
+    }
     if (button.dataset.action === 'grant-source') {
       send({ type: 'grant-source', memberId, sourceType: 'DEVICE_AUDIO' });
       if (target) toast(`Granted audio control to ${target.name}.`, 'success');
@@ -3245,6 +3309,7 @@ function wireEvents() {
       send({ type: 'remove-member', memberId, ban: true });
       if (target) toast(`Banned ${target.name}. They cannot rejoin this room.`);
     }
+    $('#member-menu').close();
   });
   $('#request-list').addEventListener('click', (event) => {
     const button = event.target.closest('[data-request-action]');

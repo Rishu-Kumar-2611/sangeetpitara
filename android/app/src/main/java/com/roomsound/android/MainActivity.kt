@@ -99,6 +99,7 @@ class MainActivity : Activity() {
     private lateinit var roomEventsText: TextView
     private lateinit var transportText: TextView
     private lateinit var peopleText: TextView
+    private lateinit var peopleRoster: LinearLayout
     private lateinit var activityText: TextView
     private lateinit var healthText: TextView
     private lateinit var approvalContainer: LinearLayout
@@ -438,6 +439,7 @@ class MainActivity : Activity() {
         detachFromService()
         captureService = service
         roomSession = session
+        if (::voiceRecordButton.isInitialized) session.setVoiceNoteRecording(voiceNotes.recording)
         serviceBound = true
         // A started service may outlive this Activity (including rotation).
         session.addListener(roomListener)
@@ -877,6 +879,8 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(11), dp(12), dp(11))
         }
         peoplePanel.addView(peopleText, marginLayout())
+        peopleRoster = verticalContainer()
+        peoplePanel.addView(peopleRoster, matchWrap())
         approvalContainer = dynamicPanel()
         peoplePanel.addView(approvalContainer, marginLayout())
         moderationContainer = dynamicPanel()
@@ -925,6 +929,7 @@ class MainActivity : Activity() {
         chatPanel.addView(voiceStatusRow, marginLayout())
         voiceNotes.onDraftReady = { sendVoiceDraft() }
         voiceNotes.onPlaybackChanged = { playing -> roomSession?.setVoiceNotePlaying(playing) }
+        voiceNotes.onRecordingChanged = { recording -> roomSession?.setVoiceNoteRecording(recording) }
         voicePreviewRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
         voicePreviewPlayButton = button("Play", ButtonTone.SECONDARY) {
             if (voiceNotes.playing) voiceNotes.stopPlayback() else voiceNotes.draft?.let(voiceNotes::play)
@@ -1492,7 +1497,7 @@ class MainActivity : Activity() {
         leaveRoomButton.isEnabled = true
         endRoomButton.isEnabled = isHost
         runCatching { renderApprovalControls(state, isModerator) }
-        runCatching { renderModerationControls(state, isHost, isModerator) }
+        renderModerationControls(isHost, isModerator)
         showAudioRequestAlert(state)
         renderPeople(state)
         renderChat(state)
@@ -1501,29 +1506,67 @@ class MainActivity : Activity() {
     }
 
     private fun renderPeople(state: RoomState?) {
-        if (!::peopleText.isInitialized) return
+        if (!::peopleText.isInitialized || !::peopleRoster.isInitialized) return
+        peopleRoster.removeAllViews()
         if (state == null) {
             peopleText.text = "Join a room to see the people, source, and request queue."
             renderActivity()
             return
         }
-        val sourceId = state.room.activeSourceId
-        peopleText.text = buildString {
-            append(state.members.size).append(if (state.members.size == 1) " person" else " people")
-            append(" in room\n\n")
-            state.members.forEachIndexed { index, member ->
-                if (index > 0) append('\n')
-                append(if (member.online) "● " else "○ ")
-                append(member.name)
-                if (member.id == state.self?.id) append(" (You)")
-                append(" — ").append(member.role.lowercase(Locale.US))
-                if (member.id == sourceId) append(" · sharing audio")
-                else if (!member.online) append(" · offline")
-            }
-            val pending = state.requests.count { it.status.equals("PENDING", ignoreCase = true) }
-            append("\n\nPending requests: ").append(pending)
+        val pending = state.requests.count { it.status.equals("PENDING", ignoreCase = true) }
+        peopleText.text = "${state.members.size} in room · $pending pending requests"
+        for (member in state.members.sortedByDescending { it.online }) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val copy = verticalContainer()
+            copy.addView(labelText().apply {
+                text = if (member.id == state.self?.id) "${member.name} (You)" else member.name
+                setTypeface(strongTypeface)
+            }, matchWrap())
+            copy.addView(sectionLabel(buildString {
+                append(when (member.id) {
+                    state.room.hostId -> "Host"
+                    state.room.cohostId -> "Co-host"
+                    else -> "Listener"
+                })
+                if (member.id == state.room.activeSourceId) append(" · Sharing audio")
+                if (!member.online) append(" · Offline")
+            }), matchWrap())
+            row.addView(copy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            if (canManageMember(state, member.id)) row.addView(memberMenuButton(member.id, member.name), LinearLayout.LayoutParams(dp(48), dp(48)))
+            peopleRoster.addView(row, marginLayout())
         }
         renderActivity()
+    }
+
+    private fun canManageMember(state: RoomState, id: String): Boolean {
+        val self = state.self?.id ?: return false
+        return (self == state.room.hostId || self == state.room.cohostId) &&
+            id != self && id != state.room.hostId && state.members.any { it.id == id }
+    }
+
+    private fun memberMenuButton(id: String, name: String): Button =
+        button("⋯", ButtonTone.SECONDARY) { showMemberMenu(id) }.apply {
+            contentDescription = "Actions for $name"
+        }
+
+    private fun showMemberMenu(id: String) {
+        val state = roomSession?.currentRoomState() ?: return
+        if (!canManageMember(state, id)) return
+        val member = state.members.firstOrNull { it.id == id } ?: return
+        val actions = mutableListOf<Pair<String, () -> Unit>>()
+        if (member.online && id != state.room.activeSourceId) {
+            actions.add("Allow to play" to { roomSession?.grantSource(id); Unit })
+        }
+        if (member.online && state.self?.id == state.room.hostId) {
+            val isCohost = id == state.room.cohostId
+            actions.add((if (isCohost) "Remove co-host" else "Make co-host") to { assignCohost(if (isCohost) null else id) })
+        }
+        actions.add((if (member.online) "Remove" else "Clear") to { removeMember(id) })
+        actions.add("Ban" to { confirmBan(id, member.name) })
+        android.app.AlertDialog.Builder(this).setTitle(member.name)
+            .setItems(actions.map { it.first }.toTypedArray()) { _, index -> actions[index].second() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun renderActivity() {
@@ -1543,8 +1586,10 @@ class MainActivity : Activity() {
         updateVoiceComposer()
         chatText.text = if (messages.isEmpty()) "No messages yet." else "${messages.size} recent messages"
         val fingerprint = messages.joinToString { "${it.id}:${it.voice?.data?.length}:${reactionOverrides[it.id] ?: it.reactions}" }
-        if (fingerprint != chatFingerprint) {
-            chatFingerprint = fingerprint; chatFeed.removeAllViews()
+        val manageable = state.members.filter { canManageMember(state, it.id) }.map { it.id }.toSet()
+        val chatLayoutKey = fingerprint + "|" + manageable.sorted().joinToString()
+        if (chatLayoutKey != chatFingerprint) {
+            chatFingerprint = chatLayoutKey; chatFeed.removeAllViews()
             for (message in messages) {
                 val row = verticalContainer().apply { setPadding(dp(4), dp(10), dp(4), dp(10)) }
                 row.tag = message.id
@@ -1555,6 +1600,9 @@ class MainActivity : Activity() {
                     visibility = if (roomSession?.supportsMessageReplies() == true) View.VISIBLE else View.GONE
                     contentDescription = "Reply to ${message.senderName}'s message"
                 }, LinearLayout.LayoutParams(dp(64),dp(44)))
+                message.senderId?.takeIf { it in manageable }?.let { id ->
+                    messageHeader.addView(memberMenuButton(id, message.senderName ?: "participant"), LinearLayout.LayoutParams(dp(48), dp(48)))
+                }
                 row.addView(messageHeader, matchWrap())
                 message.replyTo?.let { quote -> row.addView(labelText().apply {
                     text = "${quote.senderName}: ${quote.text}"; textSize = 13f
@@ -1666,7 +1714,7 @@ class MainActivity : Activity() {
             }
     }
 
-    private fun renderModerationControls(state: RoomState, isHost: Boolean, isModerator: Boolean) {
+    private fun renderModerationControls(isHost: Boolean, isModerator: Boolean) {
         moderationContainer.removeAllViews()
         moderationContainer.visibility = View.GONE
         if (!isModerator) return
@@ -1675,35 +1723,6 @@ class MainActivity : Activity() {
         if (!SourcePlaybackController.isNotificationAccessEnabled(this)) {
             moderationContainer.addView(sectionLabel("To pause YouTube Music or another media app automatically when control changes, enable Android Notification Access. Room audio always switches to the approved player."), matchWrap())
             moderationContainer.addView(button("Enable automatic music pausing", ButtonTone.SECONDARY) { openPlaybackHandoffSettings() }, matchWrap())
-        }
-        if (isHost) {
-            val currentCohost = state.members.firstOrNull { it.id == state.room.cohostId }
-            if (currentCohost != null) {
-                moderationContainer.addView(button("Remove co-host: ${currentCohost.name}") {
-                    assignCohost(null)
-                }, matchWrap())
-            }
-            state.members.filter { member ->
-                member.id != state.self?.id && member.id != state.room.hostId && member.id != state.room.cohostId
-            }.forEach { member ->
-                moderationContainer.addView(button("Make ${member.name} co-host") {
-                    assignCohost(member.id)
-                }, matchWrap())
-            }
-        }
-        state.members.filter { member -> member.id != state.self?.id && member.id != state.room.hostId }.forEach { member ->
-            if (member.online && member.id != state.room.activeSourceId) {
-                moderationContainer.addView(button("Allow ${member.name} to play audio") {
-                    roomSession?.grantSource(member.id)
-                }, matchWrap())
-            }
-            // Remove lets them rejoin later; Ban keeps them out of this room.
-            val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            actions.addView(button("Remove ${member.name}", ButtonTone.SECONDARY) { removeMember(member.id) },
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f).apply { marginEnd = dp(8) })
-            actions.addView(button("Ban", ButtonTone.DANGER) { confirmBan(member.id, member.name) },
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            moderationContainer.addView(actions, matchWrap())
         }
     }
 

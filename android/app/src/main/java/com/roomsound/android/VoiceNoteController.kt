@@ -31,6 +31,7 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
     var onDraftReady: (() -> Unit)? = null
     /** Called with true when a voice message starts playing and false when it stops. */
     var onPlaybackChanged: ((Boolean) -> Unit)? = null
+    var onRecordingChanged: ((Boolean) -> Unit)? = null
     val recording get() = recorder != null
     val playing get() = player != null
     val elapsedSeconds get() = ((SystemClock.elapsedRealtime() - started) / 1000).toInt().coerceIn(0,30)
@@ -51,7 +52,7 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
             capture.setOutputFile(file.absolutePath)
             capture.setOnInfoListener { _, what, _ -> if (recorder === capture && (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED || what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED)) stopRecording() }
             capture.setOnErrorListener { _, _, _ -> if (recorder === capture) { cancelRecording(); error("Recording failed. Please try again.") } }
-            capture.prepare(); capture.start(); started = SystemClock.elapsedRealtime(); handler.post(tick)
+            capture.prepare(); onRecordingChanged?.invoke(true); capture.start(); started = SystemClock.elapsedRealtime(); handler.post(tick)
             changed()
         } catch (_: Exception) { cancelRecording(); error("The microphone is unavailable. Close other recording apps and try again.") }
     }
@@ -66,13 +67,13 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
             draft = RoomVoiceNote("audio/mp4", duration, Base64.getEncoder().encodeToString(file.readBytes()))
             draftId = UUID.randomUUID().toString()
         } catch (_: Exception) { error("Record between 1 and 30 seconds, then try again.") }
-        finally { runCatching { capture.release() }; file?.delete(); changed() }
+        finally { runCatching { capture.release() }; onRecordingChanged?.invoke(false); file?.delete(); changed() }
         if (draft != null) onDraftReady?.invoke()
     }
     fun cancelRecording() {
         handler.removeCallbacks(tick)
         val capture = recorder; recorder = null
-        if (capture != null) { runCatching { capture.stop() }; runCatching { capture.release() } }
+        if (capture != null) { runCatching { capture.stop() }; runCatching { capture.release() }; onRecordingChanged?.invoke(false) }
         recordingFile?.delete(); recordingFile = null; changed()
     }
     fun discard() { stopPlayback(); draft = null; draftId = null; changed() }
@@ -86,6 +87,7 @@ class VoiceNoteController(private val activity: Activity, private val changed: (
         changed()
     }
     fun play(note: RoomVoiceNote) {
+        if (recording) return
         stopPlayback()
         try {
             val data = note.data ?: throw IllegalStateException()

@@ -50,3 +50,19 @@ html[data-theme] .local-panel #chat { border-block-color:var(--line); }
 .chat-recording::before { content:''; display:inline-block; width:8px; height:8px; margin-right:8px; border-radius:50%; background:#e5484d; vertical-align:middle; animation:mic-pulse 1.2s ease-in-out infinite; }
 @keyframes mic-pulse { 50% { opacity:.55; } }
 @media (prefers-reduced-motion: reduce) { .mic-button.recording, .chat-recording::before { animation:none; } }
+
+.member-more {
+  display: inline-grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; margin-inline-start: auto;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--raised); color: var(--text);
+  font: 700 22px/1 var(--font-body); cursor: pointer;
+}
+.member-more[hidden] { display: none; }
+.member-more:hover { background: var(--raised-strong); }
+.member-menu {
+  width: min(360px, calc(100% - 32px)); max-height: calc(100% - 32px); padding: 16px; border: 1px solid var(--line-strong);
+  border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+}
+.member-menu::backdrop { background: rgb(0 0 0 / .55); }
+.member-menu-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.member-menu-actions { display: grid; gap: 8px; }
+.member-menu-actions button, .member-menu-heading button { min-height: 44px; }

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light" data-theme-reset>
   <head>
     <meta charset="UTF-8" />
     <meta name="app-version" content="1.1.23" />
@@ -26,9 +26,9 @@
     <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261109-light1" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="stylesheet" href="/styles.css?v=20261109-light1" />
-  <link rel="stylesheet" href="/themes.css?v=20261109-visuals2" />
-    <link rel="stylesheet" href="/chat.css?v=20261109-light1" />
-    <script src="/themes.js?v=20261109-visuals2"></script>
+  <link rel="stylesheet" href="/themes.css?v=20261110-player2" />
+    <link rel="stylesheet" href="/chat.css?v=20261110-people1" />
+    <script src="/themes.js?v=20261110-player1"></script>
   </head>
   <body>
     <div class="aura" id="aura" aria-hidden="true"><span class="aura-blob aura-blob-one"></span><span class="aura-blob aura-blob-two"></span><span class="aura-blob aura-blob-three"></span></div>
@@ -164,7 +164,7 @@
             </div>
 
             <section class="now-playing" id="listening-surface" role="tabpanel" aria-labelledby="room-tab-listen">
-            <div class="source-card" id="source-card">
+            <div class="source-card" id="source-card" data-playback="idle">
               <div class="cover-visual">
                 <div class="source-orb source-cover cassette" id="source-orb" aria-hidden="true"><span class="cassette-label"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261109-light1" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span><span class="cassette-rule"></span></span><span class="cassette-window"><span class="reel"></span><span class="tape-run"></span><span class="reel"></span></span><span class="cassette-foot"></span><canvas class="cover-visual-canvas" id="cover-visual-canvas" width="640" height="405" hidden></canvas></div>
                 <button class="cover-visual-toggle" id="cover-visual-toggle" type="button" aria-controls="cover-visual-picker" aria-expanded="false" aria-label="Change playback visual"><span>Change visual ▾</span></button>
@@ -176,10 +176,10 @@
                     </div>
               </div>
               <div class="source-card-copy">
+                <div class="source-status" id="source-status" role="status"><span class="status-pulse" aria-hidden="true"></span><span id="source-status-label">Not playing</span></div>
                 <div class="source-kicker" id="source-kicker">Nothing playing</div>
                 <h2 id="source-title">The room is quiet</h2>
                 <p id="source-detail">Choose an audio source to start sharing with the room.</p>
-                <div class="source-status" id="source-status"><span class="status-pulse"></span><span id="source-status-label">Waiting</span></div>
                 <button id="listen-toggle" class="listen-toggle" type="button" aria-pressed="false" hidden><span class="listen-toggle-icon" aria-hidden="true"></span><span id="listen-toggle-label">Pause</span></button>
               </div>
             </div>
@@ -282,6 +282,13 @@
     </div>
     <div id="toast-stack" class="toast-stack"></div>
     <div id="modal-root"></div>
-    <script type="module" src="/app.js?v=20261109-light1"></script>
+    <dialog class="member-menu" id="member-menu" aria-labelledby="member-menu-title">
+      <form method="dialog" class="member-menu-heading">
+        <strong id="member-menu-title">Participant</strong>
+        <button class="tiny-button" autofocus>Close</button>
+      </form>
+      <div class="member-menu-actions" id="member-menu-actions"></div>
+    </dialog>
+    <script type="module" src="/app.js?v=20261110-people1"></script>
   </body>
 </html>

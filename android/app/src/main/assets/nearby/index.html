@@ -42,6 +42,32 @@ html[data-theme=light] {
   --room-color-1: #F5F5F3 !important; --room-color-2: #F5F5F3 !important;
 }
 
+/* Classic palettes on the current Studio Console controls and surfaces. */
+html[data-theme=forest], html[data-theme=brass], html[data-theme=rose] {
+  color-scheme: dark;
+  --glass: var(--surface); --glass-strong: var(--surface); --glass-border: var(--line);
+  --teal: #6FCF97; --teal-text: #8EDCAE; --teal-bg: rgb(111 207 151 / 0.1);
+  --danger-text: #FF9B8F; --danger-bg: rgb(255 120 105 / 0.1); --danger-line: rgb(255 140 125 / 0.35);
+  --health-good: #8EDCAE; --health-warning: #F2B35C; --health-bad: #FF9B8F;
+  --meter-off: var(--raised-strong);
+  --room-color-1: var(--bg) !important; --room-color-2: var(--bg) !important;
+}
+html[data-theme=forest] {
+  --bg: #0B1713; --surface: #142820; --raised: #1A3429; --raised-strong: #224437;
+  --line: #284538; --line-strong: #446957; --text: #EFF8EF; --muted: #B6CABB; --faint: #98B2A2;
+  --accent: #83D7B1; --accent-hover: #B1F3D6; --on-accent: #071C12; --accent-soft: #83D7B122; --accent-line: #83D7B166;
+}
+html[data-theme=brass] {
+  --bg: #0E0B0A; --surface: #1E1815; --raised: #2B221D; --raised-strong: #3A2D24;
+  --line: #3D3027; --line-strong: #66503B; --text: #F7F1EA; --muted: #C4B6A7; --faint: #AD9C8A;
+  --accent: #F2A93B; --accent-hover: #F7C06A; --on-accent: #1B1206; --accent-soft: rgb(242 169 59 / 0.16); --accent-line: rgb(242 169 59 / 0.4);
+}
+html[data-theme=rose] {
+  --bg: #1C1018; --surface: #2C1B28; --raised: #372333; --raised-strong: #472C40;
+  --line: #462D41; --line-strong: #69475F; --text: #FFF0F7; --muted: #CFB1C3; --faint: #BA9AAD;
+  --accent: #EDACCC; --accent-hover: #FFD1E7; --on-accent: #2B0F21; --accent-soft: #EDACCC22; --accent-line: #EDACCC66;
+}
+
 /* ---------- Base ---------- */
 html[data-theme] body { background: var(--bg); color: var(--text); font-family: var(--font-body); font-size: 15px; line-height: 1.5; font-feature-settings: 'ss01', 'tnum' 0; }
 html[data-theme] .aura { display: none; }
@@ -235,26 +261,28 @@ html[data-theme] .room-banner, html[data-theme] .legal-warning { border: 1px sol
 html[data-theme] .room-view[data-room-tab="listen"] .room-layout { display: block; max-width: none; margin-inline: 0; }
 /* Inside a room the page uses the full window width. */
 html[data-theme] .shell:has(> #room-view:not(.hidden)) { width: 100%; max-width: none; }
-@media (min-width: 1200px) {
-  html[data-theme] .room-view[data-room-tab="listen"] .source-card { grid-template-columns: minmax(240px, 340px) minmax(0, 1fr); gap: 40px; }
-}
 html[data-theme] .now-playing { padding: 28px; }
-html[data-theme] .source-card { grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 32px; align-items: center; }
+html[data-theme] .source-card { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: clamp(20px, 3vw, 48px); align-items: center; }
 html[data-theme] .source-cover.cassette { width: 100%; aspect-ratio: 1.58; border: 0; border-radius: 14px; place-items: initial; animation: none; }
 html[data-theme] .source-cover.cassette .cassette-label { justify-content: flex-start; }
 html[data-theme] .source-cover .cover-logo { width: 26px; height: 26px; padding: 0; border-radius: 6px; background: transparent; filter: none; }
 html[data-theme] .cover-initial { display: none; place-items: center; width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font: 600 13px var(--font-mono); text-shadow: none; letter-spacing: 0; }
 html[data-theme] .source-cover.has-initial .cover-initial { display: grid; animation: none; }
 html[data-theme] .source-cover .reel, html[data-theme] .source-cover .tape-run { animation-play-state: paused; }
-html[data-theme] .source-card.live:not(.listening-paused) .source-cover .reel, html[data-theme] .source-card.live:not(.listening-paused) .source-cover .tape-run { animation-play-state: running; }
+html[data-theme] .source-card[data-playback=playing] .source-cover .reel, html[data-theme] .source-card[data-playback=playing] .source-cover .tape-run { animation-play-state: running; }
 html[data-theme] .source-card.live .source-cover { box-shadow: 0 0 0 1px var(--accent-line) inset; transform: none; }
 html[data-theme] .source-card.listening-paused .source-cover { opacity: .6; }
 html[data-theme] .source-card.live .source-kicker { color: var(--accent); }
 html[data-theme] .source-card h2 { font-size: clamp(28px, 3.2vw, 40px); font-weight: 600; line-height: 1.08; letter-spacing: -0.035em; }
 html[data-theme] .source-card p { font-size: 15px; color: var(--muted); }
-html[data-theme] .source-status { height: 26px; padding: 0 9px; border-radius: 6px; background: var(--raised); color: var(--muted); font: 500 11px var(--font-mono); letter-spacing: 0.06em; }
-html[data-theme] .source-card.live .source-status { background: var(--accent-soft); color: var(--accent); box-shadow: none; }
-html[data-theme] .source-card.live .status-pulse { background: var(--accent); }
+html[data-theme] .source-card .source-status {
+  height: auto; min-height: 34px; max-width: 100%; margin: 0 0 8px; padding: 5px 12px;
+  border: 1px solid var(--line-strong); border-radius: 999px; background: var(--raised); color: var(--text);
+  font: 600 14px/1.3 var(--font-body); letter-spacing: 0; text-transform: none; white-space: normal; box-shadow: none;
+}
+html[data-theme] .source-card .source-status .status-pulse { flex: 0 0 8px; background: currentColor; animation: none; }
+html[data-theme] .source-card[data-playback=playing] .source-status { background: var(--teal-bg); color: var(--teal-text); border-color: currentColor; }
+html[data-theme] .source-card[data-playback=connecting] .source-status { background: var(--accent-soft); color: var(--health-warning); }
 /* app.js reads color and caret-color as the two waveform tints. */
 html[data-theme] .source-waveform { height: 120px; margin: 26px 0; padding: 10px 0; border-block: 1px solid var(--line); color: var(--text); caret-color: var(--accent); }
 
@@ -399,9 +427,6 @@ html[data-theme] body:has(#local-health) button { box-shadow: none; border-radiu
   html[data-theme] .crumb-room-name { flex: 1; min-width: 0; }
   html[data-theme] .room-actions-menu { top: 72px; }
   html[data-theme] .now-playing { padding: 18px 16px; }
-  html[data-theme] .source-card { grid-template-columns: minmax(0, 1fr); gap: 18px; text-align: left; justify-items: stretch; }
-  html[data-theme] .source-cover.cassette { width: min(100%, 300px); justify-self: center; }
-  html[data-theme] .source-card-copy { align-items: flex-start; }
   html[data-theme] .source-card h2 { font-size: 26px; }
   html[data-theme] .source-card p { font-size: 14px; }
   html[data-theme] .source-waveform { height: 80px; margin: 18px 0; }
@@ -416,6 +441,23 @@ html[data-theme] body:has(#local-health) button { box-shadow: none; border-radiu
   html[data-theme] body:has(.room-view:not(.hidden)) .toast-stack { bottom: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .source-waveform, .mini-player canvas { opacity: .75; } html[data-theme] .reel, html[data-theme] .tape-run, html[data-theme] .hero-eq span { animation: none !important; } }
+
+/* Playback artwork uses the cassette's existing slot in the room layout. */
+html[data-theme] .cover-visual { position: relative; width: 100%; min-width: 0; }
+html[data-theme] .cover-visual .source-cover.cassette { width: 100%; }
+html[data-theme] .source-cover[data-visual=radio] { transform: none !important; }
+.cover-visual-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #171717; z-index: 1; }
+.source-cover[data-visual=radio] .cover-visual-canvas { background: #231910; }
+.cover-visual-toggle { position: absolute; inset: 0; z-index: 2; border: 0; border-radius: 14px; background: transparent; padding: 0; cursor: pointer; text-align: right; }
+.cover-visual-toggle span { position: absolute; bottom: 8px; right: 8px; padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); font: 500 11px var(--font-body); }
+.cover-visual-picker { position: absolute; inset: calc(100% + 6px) 0 auto; z-index: 20; display: grid; gap: 2px; padding: 5px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+.cover-visual-picker[hidden], .cover-visual-canvas[hidden] { display: none; }
+.cover-visual-picker button { border: 0; border-radius: 6px; background: transparent; padding: 8px 10px; text-align: left; color: var(--text); font: 500 13px var(--font-body); cursor: pointer; }
+.cover-visual-picker button:hover, .cover-visual-picker button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
+@media (max-width: 760px) {
+  html[data-theme] .source-card { grid-template-columns: minmax(0, 1fr); gap: 16px; text-align: left; justify-items: stretch; }
+  html[data-theme] .source-card-copy { grid-row: 1; align-items: flex-start; }
+}
 /* Shared room chat controls, including the offline guest page. */
 .chat-message { display:flex; padding:10px 0; border-bottom:1px solid var(--line); }
 .chat-meta { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
@@ -469,19 +511,43 @@ html[data-theme] .local-panel #chat { border-block-color:var(--line); }
 @keyframes mic-pulse { 50% { opacity:.55; } }
 @media (prefers-reduced-motion: reduce) { .mic-button.recording, .chat-recording::before { animation:none; } }
 
+.member-more {
+  display: inline-grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; margin-inline-start: auto;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--raised); color: var(--text);
+  font: 700 22px/1 var(--font-body); cursor: pointer;
+}
+.member-more[hidden] { display: none; }
+.member-more:hover { background: var(--raised-strong); }
+.member-menu {
+  width: min(360px, calc(100% - 32px)); max-height: calc(100% - 32px); padding: 16px; border: 1px solid var(--line-strong);
+  border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+}
+.member-menu::backdrop { background: rgb(0 0 0 / .55); }
+.member-menu-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.member-menu-actions { display: grid; gap: 8px; }
+.member-menu-actions button, .member-menu-heading button { min-height: 44px; }
+
 :root{--bg:#100d0b;--surface:#211b15;--text:#f7f1ea;--muted:#c4b6a7;--accent:#efad48;--on-accent:#19150d;--room-color-1:#19322c;--room-color-2:#281b12}
 body{background:radial-gradient(ellipse at top left,var(--room-color-1),transparent 65%),var(--bg);color:var(--text)}h1,a{color:var(--accent)}p,small{color:var(--muted)}input{background:var(--bg);color:var(--text)}button{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}#status{background:var(--surface);color:var(--text)}#leave{color:var(--accent)}aside{border:1px solid #ffffff22;border-radius:16px;padding:16px;margin:16px 0;font-size:15px}.theme-bar{padding:8px 0;background:var(--surface)}
 </style><script data-shared-theme>(() => {
-  const choices = [['dark', 'Console · Dark'], ['light', 'Console · Light']];
-  // Light is the default; only an explicit earlier choice of Dark keeps it.
+  const choices = [
+    ['dark', 'Console · Dark', '#0c0d0f'],
+    ['light', 'Console · Light', '#f5f5f3'],
+    ['forest', 'Forest', '#0b1713'],
+    ['brass', 'Brass', '#0e0b0a'],
+    ['rose', 'Rose', '#1c1018'],
+  ];
+  const rememberTheme = !document.documentElement.hasAttribute('data-theme-reset');
   let selected = 'light';
-  try {
-    if (localStorage.getItem('sangeetpitara-theme') === 'dark') selected = 'dark';
+  if (rememberTheme) try {
+    const saved = localStorage.getItem('sangeetpitara-theme');
+    if (choices.some(([key]) => key === saved)) selected = saved;
   } catch {}
   const apply = (key) => {
     document.documentElement.dataset.theme = key;
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.content = key === 'light' ? '#f5f5f3' : '#0c0d0f';
+    const choice = choices.find(([value]) => value === key);
+    if (meta && choice) meta.content = choice[2];
   };
   apply(selected);
   const attach = () => {
@@ -492,7 +558,7 @@ body{background:radial-gradient(ellipse at top left,var(--room-color-1),transpar
     picker.value = selected;
     picker.addEventListener('change', () => {
       apply(picker.value);
-      try { localStorage.setItem('sangeetpitara-theme',picker.value); } catch {}
+      if (rememberTheme) try { localStorage.setItem('sangeetpitara-theme',picker.value); } catch {}
     });
     label.append(picker); bar.append(label); document.body.prepend(bar);
     const homePosition = document.createComment('Theme control home position');
@@ -512,12 +578,241 @@ body{background:radial-gradient(ellipse at top left,var(--room-color-1),transpar
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',attach,{once:true}); else attach();
 })();
+
+/* Room artwork follows the same visual playback state as the cassette reels. */
+(() => {
+  const start = () => {
+    const card = document.getElementById('source-card');
+    const orb = document.getElementById('source-orb');
+    const toggle = document.getElementById('cover-visual-toggle');
+    const picker = document.getElementById('cover-visual-picker');
+    const canvas = document.getElementById('cover-visual-canvas');
+    if (!card || !orb || !toggle || !picker || !canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const options = [...picker.querySelectorAll('[data-visual]')];
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+    const assets = new Map();
+    const storageKey = 'sangeetpitara-room-visual';
+    let selected = 'cassette';
+    let img;
+    let pending = 0;
+    let frame = 0;
+    let started = null;
+    let visible = false;
+
+    const tau = Math.PI * 2;
+    const palette = { ice:'#88fff1', lemon:'#fff190', cyan:'#59f3ff', pink:'#f87ae8', amber:'#ffbc65' };
+    const framing = {
+      bike: { crop:[132,66,1100,640], fill:'#171717', scale:.96 },
+      car: { crop:[81,166,1214,426], fill:'#171717', scale:.94 },
+      radio: { crop:[49,354,398,252], fill:'#231910', scale:1 }
+    };
+    function arc(x,y,r,from,length,color,width,alpha=1,blur=0) {
+      ctx.save(); ctx.globalAlpha=alpha; ctx.strokeStyle=color; ctx.lineWidth=width;
+      ctx.shadowColor=color; ctx.shadowBlur=blur; ctx.lineCap='round';
+      ctx.beginPath(); ctx.arc(x,y,r,from,from+length); ctx.stroke(); ctx.restore();
+    }
+    function glow(x,y,r,color,alpha) {
+      ctx.save(); ctx.globalAlpha=alpha; const g=ctx.createRadialGradient(x,y,0,x,y,r);
+      g.addColorStop(0,color); g.addColorStop(1,'transparent');
+      ctx.fillStyle=g; ctx.fillRect(x-r,y-r,r*2,r*2); ctx.restore();
+    }
+    function beat(t) { return Math.pow((1+Math.cos(t*tau*1.5))/2, 5); }
+    function levels(t,i) {
+      return Math.max(.06,Math.min(1,.39+.22*Math.sin(t*tau*1.125+i*.43)+.15*Math.cos(t*tau*.75-i*.94)+.23*beat(t)));
+    }
+    function bikeWheel(x,y,t,color,offset) {
+      const phase=t*tau/4+offset;
+      arc(x,y,163,phase,.63,color,3,.7,15);
+      for (let r=117;r<=148;r+=8) arc(x,y,r,phase+.14,1.1,color,2.4,.22+.22*beat(t),8);
+      ctx.save(); ctx.translate(x,y); ctx.fillStyle=color;
+      for (let i=0;i<32;i++) {
+        ctx.save(); ctx.rotate(i*tau/32);
+        const height=1+5*levels(t+offset,i);
+        for (let j=0;j<Math.ceil(height);j++) {
+          ctx.globalAlpha=(.42+.36*j/height)*Math.min(1,height-j);
+          ctx.fillRect(-1.7,-(108+5*j),3.4,3);
+        }
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+    function carWheel(x,y,t,offset) {
+      const angle=t*tau/4+offset;
+      const r=75;
+      ctx.save(); ctx.translate(x,y); ctx.rotate(angle);
+      ctx.beginPath(); ctx.arc(0,0,r,0,tau); ctx.clip();
+      ctx.drawImage(img,x-r,y-r,r*2,r*2,-r,-r,r*2,r*2);
+      ctx.restore();
+      arc(x,y,85,angle,.9,palette.cyan,4,.58+.32*beat(t),14);
+      arc(x,y,85,angle+Math.PI,.71,palette.pink,4,.48+.4*beat(t),13);
+      for (const side of [-1,1]) {
+        ctx.save(); ctx.translate(x+side*91,y);
+        ctx.scale(side,1);
+        for (let i=0;i<13;i++) {
+          const color=(side===1?palette.pink:palette.cyan);
+          const h=(1-i/13)*(8+43*levels(t,i+offset));
+          ctx.strokeStyle=color; ctx.globalAlpha=.86*(1-i/15);
+          ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(i*4.3,-h/2); ctx.lineTo(i*4.3,h/2); ctx.stroke();
+        }
+        ctx.restore();
+      }
+      const notes=['♫','♪','♩'];
+      for (let i=0;i<3;i++) {
+        const f=(t/2+i/3+offset*.05)%1;
+        const nx=x+Math.cos(i*2.15+offset)*(92+22*f);
+        const ny=y-64-50*f+(i%2)*25;
+        ctx.save(); ctx.globalAlpha=Math.sin(f*Math.PI)*.85; ctx.font='bold 19px system-ui';
+        ctx.fillStyle=i%2?palette.pink:palette.cyan; ctx.shadowColor=ctx.fillStyle; ctx.shadowBlur=9;
+        ctx.fillText(notes[i],nx,ny); ctx.restore();
+      }
+    }
+    function radio(t) {
+      const wave=(1+Math.sin(t*tau*.5))/2;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(246,426,183,76); ctx.clip();
+      const shimmer=252+170*(1-Math.cos(t*tau/4))/2;
+      glow(shimmer,464,63,'#ffc27c',.17+.07*wave);
+      ctx.strokeStyle='#ffc77d'; ctx.globalAlpha=.32+.17*wave;
+      ctx.lineWidth=1.1;
+      ctx.beginPath(); ctx.moveTo(258,475); ctx.lineTo(415,475); ctx.stroke();
+      for (let i=0;i<27;i++) {
+        const x=259+i*6;
+        ctx.beginPath(); ctx.moveTo(x,474); ctx.lineTo(x,i%5===0?464:470); ctx.stroke();
+      }
+      const needle=347+3.5*Math.sin(t*tau*.5);
+      ctx.shadowColor='#ffbb64'; ctx.shadowBlur=8; ctx.globalAlpha=.8;
+      ctx.beginPath(); ctx.moveTo(needle,445); ctx.lineTo(needle,482); ctx.stroke();
+      ctx.restore();
+    }
+
+    const paint = (time, playing) => {
+      if (!img || selected === 'cassette') return;
+      const { crop: [x, y, w, h], fill, scale } = framing[selected];
+      const { width, height } = canvas;
+      ctx.fillStyle = fill;
+      ctx.fillRect(0, 0, width, height);
+      const size = Math.min(width / w, height / h) * scale;
+      ctx.save();
+      ctx.translate((width - w * size) / 2, (height - h * size) / 2);
+      ctx.scale(size, size);
+      ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
+      ctx.translate(-x, -y);
+      ctx.drawImage(img, 0, 0);
+      if (playing && selected === 'bike') {
+        bikeWheel(413, 470, time, palette.ice, 0);
+        bikeWheel(964, 470, time, palette.lemon, Math.PI);
+      } else if (playing && selected === 'car') {
+        carWheel(335, 458, time, 0);
+        carWheel(1042, 457, time, Math.PI * .9);
+      } else if (playing && selected === 'radio') {
+        radio(time);
+      }
+      ctx.restore();
+    };
+
+    const animate = (now) => {
+      started ??= now;
+      paint(((now - started) / 1000) % 8, true);
+      frame = requestAnimationFrame(animate);
+    };
+
+    const sync = () => {
+      const playing = img && visible && !document.hidden && !reduced.matches &&
+        card.dataset.playback === 'playing';
+      if (playing) {
+        if (!frame) frame = requestAnimationFrame(animate);
+      } else {
+        cancelAnimationFrame(frame);
+        frame = 0;
+        started = null;
+        paint(0, false);
+      }
+    };
+
+    const load = (key) => {
+      if (!assets.has(key)) {
+        const artwork = new Image();
+        artwork.src = '/branding/sangeetpitara/' + ({
+          bike: '11-visual-bicycle.svg',
+          car: '12-visual-sports-car.svg',
+          radio: '13-visual-vintage-radio.svg',
+        })[key];
+        assets.set(key, artwork.decode().then(() => artwork).catch((error) => {
+          assets.delete(key);
+          throw error;
+        }));
+      }
+      return assets.get(key);
+    };
+
+    const select = async (key, save = true) => {
+      const request = ++pending;
+      let artwork;
+      if (key !== 'cassette') {
+        try { artwork = await load(key); } catch { key = 'cassette'; }
+      }
+      if (request !== pending) return;
+      cancelAnimationFrame(frame);
+      frame = 0;
+      started = null;
+      selected = key;
+      img = artwork;
+      orb.dataset.visual = key;
+      canvas.hidden = !img;
+      for (const option of options) option.setAttribute('aria-pressed', String(option.dataset.visual === key));
+      if (save) {
+        try { localStorage.setItem(storageKey, key); } catch {}
+      }
+      paint(0, false);
+      sync();
+    };
+
+    const close = (returnFocus = false) => {
+      picker.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+      if (returnFocus) toggle.focus();
+    };
+    toggle.addEventListener('click', () => {
+      if (!picker.hidden) return close();
+      picker.hidden = false;
+      toggle.setAttribute('aria-expanded', 'true');
+      (options.find(option => option.dataset.visual === selected) || options[0]).focus();
+    });
+    picker.addEventListener('click', (event) => {
+      const choice = event.target.closest('[data-visual]');
+      if (!choice) return;
+      void select(choice.dataset.visual);
+      close(true);
+    });
+    document.addEventListener('click', (event) => {
+      if (!picker.hidden && !picker.contains(event.target) && !toggle.contains(event.target)) close();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !picker.hidden) close(true);
+    });
+    new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (!visible) close();
+      sync();
+    }).observe(orb);
+    new MutationObserver(sync).observe(card, { attributes: true, attributeFilter: ['data-playback'] });
+    document.addEventListener('visibilitychange', sync);
+    reduced.addEventListener('change', sync);
+    let saved;
+    try { saved = localStorage.getItem(storageKey); } catch {}
+    void select(options.some(option => option.dataset.visual === saved) ? saved : 'cassette', false);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+  else start();
+})();
 </script><!-- SHARED THEME END -->
 <script data-shared-chat>const make = (tag, cls, text) => { const el=document.createElement(tag); if(cls)el.className=cls; if(text!=null)el.textContent=text; return el; };
 const button = (text, action, cls='secondary-button') => { const el=make('button',cls,text);el.type='button';el.addEventListener('click',action);return el; };
 class RoomChatUI {
-  constructor({feed,input,form,send,getMessages,getSelfId,onError,onVoicePlayback=()=>{}}) {
-    Object.assign(this,{feed,input,form,send,getMessages,getSelfId,onError,onVoicePlayback}); this.urls=new Map(); this.nodes=new Map(); this.generation=0;
+  constructor({feed,input,form,send,getMessages,getSelfId,onError,onVoicePlayback=()=>{},onVoiceRecording=()=>{},canManageMember=()=>false,onMemberMenu=()=>{}}) {
+    Object.assign(this,{feed,input,form,send,getMessages,getSelfId,onError,onVoicePlayback,onVoiceRecording,canManageMember,onMemberMenu}); this.urls=new Map(); this.nodes=new Map(); this.generation=0;
     this.reply=make('div','chat-reply-composer');this.reply.hidden=true;form.before(this.reply);
     this.preview=make('div','chat-voice-preview');this.preview.hidden=true;form.before(this.preview);
     // Voice notes work like Telegram: tap the mic to record, tap again to stop and send.
@@ -526,7 +821,7 @@ class RoomChatUI {
     this.feed.addEventListener('play',e=>{if(e.target.tagName==='AUDIO')for(const audio of this.feed.querySelectorAll('audio'))if(audio!==e.target)audio.pause();},true);
     // Tell the room when a voice message starts or stops so it can pause the music meanwhile.
     const voiceState=()=>this.onVoicePlayback([...this.feed.querySelectorAll('audio'),...this.preview.querySelectorAll('audio')].some(a=>!a.paused&&!a.ended));
-    for(const root of [this.feed,this.preview])for(const type of ['play','playing','pause','ended','emptied'])root.addEventListener(type,e=>{if(e.target.tagName==='AUDIO')voiceState();},true);
+    for(const root of [this.feed,this.preview])for(const type of ['play','playing','pause','ended','emptied'])root.addEventListener(type,e=>{if(e.target.tagName==='AUDIO'){if(type==='play'&&this.stream)e.target.pause();voiceState();}},true);
     this.hideHandler=()=>{if(document.hidden)this.cancelRecording();};document.addEventListener('visibilitychange',this.hideHandler);
     this.pageHandler=()=>this.reset();addEventListener('pagehide',this.pageHandler);
     if(!globalThis.isSecureContext||!navigator.mediaDevices?.getUserMedia||!globalThis.MediaRecorder) {this.recordButton.disabled=true;this.recordButton.title='Voice recording needs HTTPS or the desktop companion. You can still listen and reply.';this.tools.append(make('small','','Recording needs HTTPS or the desktop companion.'));}
@@ -549,12 +844,16 @@ class RoomChatUI {
       if(!node){
         node=make('article','chat-message');node.dataset.messageId=message.id;node.id=`chat-${message.id}`;
         const body=make('div','chat-body');const meta=make('div','chat-meta');meta.append(make('strong','chat-name',message.senderName||'Room'),make('time','chat-time',new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})));
+        const actions=button('⋯',()=>this.onMemberMenu(message.senderId),'member-more');
+        actions.setAttribute('aria-label',`Actions for ${message.senderName||'participant'}`);
+        actions.setAttribute('aria-haspopup','dialog');meta.append(actions);
         body.append(meta);
         if(message.replyTo){const quote=button(`${message.replyTo.senderName||'Room'}: ${message.replyTo.text}`,()=>{const target=this.nodes.get(message.replyTo.id);if(target){target.scrollIntoView({block:'nearest',behavior:'smooth'});target.setAttribute('tabindex','-1');target.focus({preventScroll:true});}else this.onError('The original message is no longer in this room history.');},'chat-quote');body.append(quote);}
         const content=make('div','chat-content');body.append(content);
         if(!message.voice)content.append(make('div','chat-text',message.text));
         body.append(button('Reply',()=>this.selectReply(message),'chat-reply-button'),make('div','chat-message-reactions'));node.append(body);this.nodes.set(message.id,node);this.feed.append(node);
       }
+      node.querySelector('.member-more').hidden=!this.canManageMember(message.senderId);
       if(message.voice){
         const content=node.querySelector('.chat-content');
         if(message.voice.data&&!this.urls.has(message.id)){
@@ -573,18 +872,21 @@ class RoomChatUI {
   async toggleRecording(){
     if(this.recorder?.state==='recording'){this.recorder.stop();return;}
     if(this.draft){this.showDraft();return;}
-    if(this.requesting)return;this.requesting=true;const generation=++this.generation;
+    if(this.requesting||this.stream)return;this.requesting=true;const generation=++this.generation;
     try {
       const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true},video:false});
       if(generation!==this.generation){stream.getTracks().forEach(t=>t.stop());return;}
       const mimeType=['audio/webm;codecs=opus','audio/mp4','audio/ogg;codecs=opus'].find(t=>MediaRecorder.isTypeSupported(t));
       if(!mimeType){stream.getTracks().forEach(t=>t.stop());throw Error('Voice recording is not supported in this browser.');}
       this.stream=stream;this.chunks=[];this.bytes=0;this.cancelled=false;this.started=performance.now();
+      for(const audio of this.feed.querySelectorAll('audio'))audio.pause();
+      this.onVoiceRecording(true);
       this.recorder=new MediaRecorder(stream,{mimeType,audioBitsPerSecond:24000});
       this.recorder.ondataavailable=e=>{if(this.cancelled)return;if(e.data.size){this.bytes+=e.data.size;this.chunks.push(e.data);if(this.bytes>192*1024){this.cancelled=true;if(this.recorder.state==='recording')this.recorder.stop();this.onError('Recording is too large. Try a shorter voice note.');}}};
       this.recorder.onerror=()=>{this.cancelled=true;if(this.recorder.state==='recording')this.recorder.stop();this.onError('The microphone recording failed. Please try again.');};
       this.recorder.onstop=async()=>{
-        clearInterval(this.recordTimer);stream.getTracks().forEach(t=>t.stop());this.stream=null;this.setMicState(false);this.preview.hidden=true;
+        if(this.stream!==stream)return;
+        clearInterval(this.recordTimer);stream.getTracks().forEach(t=>t.stop());this.stream=null;this.onVoiceRecording(false);this.setMicState(false);this.preview.hidden=true;
         const chunks=this.chunks;this.chunks=[];
         if(this.cancelled||generation!==this.generation)return;
         const blob=new Blob(chunks,{type:mimeType}),durationMs=Math.min(30000,Math.round(performance.now()-this.started));
@@ -599,7 +901,7 @@ class RoomChatUI {
       this.recorder.start(250);this.preview.hidden=false;const label=make('span','chat-recording');label.setAttribute('role','status');this.preview.replaceChildren(label,button('Cancel',()=>this.cancelRecording()));
       const tick=()=>{const elapsed=Math.round((performance.now()-this.started)/1000);label.textContent=`Recording ${Math.min(30,elapsed)} / 30 sec · tap ➤ to send`;if(elapsed>=30&&this.recorder.state==='recording')this.recorder.stop();};
       tick();this.recordTimer=setInterval(tick,250);this.setMicState(true);
-    }catch(error){this.stream?.getTracks().forEach(t=>t.stop());this.onError(error.name==='NotAllowedError'?'Microphone access was denied. You can still send text messages.':error.message||'The microphone is unavailable.');}
+    }catch(error){this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;this.onVoiceRecording(false);this.onError(error.name==='NotAllowedError'?'Microphone access was denied. You can still send text messages.':error.message||'The microphone is unavailable.');}
     finally {this.requesting=false;}
   }
   showDraft(){
@@ -614,7 +916,7 @@ class RoomChatUI {
     return true;
   }
   sendFailed(){if(this.pendingId){clearTimeout(this.ackTimer);this.pendingId=null;if(this.draft)this.showDraft();}}
-  cancelRecording(){++this.generation;this.cancelled=true;clearInterval(this.recordTimer);if(this.recorder?.state==='recording')this.recorder.stop();this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;if(!this.draft)this.preview.hidden=true;this.setMicState(false);}
+  cancelRecording(){++this.generation;this.cancelled=true;clearInterval(this.recordTimer);if(this.recorder?.state==='recording')this.recorder.stop();this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;this.onVoiceRecording(false);if(!this.draft)this.preview.hidden=true;this.setMicState(false);}
   discardDraft(){if(this.draftUrl)URL.revokeObjectURL(this.draftUrl);this.draftUrl=null;this.draft=null;this.preview.hidden=true;this.preview.replaceChildren();this.setMicState(false);}
   reset(){this.cancelRecording();clearTimeout(this.ackTimer);this.pendingId=null;this.discardDraft();this.clearReply();for(const id of this.urls.keys())this.releaseUrl(id);this.nodes.clear();this.feed.replaceChildren();}
 }

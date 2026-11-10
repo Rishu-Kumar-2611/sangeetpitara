@@ -102,7 +102,7 @@ class RoomSessionCoordinator(
             "missingPackets" to if (sender) null else playback?.missingPackets,
             "rms" to if (sender) null else playback?.levelRms,
             "peak" to if (sender) null else playback?.levelPeak,
-            "appVolume" to if (playbackAllowed && !listeningPaused && !voiceNotePlaying) volume else 0.0,
+            "appVolume" to effectivePlaybackVolume(),
             "playbackAllowed" to if (playbackAllowed) 1 else 0,
             "listeningPaused" to if (listeningPaused) 1 else 0,
             "mediaVolumePercent" to mediaVolumePercent(),
@@ -162,6 +162,7 @@ class RoomSessionCoordinator(
     private var listeningPaused = false
     // A chat voice message is playing on this phone: the room music pauses until it ends.
     private var voiceNotePlaying = false
+    private var voiceNoteRecording = false
     private var closed = false
     @Volatile private var mediaBinding: MediaBinding? = null
 
@@ -282,7 +283,7 @@ class RoomSessionCoordinator(
             val createdPublisher = requireNotNull(nextPublisher)
             publisher = createdPublisher
             relayPlayer = nextRelayPlayer
-            val effectiveVolume = if (playbackAllowed) volume else 0.0
+            val effectiveVolume = effectivePlaybackVolume()
             if (createdPublisher is WebRtcPcmPublisher) createdPublisher.setPlaybackVolume(effectiveVolume)
             nextRelayPlayer?.setVolume(effectiveVolume)
             transport = RoomAudioTransport(nextClient, createdPublisher, nextRelayPlayer)
@@ -584,8 +585,17 @@ class RoomSessionCoordinator(
         applyPlaybackVolume()
     }
 
+    fun setVoiceNoteRecording(recording: Boolean) {
+        if (voiceNoteRecording == recording) return
+        voiceNoteRecording = recording
+        applyPlaybackVolume()
+    }
+
+    private fun effectivePlaybackVolume(): Double =
+        if (playbackAllowed && !listeningPaused && !voiceNotePlaying && !voiceNoteRecording) volume else 0.0
+
     private fun applyPlaybackVolume() {
-        val effectiveVolume = if (playbackAllowed && !listeningPaused && !voiceNotePlaying) volume else 0.0
+        val effectiveVolume = effectivePlaybackVolume()
         (publisher as? WebRtcPcmPublisher)?.setPlaybackVolume(effectiveVolume)
         relayPlayer?.setVolume(effectiveVolume)
     }

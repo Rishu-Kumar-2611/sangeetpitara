@@ -6,8 +6,9 @@
     ['brass', 'Brass', '#0e0b0a'],
     ['rose', 'Rose', '#1c1018'],
   ];
+  const rememberTheme = !document.documentElement.hasAttribute('data-theme-reset');
   let selected = 'light';
-  try {
+  if (rememberTheme) try {
     const saved = localStorage.getItem('sangeetpitara-theme');
     if (choices.some(([key]) => key === saved)) selected = saved;
   } catch {}
@@ -26,7 +27,7 @@
     picker.value = selected;
     picker.addEventListener('change', () => {
       apply(picker.value);
-      try { localStorage.setItem('sangeetpitara-theme',picker.value); } catch {}
+      if (rememberTheme) try { localStorage.setItem('sangeetpitara-theme',picker.value); } catch {}
     });
     label.append(picker); bar.append(label); document.body.prepend(bar);
     const homePosition = document.createComment('Theme control home position');
@@ -188,7 +189,7 @@
 
     const sync = () => {
       const playing = img && visible && !document.hidden && !reduced.matches &&
-        card.classList.contains('live') && !card.classList.contains('listening-paused');
+        card.dataset.playback === 'playing';
       if (playing) {
         if (!frame) frame = requestAnimationFrame(animate);
       } else {
@@ -265,7 +266,7 @@
       if (!visible) close();
       sync();
     }).observe(orb);
-    new MutationObserver(sync).observe(card, { attributes: true, attributeFilter: ['class'] });
+    new MutationObserver(sync).observe(card, { attributes: true, attributeFilter: ['data-playback'] });
     document.addEventListener('visibilitychange', sync);
     reduced.addEventListener('change', sync);
     let saved;
