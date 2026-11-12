@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 540" width="880" height="540" style="background:#0F1216; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <defs>
+    <filter id="mDropShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.85"/>
+    </filter>
+    <filter id="mGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Mobile Device Outer Chassis Mockup -->
+  <g transform="translate(270, 20)">
+    <!-- Phone Body -->
+    <rect x="0" y="0" width="340" height="500" rx="40" fill="#1A1E24" stroke="#2E3642" stroke-width="4"/>
+    
+    <!-- Phone Screen Inner -->
+    <rect x="12" y="12" width="316" height="476" rx="30" fill="#000000"/>
+    
+    <!-- Camera Notch / Dynamic Island -->
+    <rect x="115" y="20" width="110" height="22" rx="11" fill="#12151A"/>
+    <circle cx="205" cy="31" r="5" fill="#20252E"/>
+
+    <!-- Background SangeetPitara App Screen on Phone -->
+    <g transform="translate(16, 50)" opacity="0.35">
+      <!-- App Header -->
+      <rect x="10" y="8" width="296" height="42" rx="8" fill="#161A22"/>
+      <circle cx="32" cy="29" r="10" fill="#E85D04"/>
+      <text x="50" y="34" font-size="12" font-weight="700" fill="#FFFFFF">SangeetPitara</text>
+      <rect x="230" y="20" width="60" height="18" rx="4" fill="#000000"/>
+      <text x="238" y="32" font-size="9" fill="#00FF66">● LIVE</text>
+      
+      <!-- Cassette Deck on Mobile -->
+      <rect x="10" y="65" width="296" height="170" rx="14" fill="#1C212B"/>
+      <circle cx="85" cy="150" r="32" fill="#2A313E"/>
+      <circle cx="230" cy="150" r="32" fill="#2A313E"/>
+      <rect x="40" y="260" width="110" height="34" rx="8" fill="#E85D04"/>
+      <rect x="160" y="260" width="110" height="34" rx="8" fill="#2B3240"/>
+    </g>
+
+    <!-- Dark Scrim / Dialog Dimmer -->
+    <rect x="12" y="12" width="316" height="476" rx="30" fill="#000000" opacity="0.6"/>
+
+    <!-- Android 14 / 13 Native MediaProjection Dialog Sheet -->
+    <g transform="translate(24, 130)" filter="url(#mDropShadow)">
+      <!-- Dialog Surface Card -->
+      <rect x="0" y="0" width="292" height="315" rx="24" fill="#1F232B" stroke="#363E4D" stroke-width="1.2"/>
+      
+      <!-- Cast Icon & Title -->
+      <path d="M 32 34 L 32 30 C 32 26 28 22 24 22 M 20 22 C 16 22 14 24 14 26 M 14 34 A 4 4 0 0 1 14 30" stroke="#E85D04" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <text x="44" y="32" font-size="14.5" font-weight="700" fill="#FFFFFF">Start recording or casting?</text>
+      
+      <!-- Explanatory Subtitle -->
+      <text x="20" y="58" font-size="11" fill="#9BA3AF">SangeetPitara will have access to all audio</text>
+      <text x="20" y="73" font-size="11" fill="#9BA3AF">played while sharing your device screen.</text>
+
+      <!-- Selection List Box -->
+      <g transform="translate(18, 92)">
+        <!-- Option 1: A single app -->
+        <rect x="0" y="0" width="256" height="46" rx="10" fill="#272D37"/>
+        <circle cx="22" cy="23" r="8" fill="none" stroke="#6C7584" stroke-width="2"/>
+        <text x="42" y="27" font-size="12" font-weight="500" fill="#B0B8C4">A single app</text>
+      </g>
+
+      <g transform="translate(18, 146)">
+        <!-- Option 2: Entire screen (SELECTED & HIGHLIGHTED) -->
+        <rect x="0" y="0" width="256" height="52" rx="10" fill="#313947" stroke="#E85D04" stroke-width="2"/>
+        
+        <!-- Radio Button (Selected) -->
+        <circle cx="22" cy="26" r="8" fill="none" stroke="#E85D04" stroke-width="2"/>
+        <circle cx="22" cy="26" r="4.5" fill="#E85D04"/>
+
+        <text x="42" y="25" font-size="13" font-weight="700" fill="#FFFFFF">Entire screen</text>
+        <text x="42" y="41" font-size="10" font-weight="600" fill="#FF9E66">Captures all music apps (Spotify/YT)</text>
+      </g>
+
+      <!-- Warning Note -->
+      <text x="20" y="222" font-size="10" fill="#7A8494">While sharing, SangeetPitara can stream any</text>
+      <text x="20" y="235" font-size="10" fill="#7A8494">audio played on your phone to this room.</text>
+
+      <!-- Dialog Buttons -->
+      <g transform="translate(18, 256)">
+        <!-- Cancel Button -->
+        <rect x="75" y="6" width="75" height="36" rx="18" fill="transparent"/>
+        <text x="96" y="29" font-size="12.5" font-weight="600" fill="#A8B2C1">Cancel</text>
+        
+        <!-- Start now Button (Highlighted) -->
+        <rect x="156" y="6" width="98" height="36" rx="18" fill="#E85D04" stroke="#FFA466" stroke-width="1.5"/>
+        <text x="176" y="29" font-size="12.5" font-weight="700" fill="#FFFFFF">Start now</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- CALLOUT ARROW 1 (Left Side): Pointing to "Entire screen" Radio Option -->
+  <g transform="translate(25, 275)">
+    <rect x="0" y="0" width="245" height="66" rx="10" fill="#E85D04" filter="url(#mGlow)"/>
+    <text x="14" y="24" font-size="13" font-weight="800" fill="#FFFFFF">STEP 1: PICK "ENTIRE SCREEN"</text>
+    <text x="14" y="42" font-size="11" font-weight="600" fill="#FFF0E5">Select "Entire screen"</text>
+    <text x="14" y="56" font-size="10" fill="#FFE2CC">Ensures background music is captured!</text>
+
+    <!-- Curved Arrow pointing right to Entire Screen option -->
+    <path d="M 245 33 C 270 33, 290 30, 305 25" fill="none" stroke="#E85D04" stroke-width="4" stroke-linecap="round"/>
+    <polygon points="314,21 302,18 304,30" fill="#E85D04"/>
+  </g>
+
+  <!-- CALLOUT ARROW 2 (Right Side): Pointing to "Start now" Button -->
+  <g transform="translate(630, 400)">
+    <rect x="0" y="0" width="230" height="66" rx="10" fill="#107C41" filter="url(#mGlow)"/>
+    <text x="14" y="24" font-size="13" font-weight="800" fill="#FFFFFF">STEP 2: TAP "START NOW"</text>
+    <text x="14" y="42" font-size="11" font-weight="600" fill="#DFF6DD">Audio streaming begins</text>
+    <text x="14" y="56" font-size="10" fill="#C3E9C1">Open Spotify or YT to play sound!</text>
+
+    <!-- Curved Arrow pointing left to Start now button -->
+    <path d="M 0 33 C -35 33, -65 25, -95 18" fill="none" stroke="#107C41" stroke-width="4" stroke-linecap="round"/>
+    <polygon points="-104,15 -92,13 -94,25" fill="#107C41"/>
+  </g>
+</svg>
