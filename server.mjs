@@ -260,7 +260,7 @@ const securityHeaders = {
 // Only client assets belong to the public HTTP surface. Backend modules,
 // audit evidence, tests and future repository files are private by default.
 const publicFiles = new Set([
-  'chat.css', 'index.html', 'privacy.html', 'terms.html',
+  'chat.css', 'index.html', 'privacy.html', 'terms.html', 'guide.html',
   'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'themes.css', 'themes.js',
   'chat-ui.mjs', 'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
   'room-palette.js', 'media-relay.mjs', 'relay-pcm.js', 'relay-opus.mjs', 'stream-health.mjs', 'audio-diagnostics.mjs',
@@ -271,7 +271,8 @@ const publicFiles = new Set([
 function isPublicFile(name) {
   return publicFiles.has(name)
     || /^fonts\/[a-zA-Z0-9-]+\.(woff2|txt)$/.test(name)
-    || /^branding\/sangeetpitara\/\d{2}-[a-z-]+\.svg$/.test(name);
+    || /^branding\/sangeetpitara\/\d{2}-[a-z-]+\.svg$/.test(name)
+    || /^guide\/img\/[a-zA-Z0-9_-]+\.(png|jpg|jpeg|svg|webp)$/.test(name);
 }
 
 const rateLimit = new Map();

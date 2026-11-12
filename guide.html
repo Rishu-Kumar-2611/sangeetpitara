@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SangeetPitara — User Guide & Visual Walkthrough</title>
+  <meta name="description" content="SangeetPitara step-by-step visual user manual: how to create rooms, join with friends, share high-fidelity tab and file audio, chat with voice notes, and use health diagnostics." />
+  <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261110-chat-review1" />
+  <link rel="stylesheet" href="/styles.css?v=20261110-chat-review1" />
+  <link rel="stylesheet" href="/themes.css?v=20261112-tabs-contrast" />
+  <style>
+    :root {
+      --guide-accent: #E85D04;
+      --guide-accent-glow: rgba(232, 93, 4, 0.35);
+      --guide-dark-bg: #0D0F12;
+      --guide-card-bg: #161A1F;
+      --guide-border: #262B33;
+      --guide-text: #F3F4F6;
+      --guide-muted: #9CA3AF;
+      --guide-hotspot: #FF5400;
+    }
+
+    body.guide-body {
+      background: #090B0E;
+      color: var(--guide-text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      line-height: 1.5;
+    }
+
+    .guide-header {
+      background: #0D0F13;
+      border-bottom: 1px solid var(--guide-border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+
+    .guide-header-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .guide-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: #FFFFFF;
+      font-weight: 700;
+      font-size: 1.15rem;
+    }
+
+    .guide-badge {
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(232, 93, 4, 0.15);
+      border: 1px solid var(--guide-accent);
+      color: #FF9E66;
+      font-weight: 600;
+    }
+
+    .guide-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .guide-btn-primary {
+      background: var(--guide-accent);
+      color: #FFFFFF;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.2s ease, transform 0.1s ease;
+    }
+
+    .guide-btn-primary:hover {
+      background: #FF6A13;
+      transform: translateY(-1px);
+    }
+
+    .guide-btn-secondary {
+      background: #1F242C;
+      color: var(--guide-text);
+      border: 1px solid var(--guide-border);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s ease;
+    }
+
+    .guide-btn-secondary:hover {
+      background: #2B323D;
+    }
+
+    .guide-hero {
+      text-align: center;
+      padding: 44px 20px 24px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    .guide-hero h1 {
+      font-size: 2.2rem;
+      margin: 0 0 12px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #FFFFFF 30%, #FF9E66 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .guide-hero p {
+      color: var(--guide-muted);
+      font-size: 1.05rem;
+      margin: 0 auto 20px;
+      max-width: 680px;
+    }
+
+    /* Tabs Navigation */
+    .guide-nav-wrap {
+      max-width: 1280px;
+      margin: 0 auto 32px;
+      padding: 0 20px;
+    }
+
+    .guide-tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 6px;
+      background: #13161B;
+      border: 1px solid var(--guide-border);
+      border-radius: 12px;
+      scrollbar-width: thin;
+    }
+
+    .guide-tab-btn {
+      background: transparent;
+      color: #9CA3AF;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .guide-tab-btn:hover {
+      color: #FFFFFF;
+      background: #1E232B;
+    }
+
+    .guide-tab-btn.active {
+      background: var(--guide-accent);
+      color: #FFFFFF;
+      box-shadow: 0 2px 10px var(--guide-accent-glow);
+    }
+
+    .guide-tab-btn .tab-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      font-size: 0.75rem;
+    }
+
+    /* Guide Stage Container */
+    .guide-main {
+      max-width: 1280px;
+      margin: 0 auto 80px;
+      padding: 0 20px;
+    }
+
+    .guide-section {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .guide-section.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .guide-card {
+      background: var(--guide-card-bg);
+      border: 1px solid var(--guide-border);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+    }
+
+    .guide-card-header {
+      padding: 24px 28px 16px;
+      border-bottom: 1px solid var(--guide-border);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .guide-card-title h2 {
+      margin: 0 0 6px;
+      font-size: 1.45rem;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .guide-card-title p {
+      margin: 0;
+      color: var(--guide-muted);
+      font-size: 0.95rem;
+    }
+
+    .guide-card-content {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 0;
+    }
+
+    @media (max-width: 960px) {
+      .guide-card-content {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Visual Viewer Canvas */
+    .guide-canvas-wrap {
+      padding: 24px;
+      background: #0B0D10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .guide-viewport {
+      position: relative;
+      width: 100%;
+      max-width: 860px;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+      border: 1px solid #2B303A;
+      background: #000;
+    }
+
+    .guide-viewport img {
+      width: 100%;
+      height: auto;
+      display: block;
+      user-select: none;
+    }
+
+    /* Hotspot Pulsing Markers */
+    .guide-hotspot {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      z-index: 10;
+    }
+
+    .guide-hotspot-pulse {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: var(--guide-hotspot);
+      opacity: 0.7;
+      animation: pulseGlow 1.8s infinite;
+    }
+
+    .guide-hotspot-pin {
+      position: absolute;
+      inset: 4px;
+      background: #FF5400;
+      border: 2px solid #FFFFFF;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #FFFFFF;
+      font-size: 0.8rem;
+      font-weight: 800;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+      transition: transform 0.15s ease, background 0.2s ease;
+    }
+
+    .guide-hotspot:hover .guide-hotspot-pin,
+    .guide-hotspot.active .guide-hotspot-pin {
+      transform: scale(1.15);
+      background: #FFFFFF;
+      color: #FF5400;
+    }
+
+    @keyframes pulseGlow {
+      0% { transform: scale(1); opacity: 0.75; }
+      50% { transform: scale(1.7); opacity: 0; }
+      100% { transform: scale(1); opacity: 0; }
+    }
+
+    /* Callout Pointers / Arrows */
+    .guide-callout {
+      position: absolute;
+      background: rgba(18, 22, 28, 0.94);
+      border: 1px solid #E85D04;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #FFF;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.8);
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 9;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .guide-callout::before {
+      content: "➔";
+      color: #E85D04;
+      font-size: 0.9rem;
+    }
+
+    /* Sidebar Steps & Instructions */
+    .guide-sidebar {
+      padding: 24px;
+      background: #14171D;
+      border-left: 1px solid var(--guide-border);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .guide-step-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .guide-step-item {
+      padding: 14px;
+      border-radius: 10px;
+      background: #1A1F27;
+      border: 1px solid #262D38;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .guide-step-item:hover,
+    .guide-step-item.active {
+      border-color: var(--guide-accent);
+      background: #202732;
+    }
+
+    .guide-step-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      color: #FFFFFF;
+      margin-bottom: 4px;
+    }
+
+    .guide-step-head .num {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--guide-accent);
+      color: #FFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+    }
+
+    .guide-step-desc {
+      color: var(--guide-muted);
+      font-size: 0.84rem;
+      margin: 0;
+      padding-left: 32px;
+    }
+
+    .guide-quick-tip {
+      background: rgba(232, 93, 4, 0.1);
+      border: 1px solid rgba(232, 93, 4, 0.3);
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      color: #FDBA74;
+      margin-top: 10px;
+    }
+
+    .guide-quick-tip strong {
+      color: #FFFFFF;
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    /* Stepper Navigation Buttons */
+    .guide-stepper-ctrls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-top: 16px;
+      border-top: 1px solid var(--guide-border);
+    }
+
+    .guide-footer-info {
+      text-align: center;
+      padding: 40px 20px;
+      color: #6B7280;
+      font-size: 0.85rem;
+      border-top: 1px solid #1A1F26;
+    }
+
+    .guide-footer-info a {
+      color: var(--guide-muted);
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body class="guide-body">
+
+  <!-- Sticky Header -->
+  <header class="guide-header">
+    <div class="guide-header-inner">
+      <a href="/" class="guide-brand">
+        <img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261110-chat-review1" alt="SangeetPitara logo" width="36" height="36" />
+        <span>SangeetPitara</span>
+        <span class="guide-badge">User Guide</span>
+      </a>
+      <div class="guide-header-actions">
+        <a href="/" class="guide-btn-primary">▶ Open SangeetPitara</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="guide-hero">
+    <h1>Visual User Manual</h1>
+    <p>Get started in seconds. Follow these real-interface visual guides to create a room, share crystal-clear audio, chat with friends, and customize your experience.</p>
+  </section>
+
+  <!-- Interactive Step Tabs -->
+  <div class="guide-nav-wrap">
+    <nav class="guide-tabs" id="guideTabs" aria-label="User Guide Sections">
+      <button class="guide-tab-btn active" data-target="sec-create">
+        <span class="tab-num">1</span> Create a Room
+      </button>
+      <button class="guide-tab-btn" data-target="sec-join">
+        <span class="tab-num">2</span> Join a Room
+      </button>
+      <button class="guide-tab-btn" data-target="sec-share">
+        <span class="tab-num">3</span> Share Audio
+      </button>
+      <button class="guide-tab-btn" data-target="sec-chat">
+        <span class="tab-num">4</span> Chat & Voice
+      </button>
+      <button class="guide-tab-btn" data-target="sec-people">
+        <span class="tab-num">5</span> People & Invites
+      </button>
+      <button class="guide-tab-btn" data-target="sec-health">
+        <span class="tab-num">6</span> Health & Diagnostics
+      </button>
+      <button class="guide-tab-btn" data-target="sec-themes">
+        <span class="tab-num">7</span> Themes
+      </button>
+    </nav>
+  </div>
+
+  <main class="guide-main">
+
+    <!-- 1. CREATE A ROOM -->
+    <section id="sec-create" class="guide-section active">
+      <div class="guide-card">
+        <div class="guide-card-header">
+          <div class="guide-card-title">
+            <h2>🚪 How to Create a Room</h2>
+            <p>Start a listening session as a Host in just two clicks.</p>
+          </div>
+          <span class="guide-badge">Topic 1 / 7</span>
+        </div>
+        <div class="guide-card-content">
+          <div class="guide-canvas-wrap">
+            <div class="guide-viewport">
+              <img src="/guide/img/01-create-room.png" alt="SangeetPitara Room Creation Screen" />
+              <!-- Hotspot 1: Display Name -->
+              <div class="guide-hotspot" style="top: 48%; left: 50%;" title="Step 1: Display Name">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">1</div>
+              </div>
+              <div class="guide-callout" style="top: 42%; left: 62%;">Display Name</div>
+
+              <!-- Hotspot 2: Room Name -->
+              <div class="guide-hotspot" style="top: 60%; left: 50%;" title="Step 2: Room Name">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">2</div>
+              </div>
+              <div class="guide-callout" style="top: 55%; left: 62%;">Room Name</div>
+
+              <!-- Hotspot 3: Create Button -->
+              <div class="guide-hotspot" style="top: 82%; left: 50%;" title="Step 3: Create Private Room">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">3</div>
+              </div>
+              <div class="guide-callout" style="top: 76%; left: 62%;">Click to Launch</div>
+            </div>
+          </div>
+          <div class="guide-sidebar">
+            <ul class="guide-step-list">
+              <li class="guide-step-item active">
+                <div class="guide-step-head"><span class="num">1</span> Enter Your Display Name</div>
+                <p class="guide-step-desc">Type your name (e.g., "Sam") so friends know who is hosting.</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">2</span> Name Your Room</div>
+                <p class="guide-step-desc">Choose a session name (e.g., "Music Lounge" or "Study Beats").</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">3</span> Click "+ Create private room"</div>
+                <p class="guide-step-desc">Your private room is generated instantly with an 8-character code.</p>
+              </li>
+            </ul>
+            <div class="guide-quick-tip">
+              <strong>💡 Host Privilege</strong>
+              As host, you can share tab audio, approve listener audio requests, and lock or end the room.
+            </div>
+            <div class="guide-stepper-ctrls">
+              <span></span>
+              <button class="guide-btn-primary" onclick="switchGuideTab('sec-join')">Next: Joining a Room ➔</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. JOIN A ROOM -->
+    <section id="sec-join" class="guide-section">
+      <div class="guide-card">
+        <div class="guide-card-header">
+          <div class="guide-card-title">
+            <h2>🔗 How to Join an Existing Room</h2>
+            <p>Connect with a room code or link shared by a friend.</p>
+          </div>
+          <span class="guide-badge">Topic 2 / 7</span>
+        </div>
+        <div class="guide-card-content">
+          <div class="guide-canvas-wrap">
+            <div class="guide-viewport">
+              <img src="/guide/img/02-join-room.png" alt="SangeetPitara Room Joining Screen" />
+              <!-- Hotspot 1: Room Code -->
+              <div class="guide-hotspot" style="top: 42%; left: 50%;" title="Step 1: Enter Room Code">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">1</div>
+              </div>
+              <div class="guide-callout" style="top: 36%; left: 62%;">8-Char Room Code</div>
+
+              <!-- Hotspot 2: Display Name -->
+              <div class="guide-hotspot" style="top: 60%; left: 50%;" title="Step 2: Enter Your Name">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">2</div>
+              </div>
+              <div class="guide-callout" style="top: 55%; left: 62%;">Your Name</div>
+
+              <!-- Hotspot 3: Enter Room -->
+              <div class="guide-hotspot" style="top: 82%; left: 50%;" title="Step 3: Enter Room">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">3</div>
+              </div>
+              <div class="guide-callout" style="top: 76%; left: 62%;">Click Enter</div>
+            </div>
+          </div>
+          <div class="guide-sidebar">
+            <ul class="guide-step-list">
+              <li class="guide-step-item active">
+                <div class="guide-step-head"><span class="num">1</span> Paste the Room Code</div>
+                <p class="guide-step-desc">Enter the 8-character code (e.g. <code>Y8V4D67G</code>). Hyphens & lowercase are automatically cleaned.</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">2</span> Enter Your Name</div>
+                <p class="guide-step-desc">Tell the room who joined the party.</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">3</span> Click "Enter room"</div>
+                <p class="guide-step-desc">You will immediately sync to the live high-fidelity audio stream!</p>
+              </li>
+            </ul>
+            <div class="guide-quick-tip">
+              <strong>💡 Direct Invite Links</strong>
+              If your friend sent you a link like <code>?room=ABCDEF12</code>, the code is filled automatically!
+            </div>
+            <div class="guide-stepper-ctrls">
+              <button class="guide-btn-secondary" onclick="switchGuideTab('sec-create')">⬅ Previous</button>
+              <button class="guide-btn-primary" onclick="switchGuideTab('sec-share')">Next: Sharing Audio ➔</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. HOW TO SHARE AUDIO -->
+    <section id="sec-share" class="guide-section">
+      <div class="guide-card">
+        <div class="guide-card-header">
+          <div class="guide-card-title">
+            <h2>🎵 How to Share Audio (Real Interface)</h2>
+            <p>Broadcast high-fidelity browser audio or audio files directly to all participants.</p>
+          </div>
+          <span class="guide-badge">Topic 3 / 7</span>
+        </div>
+        <div class="guide-card-content">
+          <div class="guide-canvas-wrap">
+            <div class="guide-viewport">
+              <img src="/guide/img/03-share-audio.png" alt="SangeetPitara Audio Sharing Interface" />
+              <!-- Hotspot 1: Share Audio Button -->
+              <div class="guide-hotspot" style="top: 78%; left: 16%;" title="Share Browser Tab Audio">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">1</div>
+              </div>
+              <div class="guide-callout" style="top: 70%; left: 18%;">Share Tab Audio</div>
+
+              <!-- Hotspot 2: Share Media File -->
+              <div class="guide-hotspot" style="top: 78%; left: 28%;" title="Share Audio File">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">2</div>
+              </div>
+              <div class="guide-callout" style="top: 70%; left: 30%;">Play MP3/WAV/FLAC</div>
+
+              <!-- Hotspot 3: Animated Cassette Player -->
+              <div class="guide-hotspot" style="top: 48%; left: 24%;" title="Cassette Visualizer">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">3</div>
+              </div>
+              <div class="guide-callout" style="top: 40%; left: 26%;">Visual Cassette Deck</div>
+            </div>
+          </div>
+          <div class="guide-sidebar">
+            <ul class="guide-step-list">
+              <li class="guide-step-item active">
+                <div class="guide-step-head"><span class="num">1</span> Click "Share audio"</div>
+                <p class="guide-step-desc">A browser picker appears. Select your <strong>Chrome/Edge tab</strong> (e.g. YouTube, Spotify Web, SoundCloud) and check <strong>"Also share tab audio"</strong>.</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">2</span> Or "Share audio file"</div>
+                <p class="guide-step-desc">Want to play a local song? Click to pick any MP3, WAV, AAC, or FLAC track directly from your computer.</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">3</span> Watch the Cassette Spin</div>
+                <p class="guide-step-desc">The retro cassette reels spin in real time and the visualizer syncs with the audio rhythm.</p>
+              </li>
+            </ul>
+            <div class="guide-quick-tip">
+              <strong>💡 Pro Sound Quality</strong>
+              SangeetPitara uses lossless PCM16 WebSockets + WebRTC Opus relay, bypassing microphone noise filters so music sounds rich and punchy.
+            </div>
+            <div class="guide-stepper-ctrls">
+              <button class="guide-btn-secondary" onclick="switchGuideTab('sec-join')">⬅ Previous</button>
+              <button class="guide-btn-primary" onclick="switchGuideTab('sec-chat')">Next: Chat & Voice ➔</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. CHAT & VOICE NOTES -->
+    <section id="sec-chat" class="guide-section">
+      <div class="guide-card">
+        <div class="guide-card-header">
+          <div class="guide-card-title">
+            <h2>💬 Room Chat, Reactions & Voice Notes</h2>
+            <p>React to beat drops, send instant messages, or drop quick voice clips.</p>
+          </div>
+          <span class="guide-badge">Topic 4 / 7</span>
+        </div>
+        <div class="guide-card-content">
+          <div class="guide-canvas-wrap">
+            <div class="guide-viewport">
+              <img src="/guide/img/04-chat-features.png" alt="SangeetPitara Chat and Voice Notes" />
+              <!-- Hotspot 1: Reaction Bar -->
+              <div class="guide-hotspot" style="top: 73%; left: 50%;" title="Quick Reactions">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">1</div>
+              </div>
+              <div class="guide-callout" style="top: 66%; left: 53%;">One-Tap Reactions</div>
+
+              <!-- Hotspot 2: Message Input -->
+              <div class="guide-hotspot" style="top: 81%; left: 45%;" title="Type a message">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">2</div>
+              </div>
+              <div class="guide-callout" style="top: 76%; left: 48%;">Text & Emojis</div>
+
+              <!-- Hotspot 3: Voice Note Mic -->
+              <div class="guide-hotspot" style="top: 81%; left: 88%;" title="Voice Recording">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">3</div>
+              </div>
+              <div class="guide-callout" style="top: 75%; left: 68%;">Record Voice Note</div>
+            </div>
+          </div>
+          <div class="guide-sidebar">
+            <ul class="guide-step-list">
+              <li class="guide-step-item active">
+                <div class="guide-step-head"><span class="num">1</span> Quick Emoji Reactions</div>
+                <p class="guide-step-desc">Tap ❤️, 🔥, 👏, or 🎧 to float animated reaction bubbles over the room in real time.</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">2</span> Send Real-time Text Messages</div>
+                <p class="guide-step-desc">Chat with everyone without interrupting music playback.</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">3</span> Record Voice Notes</div>
+                <p class="guide-step-desc">Hold or tap the mic button to record and send high-fidelity voice notes directly into the chat.</p>
+              </li>
+            </ul>
+            <div class="guide-quick-tip">
+              <strong>💡 Reply Directly</strong>
+              You can swipe or click on any chat message to quote and reply directly to that member.
+            </div>
+            <div class="guide-stepper-ctrls">
+              <button class="guide-btn-secondary" onclick="switchGuideTab('sec-share')">⬅ Previous</button>
+              <button class="guide-btn-primary" onclick="switchGuideTab('sec-people')">Next: People & Invites ➔</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. PEOPLE & INVITES -->
+    <section id="sec-people" class="guide-section">
+      <div class="guide-card">
+        <div class="guide-card-header">
+          <div class="guide-card-title">
+            <h2>👥 People & Room Invites</h2>
+            <p>See who is listening, manage participant roles, and copy invite links.</p>
+          </div>
+          <span class="guide-badge">Topic 5 / 7</span>
+        </div>
+        <div class="guide-card-content">
+          <div class="guide-canvas-wrap">
+            <div class="guide-viewport">
+              <img src="/guide/img/05-people-features.png" alt="SangeetPitara People Tab" />
+              <!-- Hotspot 1: Members List -->
+              <div class="guide-hotspot" style="top: 36%; left: 35%;" title="Participants List">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">1</div>
+              </div>
+              <div class="guide-callout" style="top: 29%; left: 37%;">Active Listeners & Host</div>
+
+              <!-- Hotspot 2: Invite Code -->
+              <div class="guide-hotspot" style="top: 36%; left: 62%;" title="Room Code & Copy Link">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">2</div>
+              </div>
+              <div class="guide-callout" style="top: 29%; left: 64%;">Copy Invite Link</div>
+            </div>
+          </div>
+          <div class="guide-sidebar">
+            <ul class="guide-step-list">
+              <li class="guide-step-item active">
+                <div class="guide-step-head"><span class="num">1</span> Live Member Roster</div>
+                <p class="guide-step-desc">View everyone connected. Distinct badge colors distinguish the Host, Co-hosts, and Listeners.</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">2</span> One-Click Share</div>
+                <p class="guide-step-desc">Click "Copy link" to instantly copy the shareable room URL to your clipboard and send to your friends.</p>
+              </li>
+            </ul>
+            <div class="guide-quick-tip">
+              <strong>💡 Co-Host Controls</strong>
+              Hosts can promote any listener to Co-host to allow them to manage music and moderate the room.
+            </div>
+            <div class="guide-stepper-ctrls">
+              <button class="guide-btn-secondary" onclick="switchGuideTab('sec-chat')">⬅ Previous</button>
+              <button class="guide-btn-primary" onclick="switchGuideTab('sec-health')">Next: Health Diagnostics ➔</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. HEALTH DIAGNOSTICS -->
+    <section id="sec-health" class="guide-section">
+      <div class="guide-card">
+        <div class="guide-card-header">
+          <div class="guide-card-title">
+            <h2>🩺 Health & Stream Diagnostics</h2>
+            <p>Monitor real-time network stability, audio packets, and latency.</p>
+          </div>
+          <span class="guide-badge">Topic 6 / 7</span>
+        </div>
+        <div class="guide-card-content">
+          <div class="guide-canvas-wrap">
+            <div class="guide-viewport">
+              <img src="/guide/img/06-health-diagnostics.png" alt="SangeetPitara Health Diagnostics" />
+              <!-- Hotspot 1: LIVE Badge -->
+              <div class="guide-hotspot" style="top: 7%; left: 86%;" title="Connection Status">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">1</div>
+              </div>
+              <div class="guide-callout" style="top: 12%; left: 74%;">Live Connection Status</div>
+
+              <!-- Hotspot 2: Stream Health Telemetry -->
+              <div class="guide-hotspot" style="top: 45%; left: 50%;" title="Telemetry Panel">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">2</div>
+              </div>
+              <div class="guide-callout" style="top: 38%; left: 52%;">Audio Stream Metrics</div>
+
+              <!-- Hotspot 3: Export Diagnostics -->
+              <div class="guide-hotspot" style="top: 72%; left: 50%;" title="Save Diagnostics">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">3</div>
+              </div>
+              <div class="guide-callout" style="top: 66%; left: 52%;">Export Debug Log</div>
+            </div>
+          </div>
+          <div class="guide-sidebar">
+            <ul class="guide-step-list">
+              <li class="guide-step-item active">
+                <div class="guide-step-head"><span class="num">1</span> Live Connection Indicator</div>
+                <p class="guide-step-desc">Green dot indicates connected status. Automatically switches to yellow/red if network drops.</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">2</span> Stream Quality Metrics</div>
+                <p class="guide-step-desc">Inspect jitter buffer duration, packet loss rates, and audio continuity in real time.</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">3</span> Save Diagnostics</div>
+                <p class="guide-step-desc">Download an anonymous telemetry JSON log to easily report connection issues.</p>
+              </li>
+            </ul>
+            <div class="guide-quick-tip">
+              <strong>💡 Auto Recovery</strong>
+              SangeetPitara automatically re-syncs and buffers jitter if Wi-Fi fluctuates, keeping music playback stutter-free.
+            </div>
+            <div class="guide-stepper-ctrls">
+              <button class="guide-btn-secondary" onclick="switchGuideTab('sec-people')">⬅ Previous</button>
+              <button class="guide-btn-primary" onclick="switchGuideTab('sec-themes')">Next: Themes ➔</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. THEMES & PERSONALIZATION -->
+    <section id="sec-themes" class="guide-section">
+      <div class="guide-card">
+        <div class="guide-card-header">
+          <div class="guide-card-title">
+            <h2>🎨 Themes & Personalization</h2>
+            <p>Customize the look and feel with 5 distinct studio-crafted themes.</p>
+          </div>
+          <span class="guide-badge">Topic 7 / 7</span>
+        </div>
+        <div class="guide-card-content">
+          <div class="guide-canvas-wrap">
+            <div class="guide-viewport">
+              <img src="/guide/img/07-theme-selection.png" alt="SangeetPitara Theme Selector" />
+              <!-- Hotspot 1: Theme Dropdown -->
+              <div class="guide-hotspot" style="top: 7%; left: 93%;" title="Theme Selector">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">1</div>
+              </div>
+              <div class="guide-callout" style="top: 13%; left: 74%;">Topbar Theme Dropdown</div>
+
+              <!-- Hotspot 2: Theme Options -->
+              <div class="guide-hotspot" style="top: 18%; left: 93%;" title="5 Themes">
+                <div class="guide-hotspot-pulse"></div>
+                <div class="guide-hotspot-pin">2</div>
+              </div>
+              <div class="guide-callout" style="top: 24%; left: 68%;">Dark, Light, Forest, Brass, Rose</div>
+            </div>
+          </div>
+          <div class="guide-sidebar">
+            <ul class="guide-step-list">
+              <li class="guide-step-item active">
+                <div class="guide-step-head"><span class="num">1</span> Located in the Topbar</div>
+                <p class="guide-step-desc">Click the Theme picker at the top right of your room anytime.</p>
+              </li>
+              <li class="guide-step-item">
+                <div class="guide-step-head"><span class="num">2</span> 5 Beautiful Themes</div>
+                <p class="guide-step-desc">
+                  • <strong>Dark:</strong> Sleek onyx studio look<br/>
+                  • <strong>Light:</strong> Clean parchment console<br/>
+                  • <strong>Forest:</strong> Deep moss and evergreen<br/>
+                  • <strong>Brass:</strong> Warm vintage analog gold<br/>
+                  • <strong>Rose:</strong> Soft velvet acoustic tones
+                </p>
+              </li>
+            </ul>
+            <div class="guide-quick-tip">
+              <strong>💡 Black Tab Header</strong>
+              The room tabs (Room, Chat, People, Health) maintain a high-contrast black background across all themes for effortless readability!
+            </div>
+            <div class="guide-stepper-ctrls">
+              <button class="guide-btn-secondary" onclick="switchGuideTab('sec-health')">⬅ Previous</button>
+              <a href="/" class="guide-btn-primary">Ready to Play? Open App ➔</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="guide-footer-info">
+    <p>SangeetPitara — Listen together in sync with ultra-low latency.</p>
+    <p><a href="/">Home</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></p>
+  </footer>
+
+  <script>
+    function switchGuideTab(targetId) {
+      document.querySelectorAll('.guide-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.target === targetId);
+      });
+      document.querySelectorAll('.guide-section').forEach(sec => {
+        sec.classList.toggle('active', sec.id === targetId);
+      });
+      window.scrollTo({ top: 120, behavior: 'smooth' });
+    }
+
+    document.getElementById('guideTabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('.guide-tab-btn');
+      if (!btn) return;
+      switchGuideTab(btn.dataset.target);
+    });
+  </script>
+</body>
+</html>
