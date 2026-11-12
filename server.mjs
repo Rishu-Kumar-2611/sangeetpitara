@@ -241,6 +241,8 @@ const mimeTypes = {
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
   '.xml': 'application/xml; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.zip': 'application/zip',
 };
 
 const securityHeaders = {
@@ -272,7 +274,8 @@ function isPublicFile(name) {
   return publicFiles.has(name)
     || /^fonts\/[a-zA-Z0-9-]+\.(woff2|txt)$/.test(name)
     || /^branding\/sangeetpitara\/\d{2}-[a-z-]+\.svg$/.test(name)
-    || /^guide\/img\/[a-zA-Z0-9_-]+\.(png|jpg|jpeg|svg|webp)$/.test(name);
+    || /^guide\/img\/[a-zA-Z0-9_-]+\.(png|jpg|jpeg|svg|webp)$/.test(name)
+    || /^guide\/[a-zA-Z0-9_-]+\.(zip|md)$/.test(name);
 }
 
 const rateLimit = new Map();
@@ -1879,7 +1882,7 @@ const server = http.createServer(async (req, res) => {
     res.end('Forbidden');
     return;
   }
-  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.xml', '.woff2']);
+  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.xml', '.woff2', '.zip', '.md']);
   if (!allowedExts.has(extname(filePath))) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not found');
