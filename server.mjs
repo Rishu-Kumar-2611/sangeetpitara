@@ -242,6 +242,7 @@ const mimeTypes = {
   '.txt': 'text/plain; charset=utf-8',
   '.xml': 'application/xml; charset=utf-8',
   '.md': 'text/markdown; charset=utf-8',
+  '.pdf': 'application/pdf',
   '.zip': 'application/zip',
 };
 
@@ -262,7 +263,7 @@ const securityHeaders = {
 // Only client assets belong to the public HTTP surface. Backend modules,
 // audit evidence, tests and future repository files are private by default.
 const publicFiles = new Set([
-  'chat.css', 'index.html', 'privacy.html', 'terms.html', 'guide.html',
+  'chat.css', 'index.html', 'privacy.html', 'terms.html', 'guide.html', 'guide-pdf.html',
   'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'themes.css', 'themes.js',
   'chat-ui.mjs', 'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
   'room-palette.js', 'media-relay.mjs', 'relay-pcm.js', 'relay-opus.mjs', 'stream-health.mjs', 'audio-diagnostics.mjs',
@@ -275,7 +276,7 @@ function isPublicFile(name) {
     || /^fonts\/[a-zA-Z0-9-]+\.(woff2|txt)$/.test(name)
     || /^branding\/sangeetpitara\/\d{2}-[a-z-]+\.svg$/.test(name)
     || /^guide\/img\/[a-zA-Z0-9_-]+\.(png|jpg|jpeg|svg|webp)$/.test(name)
-    || /^guide\/[a-zA-Z0-9_-]+\.(zip|md)$/.test(name);
+    || /^guide\/[a-zA-Z0-9_-]+\.(zip|md|pdf)$/.test(name);
 }
 
 const rateLimit = new Map();
@@ -1882,7 +1883,7 @@ const server = http.createServer(async (req, res) => {
     res.end('Forbidden');
     return;
   }
-  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.xml', '.woff2', '.zip', '.md']);
+  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.xml', '.woff2', '.zip', '.md', '.pdf']);
   if (!allowedExts.has(extname(filePath))) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not found');

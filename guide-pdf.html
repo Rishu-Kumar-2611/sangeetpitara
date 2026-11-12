@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SangeetPitara — Visual User Manual</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 12mm 14mm 14mm 14mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #1A1F26;
+      background: #FFFFFF;
+      margin: 0;
+      padding: 0;
+      font-size: 10pt;
+      line-height: 1.45;
+    }
+
+    /* Cover / Top Header Banner */
+    .pdf-header {
+      background: #0E1218;
+      color: #FFFFFF;
+      padding: 20px 24px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-left: 6px solid #E85D04;
+    }
+
+    .pdf-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .pdf-brand h1 {
+      margin: 0;
+      font-size: 19pt;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      color: #FFFFFF;
+    }
+
+    .pdf-badge {
+      background: #E85D04;
+      color: #FFFFFF;
+      font-size: 7.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 3px 8px;
+      border-radius: 999px;
+      display: inline-block;
+      margin-top: 4px;
+    }
+
+    .pdf-meta {
+      text-align: right;
+      font-size: 8.5pt;
+      color: #9CA3AF;
+    }
+
+    .pdf-meta strong {
+      color: #F3F4F6;
+      display: block;
+      font-size: 9.5pt;
+    }
+
+    /* Sections */
+    .pdf-section {
+      margin-bottom: 22px;
+      page-break-inside: avoid;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+
+    .sec-title {
+      font-size: 13.5pt;
+      font-weight: 700;
+      color: #0F172A;
+      margin: 0 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #E2E8F0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sec-title .num-badge {
+      background: #E85D04;
+      color: #FFFFFF;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8pt;
+      font-weight: 800;
+    }
+
+    .sec-intro {
+      font-size: 9.5pt;
+      color: #475569;
+      margin: 0 0 12px;
+    }
+
+    /* Visual Image Card */
+    .pdf-card {
+      background: #F8FAFC;
+      border: 1px solid #CBD5E1;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .pdf-img-wrap {
+      background: #000000;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #334155;
+      text-align: center;
+    }
+
+    .pdf-img-wrap img,
+    .pdf-img-wrap svg {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    /* Grid for Mobile Images */
+    .mobile-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .mobile-col {
+      background: #0E1217;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+    }
+
+    .mobile-col img {
+      max-height: 280px;
+      width: auto;
+      border-radius: 6px;
+      display: block;
+      margin: 0 auto 6px;
+    }
+
+    .mobile-label {
+      font-size: 8pt;
+      font-weight: 700;
+      color: #F8FAFC;
+      background: #1E293B;
+      padding: 4px 8px;
+      border-radius: 4px;
+      display: inline-block;
+    }
+
+    /* Step Instructions List */
+    .pdf-steps {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      margin: 10px 0;
+    }
+
+    .pdf-step-item {
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-left: 3px solid #E85D04;
+      border-radius: 6px;
+      padding: 8px 12px;
+    }
+
+    .pdf-step-item.alert {
+      border-left-color: #DC2626;
+      background: #FEF2F2;
+    }
+
+    .pdf-step-title {
+      font-weight: 700;
+      font-size: 9pt;
+      color: #0F172A;
+      margin-bottom: 2px;
+    }
+
+    .pdf-step-desc {
+      font-size: 8.5pt;
+      color: #475569;
+      margin: 0;
+    }
+
+    /* Compact Features 3-Card Grid */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .feature-box {
+      background: #F8FAFC;
+      border: 1px solid #CBD5E1;
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 8pt;
+    }
+
+    .feature-box img {
+      width: 100%;
+      height: 100px;
+      object-fit: cover;
+      object-position: top;
+      border-bottom: 1px solid #E2E8F0;
+      background: #000;
+    }
+
+    .feature-content {
+      padding: 10px;
+    }
+
+    .feature-content h4 {
+      margin: 0 0 4px;
+      font-size: 9pt;
+      color: #0F172A;
+    }
+
+    .feature-content p {
+      margin: 0;
+      color: #64748B;
+      font-size: 7.8pt;
+      line-height: 1.35;
+    }
+
+    .pdf-footer {
+      border-top: 1px solid #E2E8F0;
+      padding-top: 10px;
+      margin-top: 20px;
+      display: flex;
+      justify-content: space-between;
+      color: #94A3B8;
+      font-size: 8pt;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <div class="pdf-header">
+    <div class="pdf-brand">
+      <div>
+        <h1>SangeetPitara</h1>
+        <span class="pdf-badge">Official User Manual</span>
+      </div>
+    </div>
+    <div class="pdf-meta">
+      <strong>Synchronized Audio Room Guide</strong>
+      <span>Version 1.1.24 · Desktop & Mobile</span>
+    </div>
+  </div>
+
+  <!-- SECTION 1: CREATE A ROOM -->
+  <div class="pdf-section">
+    <h2 class="sec-title"><span class="num-badge">1</span> How to Create a Room (Desktop & Mobile)</h2>
+    <p class="sec-intro">Start a new listening session as the Host in just two clicks. No registration or account required.</p>
+    
+    <div class="pdf-card">
+      <div class="pdf-img-wrap" style="max-height: 210px; overflow: hidden;">
+        <img src="guide/img/01-create-room.png" alt="Room Creation Interface" style="max-height: 210px;" />
+      </div>
+      <div class="pdf-steps">
+        <div class="pdf-step-item">
+          <div class="pdf-step-title">1. Enter Your Display Name</div>
+          <p class="pdf-step-desc">Type your name (e.g., "Sam") in the first field so other listeners know who is hosting.</p>
+        </div>
+        <div class="pdf-step-item">
+          <div class="pdf-step-title">2. Enter a Room Name</div>
+          <p class="pdf-step-desc">Name the session (e.g., "Music Lounge" or "Study Beats").</p>
+        </div>
+        <div class="pdf-step-item">
+          <div class="pdf-step-title">3. Click "+ Create private room"</div>
+          <p class="pdf-step-desc">Your private room is generated instantly with an 8-character code and you enter the room as Host.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 2: JOIN A ROOM -->
+  <div class="pdf-section">
+    <h2 class="sec-title"><span class="num-badge">2</span> How to Join a Room (Desktop & Mobile)</h2>
+    <p class="sec-intro">Connect to a live listening room using an 8-character code or direct invite link.</p>
+    
+    <div class="pdf-card">
+      <div class="pdf-img-wrap" style="max-height: 200px; overflow: hidden;">
+        <img src="guide/img/02-join-room.png" alt="Room Joining Interface" style="max-height: 200px;" />
+      </div>
+      <div class="pdf-steps">
+        <div class="pdf-step-item">
+          <div class="pdf-step-title">1. Enter the 8-Character Room Code</div>
+          <p class="pdf-step-desc">Paste the code (e.g. <code>3HLYQKQT</code>) sent by your friend. Spaces and hyphens are automatically cleaned.</p>
+        </div>
+        <div class="pdf-step-item">
+          <div class="pdf-step-title">2. Enter Your Display Name & Click "Enter room"</div>
+          <p class="pdf-step-desc">Type your nickname and click <strong>Enter room</strong> to immediately sync into the live audio stream.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE BREAK FOR AUDIO SHARING IN-DEPTH -->
+  <div class="page-break"></div>
+
+  <!-- SECTION 3A: AUDIO SHARING - DESKTOP WINDOWS -->
+  <div class="pdf-section">
+    <h2 class="sec-title"><span class="num-badge">3A</span> How to Share Audio — Desktop Browser (Windows Chrome / Edge)</h2>
+    <p class="sec-intro">When sharing sound from YouTube, Spotify Web, SoundCloud, or desktop apps on a Windows PC:</p>
+
+    <div class="pdf-card">
+      <div class="pdf-img-wrap">
+        <img src="guide/img/03b-desktop-share-dialog.svg" alt="Windows Chrome Audio Share Dialog with Arrows" />
+      </div>
+
+      <div class="pdf-steps" style="margin-top: 10px;">
+        <div class="pdf-step-item alert">
+          <div class="pdf-step-title" style="color: #DC2626;">⚠️ STEP 1: TICK "Also share tab audio" (MANDATORY)</div>
+          <p class="pdf-step-desc"><strong>CRITICAL:</strong> In the bottom-left corner of the Chrome dialog, you <strong>must check</strong> the box for <em>"Also share tab audio"</em> (or <em>"Share system audio"</em>). If unchecked, Chrome only streams silent video without sound!</p>
+        </div>
+        <div class="pdf-step-item">
+          <div class="pdf-step-title">STEP 2: Select the Music Tab or Screen</div>
+          <p class="pdf-step-desc">Under <strong>Chrome Tab</strong>, pick YouTube or Spotify. Or switch to <strong>Entire Screen</strong> if playing from a desktop player.</p>
+        </div>
+        <div class="pdf-step-item">
+          <div class="pdf-step-title">STEP 3: Click "Share"</div>
+          <p class="pdf-step-desc">Click the blue <strong>Share</strong> button. The cassette reels spin and high-fidelity sound streams live to everyone.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE BREAK FOR MOBILE PHONE -->
+  <div class="page-break"></div>
+
+  <!-- SECTION 3B: AUDIO SHARING - MOBILE PHONE -->
+  <div class="pdf-section">
+    <h2 class="sec-title"><span class="num-badge">3B</span> How to Share Audio — Mobile Phone (Android App)</h2>
+    <p class="sec-intro">Mobile web browsers cannot capture background audio from other apps. To stream phone audio, use the <strong>SangeetPitara Android App</strong>:</p>
+
+    <div class="pdf-card">
+      <div class="mobile-grid">
+        <div class="mobile-col">
+          <img src="guide/img/03c-mobile-real-room.jpg" alt="Step 1: Real Mobile App Screen" />
+          <span class="mobile-label">Step 1: Tap "Share device audio"</span>
+        </div>
+        <div class="mobile-col">
+          <img src="guide/img/03d-mobile-real-dialog.jpg" alt="Step 2: Real Android System Permission" />
+          <span class="mobile-label">Step 2: Scope = "Entire screen" ➔ Tap "Start"</span>
+        </div>
+      </div>
+
+      <div class="pdf-steps">
+        <div class="pdf-step-item">
+          <div class="pdf-step-title">1. Tap the Orange "Share device audio" Button</div>
+          <p class="pdf-step-desc">Inside your room in the Android app, tap <strong>Share device audio</strong>.</p>
+        </div>
+        <div class="pdf-step-item alert">
+          <div class="pdf-step-title" style="color: #DC2626;">⚠️ 2. Set Scope to "Entire screen" (CRITICAL)</div>
+          <p class="pdf-step-desc">When Android asks <em>"Start recording or casting with SangeetPitara?"</em>, tap the <strong>Scope</strong> selector and choose <strong>Entire screen</strong> (not a single app) so background music is captured!</p>
+        </div>
+        <div class="pdf-step-item">
+          <div class="pdf-step-title">3. Tap the Blue "Start" Button & Switch to Your Music App</div>
+          <p class="pdf-step-desc">Tap <strong>Start</strong>. Now open Spotify, YouTube Music, or any media app. Everyone in the room hears your music in sync!</p>
+        </div>
+        <div class="pdf-step-item">
+          <div class="pdf-step-title">💡 In a Phone Browser without the App?</div>
+          <p class="pdf-step-desc">Tap <strong>"Share audio file"</strong> in your phone browser to stream local MP3/WAV/FLAC files from phone storage without needing any app!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 4: ESSENTIAL FEATURES -->
+  <div class="pdf-section">
+    <h2 class="sec-title"><span class="num-badge">4</span> Essential Room Features (Chat, Health, Themes)</h2>
+    <p class="sec-intro">Everyday tools available in one click inside every room:</p>
+
+    <div class="features-grid">
+      <div class="feature-box">
+        <img src="guide/img/04-chat-features.png" alt="Chat Interface" />
+        <div class="feature-content">
+          <h4>💬 Chat & Voice Notes</h4>
+          <p>• <strong>Reactions:</strong> Tap ❤️, 🔥, 👏, 🎧 for floating emojis.<br/>• <strong>Voice Notes:</strong> Hold the microphone button to send high-fidelity voice notes.</p>
+        </div>
+      </div>
+
+      <div class="feature-box">
+        <img src="guide/img/06-health-diagnostics.png" alt="Health Diagnostics" />
+        <div class="feature-content">
+          <h4>🩺 Health Diagnostics</h4>
+          <p>• <strong>LIVE Pill:</strong> Real-time connection status.<br/>• <strong>Stream Health:</strong> Jitter buffer and packet loss metrics.<br/>• <strong>Export:</strong> Download telemetry debug log.</p>
+        </div>
+      </div>
+
+      <div class="feature-box">
+        <img src="guide/img/07-theme-selection.png" alt="Theme Selector" />
+        <div class="feature-content">
+          <h4>🎨 5 Studio Themes</h4>
+          <p>• <strong>5 Themes:</strong> Dark, Light, Forest, Brass, Rose.<br/>• <strong>Topbar Picker:</strong> Instant switch.<br/>• <strong>Black Header Tabs:</strong> High contrast on all themes.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PDF Footer -->
+  <div class="pdf-footer">
+    <span>SangeetPitara — Ultra-low latency synchronized audio</span>
+    <span>https://sangeet-pitaraa.onrender.com</span>
+  </div>
+
+</body>
+</html>
