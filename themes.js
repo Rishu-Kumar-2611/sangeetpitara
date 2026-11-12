@@ -1,7 +1,7 @@
 (() => {
   const choices = [
-    ['dark', 'Console · Dark', '#0c0d0f'],
-    ['light', 'Console · Light', '#f5f5f3'],
+    ['dark', 'Dark', '#0c0d0f'],
+    ['light', 'Light', '#f5f5f3'],
     ['forest', 'Forest', '#0b1713'],
     ['brass', 'Brass', '#0e0b0a'],
     ['rose', 'Rose', '#1c1018'],
@@ -33,13 +33,16 @@
     const homePosition = document.createComment('Theme control home position');
     bar.before(homePosition);
     const room = document.getElementById('room-view');
-    const tabs = document.getElementById('room-tabs');
-    if (room && tabs) {
+    if (room) {
       const place = () => {
         const inRoom = !room.classList.contains('hidden');
         bar.classList.toggle('room-theme-bar', inRoom);
-        if (inRoom && tabs.nextElementSibling !== bar) tabs.after(bar);
-        else if (!inRoom && homePosition.nextSibling !== bar) homePosition.after(bar);
+        const actions = room.querySelector('.topbar-actions');
+        if (inRoom && actions) {
+          if (actions.firstElementChild !== bar) actions.prepend(bar);
+        } else if (!inRoom && homePosition.nextSibling !== bar) {
+          homePosition.after(bar);
+        }
       };
       new MutationObserver(place).observe(room, { attributes:true, attributeFilter:['class'] });
       place();

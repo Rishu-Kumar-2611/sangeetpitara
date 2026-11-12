@@ -1824,6 +1824,21 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(302, { Location: 'https://github.com/Rishu-Kumar-2611/sangeetpitara/releases/latest/download/SangeetPitara-Desktop-Windows.zip', 'Cache-Control': 'no-cache' });
     res.end(); return;
   }
+  // 301 Permanent Redirects for legacy/removed URLs to preserve SEO and direct Googlebot/visitors to homepage
+  const legacyRedirects = new Set([
+    '/about', '/about.html',
+    '/contact', '/contact.html',
+    '/home', '/index',
+    '/room', '/rooms',
+  ]);
+  if (legacyRedirects.has(requestPath.toLowerCase())) {
+    res.writeHead(301, {
+      Location: '/',
+      'Cache-Control': 'public, max-age=86400',
+    });
+    res.end();
+    return;
+  }
   if (requestPath === '/ads.txt') {
     const publisher = adsenseClient.replace(/^ca-/, '');
     if (!/^pub-\d+$/.test(publisher)) {

@@ -1124,7 +1124,19 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
   .nearby-card { display: block; }
 }
 /* Focused entry screens. Existing room/audio components remain mounted. */
-.landing-view[data-entry-screen] { display: flex; flex-direction: column; align-items: stretch; max-width: 720px; margin-inline: auto; min-height: calc(100vh - 140px); gap: 24px; }
+.landing-view[data-entry-screen] { display: flex; flex-direction: column; align-items: stretch; max-width: 1350px; margin-inline: auto; min-height: auto; gap: 20px; }
+.landing-view[data-entry-screen="create"],
+.landing-view[data-entry-screen="join"] {
+  width: min(85vw, 1350px);
+  max-width: 100%;
+  min-height: auto;
+}
+.landing-view[data-entry-screen="create"] .entry-card,
+.landing-view[data-entry-screen="join"] .entry-card {
+  width: 100%;
+  padding: clamp(28px, 4vw, 44px);
+  border-radius: 20px;
+}
 .landing-view[data-entry-screen="home"] .landing-copy h1 { font-size: clamp(36px,6vw,64px); }
 .landing-view[data-entry-screen="home"] .browser-first-panel { display: none; }
 .landing-view[data-entry-screen="home"] .landing-copy .brand-mark { margin-bottom: 30px; }
@@ -1182,3 +1194,5 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
 .room-view[data-room-tab="listen"] .room-sidebar,
 .room-view[data-room-tab="listen"] .lower-grid { display:none; }
 .room-view[data-room-tab="chat"] .now-playing { display:none; }
+
+
