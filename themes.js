@@ -21,6 +21,13 @@
   apply(selected);
   const attach = () => {
     const bar = document.createElement('div'); bar.className = 'theme-bar';
+    const howToUse = document.createElement('a');
+    howToUse.href = '/guide.html';
+    howToUse.target = '_blank';
+    howToUse.rel = 'noopener';
+    howToUse.className = 'how-to-use-btn';
+    howToUse.title = 'Open User Manual in a new tab';
+    howToUse.innerHTML = '<span class="how-to-use-icon" aria-hidden="true">📖</span><span>How to Use</span>';
     const label = document.createElement('label'); label.textContent = 'Theme ';
     const picker = document.createElement('select'); picker.id = 'theme-picker'; picker.setAttribute('aria-label','Theme');
     for (const [key,name] of choices) { const option = document.createElement('option'); option.value = key; option.textContent = name; picker.append(option); }
@@ -29,7 +36,9 @@
       apply(picker.value);
       if (rememberTheme) try { localStorage.setItem('sangeetpitara-theme',picker.value); } catch {}
     });
-    label.append(picker); bar.append(label); document.body.prepend(bar);
+    label.append(picker);
+    bar.append(howToUse, label);
+    document.body.prepend(bar);
     const homePosition = document.createComment('Theme control home position');
     bar.before(homePosition);
     const room = document.getElementById('room-view');

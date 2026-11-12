@@ -3,37 +3,37 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SangeetPitara — User Guide & Visual Walkthrough</title>
-  <meta name="description" content="Complete visual user manual for SangeetPitara: How to create rooms, join, share audio on Desktop and Mobile with real interface dialogs and arrows, and essential room features." />
+  <title>SangeetPitara — User Manual & Knowledge Base</title>
+  <meta name="description" content="Explore SangeetPitara interactive guides: creating rooms, joining, sharing audio on Desktop and Mobile with real interface dialogs and arrows, and essential room features." />
   <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261110-chat-review1" />
   <link rel="stylesheet" href="/styles.css?v=20261110-chat-review1" />
   <link rel="stylesheet" href="/themes.css?v=20261112-tabs-contrast" />
   <style>
     :root {
-      --guide-accent: #E85D04;
-      --guide-accent-glow: rgba(232, 93, 4, 0.4);
-      --guide-dark-bg: #090B0E;
-      --guide-card-bg: #13171E;
-      --guide-border: #232A35;
-      --guide-text: #F3F4F6;
-      --guide-muted: #9CA3AF;
-      --guide-hotspot: #FF5400;
-      --guide-success: #10B981;
+      --sp-accent: #E85D04;
+      --sp-accent-glow: rgba(232, 93, 4, 0.35);
+      --sp-bg: #0A0D12;
+      --sp-card-bg: #12161E;
+      --sp-card-hover: #171D27;
+      --sp-border: #232B37;
+      --sp-text: #F8FAFC;
+      --sp-text-muted: #94A3B8;
+      --sp-link: #38BDF8;
     }
 
-    body.guide-body {
-      background: var(--guide-dark-bg);
-      color: var(--guide-text);
+    body.guide-page {
+      background: var(--sp-bg);
+      color: var(--sp-text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       margin: 0;
       padding: 0;
-      line-height: 1.55;
+      line-height: 1.5;
     }
 
-    /* Sticky Header */
+    /* Sticky Navigation Header */
     .guide-header {
-      background: #0D1015;
-      border-bottom: 1px solid var(--guide-border);
+      background: #0E1218;
+      border-bottom: 1px solid var(--sp-border);
       position: sticky;
       top: 0;
       z-index: 100;
@@ -41,9 +41,9 @@
     }
 
     .guide-header-inner {
-      max-width: 1280px;
+      max-width: 1240px;
       margin: 0 auto;
-      padding: 12px 24px;
+      padding: 14px 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -57,17 +57,17 @@
       text-decoration: none;
       color: #FFFFFF;
       font-weight: 700;
-      font-size: 1.15rem;
+      font-size: 1.2rem;
     }
 
     .guide-badge {
       font-size: 0.72rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      padding: 4px 10px;
+      padding: 3px 10px;
       border-radius: 999px;
       background: rgba(232, 93, 4, 0.15);
-      border: 1px solid var(--guide-accent);
+      border: 1px solid var(--sp-accent);
       color: #FF9E66;
       font-weight: 600;
     }
@@ -75,14 +75,14 @@
     .guide-header-actions {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
 
-    .guide-btn-primary {
-      background: var(--guide-accent);
+    .btn-action-primary {
+      background: var(--sp-accent);
       color: #FFFFFF;
       border: none;
-      padding: 8px 18px;
+      padding: 8px 16px;
       border-radius: 8px;
       font-weight: 600;
       font-size: 0.88rem;
@@ -91,928 +91,677 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      transition: background 0.2s ease, transform 0.1s ease;
+      transition: all 0.15s ease;
     }
 
-    .guide-btn-primary:hover {
+    .btn-action-primary:hover {
       background: #FF6A13;
       transform: translateY(-1px);
     }
 
-    .guide-btn-secondary {
-      background: #1C222B;
-      color: var(--guide-text);
-      border: 1px solid var(--guide-border);
-      padding: 8px 16px;
+    .btn-action-secondary {
+      background: #171C25;
+      color: var(--sp-text);
+      border: 1px solid var(--sp-border);
+      padding: 8px 14px;
       border-radius: 8px;
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       font-weight: 600;
       cursor: pointer;
       text-decoration: none;
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      transition: background 0.2s ease;
+      transition: all 0.15s ease;
     }
 
-    .guide-btn-secondary:hover {
-      background: #27303D;
+    .btn-action-secondary:hover {
+      background: #232B38;
+      border-color: #384556;
     }
 
-    /* Hero Section */
-    .guide-hero {
-      text-align: center;
-      padding: 40px 20px 20px;
-      max-width: 900px;
+    /* Main Container */
+    .guide-container {
+      max-width: 1240px;
       margin: 0 auto;
+      padding: 40px 24px 80px;
     }
 
-    .guide-hero h1 {
-      font-size: 2.35rem;
-      margin: 0 0 12px;
+    /* Group Sections (Like the GitHub learning cards layout) */
+    .guide-group {
+      margin-bottom: 52px;
+    }
+
+    .guide-group-header {
+      margin-bottom: 22px;
+    }
+
+    .guide-group-title {
+      font-size: 1.75rem;
       font-weight: 800;
-      letter-spacing: -0.02em;
-      background: linear-gradient(135deg, #FFFFFF 30%, #FF9E66 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .guide-hero p {
-      color: var(--guide-muted);
-      font-size: 1.05rem;
-      margin: 0 auto 24px;
-      max-width: 720px;
-    }
-
-    /* Navigation Tabs */
-    .guide-nav-wrap {
-      max-width: 1280px;
-      margin: 0 auto 28px;
-      padding: 0 20px;
-    }
-
-    .guide-tabs {
-      display: flex;
-      gap: 8px;
-      overflow-x: auto;
-      padding: 6px;
-      background: #11141A;
-      border: 1px solid var(--guide-border);
-      border-radius: 12px;
-      scrollbar-width: thin;
-    }
-
-    .guide-tab-btn {
-      background: transparent;
-      color: #9CA3AF;
-      border: none;
-      padding: 10px 18px;
-      border-radius: 8px;
-      font-size: 0.92rem;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.2s ease;
-    }
-
-    .guide-tab-btn:hover {
       color: #FFFFFF;
-      background: #1C222C;
-    }
-
-    .guide-tab-btn.active {
-      background: var(--guide-accent);
-      color: #FFFFFF;
-      box-shadow: 0 2px 10px var(--guide-accent-glow);
-    }
-
-    .guide-tab-btn .tab-num {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.2);
-      font-size: 0.75rem;
-    }
-
-    /* Content Stage */
-    .guide-main {
-      max-width: 1280px;
-      margin: 0 auto 80px;
-      padding: 0 20px;
-    }
-
-    .guide-section {
-      display: none;
-      animation: fadeIn 0.25s ease;
-    }
-
-    .guide-section.active {
-      display: block;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .guide-card {
-      background: var(--guide-card-bg);
-      border: 1px solid var(--guide-border);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
-    }
-
-    .guide-card-header {
-      padding: 24px 28px 18px;
-      border-bottom: 1px solid var(--guide-border);
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-    }
-
-    .guide-card-title h2 {
       margin: 0 0 6px;
-      font-size: 1.45rem;
-      color: #FFFFFF;
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      letter-spacing: -0.01em;
     }
 
-    .guide-card-title p {
+    .guide-group-sub {
+      color: var(--sp-text-muted);
+      font-size: 1rem;
       margin: 0;
-      color: var(--guide-muted);
-      font-size: 0.95rem;
     }
 
-    .guide-card-content {
+    /* 3-Column Card Grid */
+    .guide-card-grid {
       display: grid;
-      grid-template-columns: 1fr 340px;
-      gap: 0;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 22px;
     }
 
-    @media (max-width: 980px) {
-      .guide-card-content {
+    @media (max-width: 990px) {
+      .guide-card-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 640px) {
+      .guide-card-grid {
         grid-template-columns: 1fr;
       }
     }
 
-    /* Canvas Viewport */
-    .guide-canvas-wrap {
+    /* GitHub-styled Course/Guide Card */
+    .guide-topic-card {
+      background: var(--sp-card-bg);
+      border: 1px solid var(--sp-border);
+      border-radius: 12px;
       padding: 24px;
-      background: #0A0C10;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-    }
-
-    .guide-viewport {
-      position: relative;
-      width: 100%;
-      max-width: 860px;
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: 0 8px 28px rgba(0,0,0,0.7);
-      border: 1px solid #28303C;
-      background: #000;
-    }
-
-    .guide-viewport img,
-    .guide-viewport svg {
-      width: 100%;
-      height: auto;
-      display: block;
-      user-select: none;
-    }
-
-    /* Hotspot Markers */
-    .guide-hotspot {
-      position: absolute;
-      transform: translate(-50%, -50%);
-      width: 32px;
-      height: 32px;
-      cursor: pointer;
-      z-index: 10;
-    }
-
-    .guide-hotspot-pulse {
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      background: var(--guide-hotspot);
-      opacity: 0.7;
-      animation: pulseGlow 1.8s infinite;
-    }
-
-    .guide-hotspot-pin {
-      position: absolute;
-      inset: 4px;
-      background: #FF5400;
-      border: 2px solid #FFFFFF;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #FFFFFF;
-      font-size: 0.8rem;
-      font-weight: 800;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
-    }
-
-    @keyframes pulseGlow {
-      0% { transform: scale(1); opacity: 0.75; }
-      50% { transform: scale(1.7); opacity: 0; }
-      100% { transform: scale(1); opacity: 0; }
-    }
-
-    .guide-callout {
-      position: absolute;
-      background: rgba(18, 22, 28, 0.94);
-      border: 1px solid #E85D04;
-      border-radius: 8px;
-      padding: 6px 12px;
-      font-size: 0.8rem;
-      font-weight: 700;
-      color: #FFF;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.8);
-      pointer-events: none;
-      white-space: nowrap;
-      z-index: 9;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .guide-callout::before {
-      content: "➔";
-      color: #E85D04;
-      font-size: 0.9rem;
-    }
-
-    /* Sub-tabs inside Audio Section (Desktop vs Mobile) */
-    .guide-subtabs {
-      display: flex;
-      gap: 10px;
-      width: 100%;
-      max-width: 860px;
-      margin-bottom: 8px;
-    }
-
-    .guide-subtab-btn {
-      flex: 1;
-      padding: 10px 16px;
-      border-radius: 8px;
-      background: #171C24;
-      border: 1px solid #2B3442;
-      color: #9CA3AF;
-      font-weight: 700;
-      font-size: 0.88rem;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      transition: all 0.2s ease;
-    }
-
-    .guide-subtab-btn:hover {
-      background: #202733;
-      color: #FFF;
-    }
-
-    .guide-subtab-btn.active {
-      background: #232C3A;
-      border-color: var(--guide-accent);
-      color: #FFF;
-      box-shadow: inset 0 2px 0 var(--guide-accent);
-    }
-
-    /* Sidebar Steps */
-    .guide-sidebar {
-      padding: 24px;
-      background: #14171E;
-      border-left: 1px solid var(--guide-border);
       display: flex;
       flex-direction: column;
       justify-content: space-between;
+      min-height: 200px;
+      cursor: pointer;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      position: relative;
     }
 
-    .guide-step-list {
-      list-style: none;
-      padding: 0;
-      margin: 0 0 16px;
+    .guide-topic-card:hover {
+      background: var(--sp-card-hover);
+      border-color: #3D4859;
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .card-top {
+      margin-bottom: 20px;
+    }
+
+    .card-topic-title {
+      font-size: 1.22rem;
+      font-weight: 700;
+      color: #FFFFFF;
+      margin: 0 0 10px;
+      line-height: 1.35;
+    }
+
+    .card-topic-desc {
+      color: var(--sp-text-muted);
+      font-size: 0.92rem;
+      margin: 0;
+      line-height: 1.45;
+    }
+
+    .card-action-link {
+      color: var(--sp-link);
+      font-size: 0.94rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: gap 0.15s ease;
+    }
+
+    .guide-topic-card:hover .card-action-link {
+      color: #7DD3FC;
+      gap: 8px;
+    }
+
+    /* MODAL POP-UP (When a user clicks on any card) */
+    .guide-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.82);
+      backdrop-filter: blur(8px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.25s ease, visibility 0.25s ease;
+    }
+
+    .guide-modal-overlay.open {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .guide-modal-window {
+      background: #11151D;
+      border: 1px solid #2B3444;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 960px;
+      max-height: 90vh;
       display: flex;
       flex-direction: column;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
+      overflow: hidden;
+      transform: scale(0.96);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .guide-modal-overlay.open .guide-modal-window {
+      transform: scale(1);
+    }
+
+    /* Modal Header */
+    .modal-head {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--sp-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      background: #141922;
+    }
+
+    .modal-title-wrap {
+      display: flex;
+      align-items: center;
       gap: 12px;
     }
 
-    .guide-step-item {
-      padding: 12px 14px;
-      border-radius: 10px;
-      background: #1A1F28;
-      border: 1px solid #252D3A;
-      transition: all 0.2s ease;
+    .modal-title-wrap h2 {
+      margin: 0;
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #FFFFFF;
     }
 
-    .guide-step-item.highlight {
-      border-color: #E85D04;
-      background: #242A36;
+    .modal-tag {
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: rgba(232, 93, 4, 0.15);
+      border: 1px solid var(--sp-accent);
+      color: #FF9E66;
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
     }
 
-    .guide-step-head {
+    .modal-close-btn {
+      background: transparent;
+      border: none;
+      color: #94A3B8;
+      font-size: 1.5rem;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      cursor: pointer;
       display: flex;
       align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+
+    .modal-close-btn:hover {
+      background: #232B38;
+      color: #FFFFFF;
+    }
+
+    /* Modal Body */
+    .modal-body {
+      padding: 24px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .modal-visual-wrap {
+      background: #090B0E;
+      border: 1px solid #28313F;
+      border-radius: 12px;
+      overflow: hidden;
+      text-align: center;
+      padding: 12px;
+    }
+
+    .modal-visual-wrap img,
+    .modal-visual-wrap svg {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+      border-radius: 6px;
+    }
+
+    .modal-steps-list {
+      display: flex;
+      flex-direction: column;
       gap: 10px;
+    }
+
+    .modal-step-card {
+      background: #171C25;
+      border: 1px solid #27303E;
+      border-left: 4px solid var(--sp-accent);
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+
+    .modal-step-card.alert {
+      border-left-color: #EF4444;
+      background: rgba(239, 68, 68, 0.08);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
+    .step-card-head {
       font-weight: 700;
-      font-size: 0.9rem;
+      font-size: 0.96rem;
       color: #FFFFFF;
       margin-bottom: 4px;
     }
 
-    .guide-step-head .num {
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: var(--guide-accent);
-      color: #FFF;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.75rem;
-    }
-
-    .guide-step-desc {
-      color: var(--guide-muted);
-      font-size: 0.83rem;
+    .step-card-desc {
       margin: 0;
-      padding-left: 32px;
-    }
-
-    .guide-quick-tip {
-      background: rgba(232, 93, 4, 0.1);
-      border: 1px solid rgba(232, 93, 4, 0.3);
-      padding: 12px 14px;
-      border-radius: 8px;
-      font-size: 0.82rem;
-      color: #FDBA74;
-      margin-top: 10px;
-    }
-
-    .guide-quick-tip strong {
-      color: #FFFFFF;
-      display: block;
-      margin-bottom: 2px;
-    }
-
-    .guide-stepper-ctrls {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding-top: 16px;
-      border-top: 1px solid var(--guide-border);
-    }
-
-    /* Compact Features Grid for Chat, Health, Themes */
-    .guide-compact-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-      padding: 24px;
-      background: #0D1016;
-    }
-
-    @media (max-width: 900px) {
-      .guide-compact-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .compact-feature-card {
-      background: #171B23;
-      border: 1px solid #28303C;
-      border-radius: 12px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .compact-feature-card img {
-      width: 100%;
-      height: 180px;
-      object-fit: cover;
-      object-position: top;
-      border-bottom: 1px solid #252C38;
-      background: #000;
-    }
-
-    .compact-feature-body {
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-    }
-
-    .compact-feature-body h3 {
-      margin: 0 0 6px;
-      font-size: 1.1rem;
-      color: #FFFFFF;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .compact-feature-body p {
-      margin: 0 0 12px;
-      color: var(--guide-muted);
-      font-size: 0.84rem;
+      color: var(--sp-text-muted);
+      font-size: 0.88rem;
       line-height: 1.45;
     }
 
-    .compact-pill-list {
+    /* Modal Footer Navigation */
+    .modal-foot {
+      padding: 14px 24px;
+      border-top: 1px solid var(--sp-border);
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: auto;
-    }
-
-    .compact-pill {
-      font-size: 0.72rem;
-      background: #232A36;
-      color: #CBD5E1;
-      padding: 3px 8px;
-      border-radius: 6px;
+      align-items: center;
+      justify-content: space-between;
+      background: #141922;
     }
 
     /* Footer */
     .guide-footer-info {
       text-align: center;
       padding: 40px 20px;
-      color: #6B7280;
+      color: #64748B;
       font-size: 0.85rem;
-      border-top: 1px solid #1A1F26;
+      border-top: 1px solid #1E2530;
     }
 
     .guide-footer-info a {
-      color: var(--guide-muted);
+      color: var(--sp-text-muted);
       text-decoration: underline;
     }
   </style>
 </head>
-<body class="guide-body">
+<body class="guide-page">
 
   <!-- Header -->
   <header class="guide-header">
     <div class="guide-header-inner">
       <a href="/" class="guide-brand">
-        <img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261110-chat-review1" alt="SangeetPitara logo" width="36" height="36" />
+        <img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261110-chat-review1" alt="SangeetPitara logo" width="34" height="34" />
         <span>SangeetPitara</span>
-        <span class="guide-badge">User Guide</span>
+        <span class="guide-badge">User Manual</span>
       </a>
       <div class="guide-header-actions">
-        <a href="/guide/SangeetPitara-User-Manual.pdf" class="guide-btn-secondary" download>📄 Download PDF</a>
-        <a href="/guide/SangeetPitara-User-Manual.zip" class="guide-btn-secondary" download>📦 Download ZIP</a>
-        <a href="/" class="guide-btn-primary">▶ Open SangeetPitara</a>
+        <a href="/guide/SangeetPitara-User-Manual.pdf" class="btn-action-secondary" download>📄 Download PDF</a>
+        <a href="/guide/SangeetPitara-User-Manual.zip" class="btn-action-secondary" download>📦 Download ZIP</a>
+        <a href="/" class="btn-action-primary">▶ Open SangeetPitara</a>
       </div>
     </div>
   </header>
 
-  <!-- Hero -->
-  <section class="guide-hero">
-    <h1>Visual User Manual</h1>
-    <p>Detailed walkthroughs with real interface captures, step-by-step arrows, and instructions for both <strong>Desktop</strong> and <strong>Mobile</strong> devices.</p>
-  </section>
+  <main class="guide-container">
 
-  <!-- Navigation Tabs -->
-  <div class="guide-nav-wrap">
-    <nav class="guide-tabs" id="guideTabs">
-      <button class="guide-tab-btn active" data-target="sec-create">
-        <span class="tab-num">1</span> Create a Room
-      </button>
-      <button class="guide-tab-btn" data-target="sec-join">
-        <span class="tab-num">2</span> Join a Room
-      </button>
-      <button class="guide-tab-btn" data-target="sec-share">
-        <span class="tab-num">3</span> How to Share Audio (In-Depth)
-      </button>
-      <button class="guide-tab-btn" data-target="sec-features">
-        <span class="tab-num">4</span> Essential Features (Chat, Health, Themes)
-      </button>
-    </nav>
-  </div>
+    <!-- GROUP 1: FIRST STEPS -->
+    <section class="guide-group">
+      <div class="guide-group-header">
+        <h2 class="guide-group-title">First steps on SangeetPitara</h2>
+        <p class="guide-group-sub">Kickstart your synchronized listening journey with quick, practical guides covering room creation, joining, and desktop sound sharing.</p>
+      </div>
 
-  <main class="guide-main">
-
-    <!-- 1. CREATE A ROOM -->
-    <section id="sec-create" class="guide-section active">
-      <div class="guide-card">
-        <div class="guide-card-header">
-          <div class="guide-card-title">
-            <h2>🚪 How to Create a Room (Desktop & Mobile)</h2>
-            <p>Start a listening room as a Host in just two clicks.</p>
+      <div class="guide-card-grid">
+        <!-- Card 1: Creating a Room -->
+        <div class="guide-topic-card" onclick="openTopicModal('create-room')">
+          <div class="card-top">
+            <h3 class="card-topic-title">Creating a Room</h3>
+            <p class="card-topic-desc">Start a private listening room as Host in less than a minute. No sign-up or accounts required.</p>
           </div>
-          <span class="guide-badge">Topic 1 / 4</span>
+          <span class="card-action-link">Get Started &gt;</span>
         </div>
-        <div class="guide-card-content">
-          <div class="guide-canvas-wrap">
-            <div class="guide-viewport">
-              <img src="/guide/img/01-create-room.png" alt="SangeetPitara Room Creation Screen" />
-              <!-- Hotspots -->
-              <div class="guide-hotspot" style="top: 48%; left: 50%;"><div class="guide-hotspot-pulse"></div><div class="guide-hotspot-pin">1</div></div>
-              <div class="guide-callout" style="top: 42%; left: 62%;">Display Name</div>
 
-              <div class="guide-hotspot" style="top: 60%; left: 50%;"><div class="guide-hotspot-pulse"></div><div class="guide-hotspot-pin">2</div></div>
-              <div class="guide-callout" style="top: 55%; left: 62%;">Room Name</div>
+        <!-- Card 2: Joining a Room -->
+        <div class="guide-topic-card" onclick="openTopicModal('join-room')">
+          <div class="card-top">
+            <h3 class="card-topic-title">Joining a Room</h3>
+            <p class="card-topic-desc">Connect with an 8-character code or a direct invite link and sync to the live room audio.</p>
+          </div>
+          <span class="card-action-link">Get Started &gt;</span>
+        </div>
 
-              <div class="guide-hotspot" style="top: 82%; left: 50%;"><div class="guide-hotspot-pulse"></div><div class="guide-hotspot-pin">3</div></div>
-              <div class="guide-callout" style="top: 76%; left: 62%;">Click to Launch</div>
-            </div>
+        <!-- Card 3: Sharing Audio on Desktop -->
+        <div class="guide-topic-card" onclick="openTopicModal('share-desktop')">
+          <div class="card-top">
+            <h3 class="card-topic-title">Sharing Audio (Desktop)</h3>
+            <p class="card-topic-desc">Stream Chrome/Edge tab audio with the critical "Also share tab audio" setting.</p>
           </div>
-          <div class="guide-sidebar">
-            <ul class="guide-step-list">
-              <li class="guide-step-item">
-                <div class="guide-step-head"><span class="num">1</span> Enter Your Display Name</div>
-                <p class="guide-step-desc">Type your name (e.g., "Sam") so friends know who is hosting.</p>
-              </li>
-              <li class="guide-step-item">
-                <div class="guide-step-head"><span class="num">2</span> Name Your Room</div>
-                <p class="guide-step-desc">Pick any session name (e.g., "Music Lounge" or "Study Beats").</p>
-              </li>
-              <li class="guide-step-item">
-                <div class="guide-step-head"><span class="num">3</span> Click "+ Create private room"</div>
-                <p class="guide-step-desc">Your private room is generated instantly with an 8-character code.</p>
-              </li>
-            </ul>
-            <div class="guide-quick-tip">
-              <strong>💡 Mobile & Desktop Friendly</strong>
-              Works on laptops, Macs, Android phones, and iPhones identically without creating an account.
-            </div>
-            <div class="guide-stepper-ctrls">
-              <span></span>
-              <button class="guide-btn-primary" onclick="switchGuideTab('sec-join')">Next: Joining a Room ➔</button>
-            </div>
-          </div>
+          <span class="card-action-link">Get Started &gt;</span>
         </div>
       </div>
     </section>
 
-    <!-- 2. JOIN A ROOM -->
-    <section id="sec-join" class="guide-section">
-      <div class="guide-card">
-        <div class="guide-card-header">
-          <div class="guide-card-title">
-            <h2>🔗 How to Join an Existing Room (Desktop & Mobile)</h2>
-            <p>Connect with a room code or direct link from a friend.</p>
+    <!-- GROUP 2: BROADCASTING & DEVICE AUDIO -->
+    <section class="guide-group">
+      <div class="guide-group-header">
+        <h2 class="guide-group-title">Broadcasting & Device Audio</h2>
+        <p class="guide-group-sub">Stream background music from your phone, play local audio files, or manage room permissions.</p>
+      </div>
+
+      <div class="guide-card-grid">
+        <!-- Card 4: Sharing Audio on Mobile -->
+        <div class="guide-topic-card" onclick="openTopicModal('share-mobile')">
+          <div class="card-top">
+            <h3 class="card-topic-title">Sharing Audio on Mobile</h3>
+            <p class="card-topic-desc">Stream background Spotify or YouTube audio from Android using Entire Screen casting.</p>
           </div>
-          <span class="guide-badge">Topic 2 / 4</span>
+          <span class="card-action-link">Get Started &gt;</span>
         </div>
-        <div class="guide-card-content">
-          <div class="guide-canvas-wrap">
-            <div class="guide-viewport">
-              <img src="/guide/img/02-join-room.png" alt="SangeetPitara Room Joining Screen" />
-              <!-- Hotspots -->
-              <div class="guide-hotspot" style="top: 42%; left: 50%;"><div class="guide-hotspot-pulse"></div><div class="guide-hotspot-pin">1</div></div>
-              <div class="guide-callout" style="top: 36%; left: 62%;">8-Char Room Code</div>
 
-              <div class="guide-hotspot" style="top: 60%; left: 50%;"><div class="guide-hotspot-pulse"></div><div class="guide-hotspot-pin">2</div></div>
-              <div class="guide-callout" style="top: 55%; left: 62%;">Your Name</div>
+        <!-- Card 5: Playing Audio Files -->
+        <div class="guide-topic-card" onclick="openTopicModal('share-file')">
+          <div class="card-top">
+            <h3 class="card-topic-title">Playing Audio Files</h3>
+            <p class="card-topic-desc">Broadcast local MP3, WAV, AAC, or FLAC files directly without needing screen permissions.</p>
+          </div>
+          <span class="card-action-link">Get Started &gt;</span>
+        </div>
 
-              <div class="guide-hotspot" style="top: 82%; left: 50%;"><div class="guide-hotspot-pulse"></div><div class="guide-hotspot-pin">3</div></div>
-              <div class="guide-callout" style="top: 76%; left: 62%;">Click Enter</div>
-            </div>
+        <!-- Card 6: Invites & Room Management -->
+        <div class="guide-topic-card" onclick="openTopicModal('room-management')">
+          <div class="card-top">
+            <h3 class="card-topic-title">Invites & Room Management</h3>
+            <p class="card-topic-desc">Copy invite links, lock rooms against new guests, and manage Co-host roles.</p>
           </div>
-          <div class="guide-sidebar">
-            <ul class="guide-step-list">
-              <li class="guide-step-item">
-                <div class="guide-step-head"><span class="num">1</span> Paste the Room Code</div>
-                <p class="guide-step-desc">Enter the 8-character code (e.g. <code>Y8V4D67G</code>). Hyphens & lowercase are automatically cleaned.</p>
-              </li>
-              <li class="guide-step-item">
-                <div class="guide-step-head"><span class="num">2</span> Enter Your Name</div>
-                <p class="guide-step-desc">Let others know who joined.</p>
-              </li>
-              <li class="guide-step-item">
-                <div class="guide-step-head"><span class="num">3</span> Click "Enter room"</div>
-                <p class="guide-step-desc">You are synced immediately into the synchronized live stream!</p>
-              </li>
-            </ul>
-            <div class="guide-quick-tip">
-              <strong>💡 Direct Invite Links</strong>
-              If your friend sent you a link like <code>?room=ABCDEF12</code>, the code is filled automatically.
-            </div>
-            <div class="guide-stepper-ctrls">
-              <button class="guide-btn-secondary" onclick="switchGuideTab('sec-create')">⬅ Previous</button>
-              <button class="guide-btn-primary" onclick="switchGuideTab('sec-share')">Next: Sharing Audio ➔</button>
-            </div>
-          </div>
+          <span class="card-action-link">Get Started &gt;</span>
         </div>
       </div>
     </section>
 
-    <!-- 3. HOW TO SHARE AUDIO (IN-DEPTH ELABORATION WITH REAL INTERFACES) -->
-    <section id="sec-share" class="guide-section">
-      <div class="guide-card">
-        <div class="guide-card-header">
-          <div class="guide-card-title">
-            <h2>🎵 How to Share Audio — Detailed Walkthrough</h2>
-            <p>Step-by-step guides for both <strong>Desktop Browser</strong> and <strong>Mobile Phone</strong>, with real interface dialogues and critical settings.</p>
-          </div>
-          <span class="guide-badge">Topic 3 / 4</span>
-        </div>
-
-        <!-- Sub-tabs: Desktop vs Mobile vs Local File -->
-        <div style="padding: 16px 24px 0; background: #0F1217;">
-          <div class="guide-subtabs">
-            <button class="guide-subtab-btn active" onclick="switchAudioMode('desktop', this)">
-              💻 Desktop Browser (Chrome / Edge)
-            </button>
-            <button class="guide-subtab-btn" onclick="switchAudioMode('mobile', this)">
-              📱 Mobile Phone (Android App / Casting)
-            </button>
-            <button class="guide-subtab-btn" onclick="switchAudioMode('file', this)">
-              📁 Play Audio File (MP3 / WAV / FLAC)
-            </button>
-          </div>
-        </div>
-
-        <div class="guide-card-content">
-          <!-- Canvas with dynamic content based on mode -->
-          <div class="guide-canvas-wrap">
-
-            <!-- MODE 1: DESKTOP BROWSER DIALOG (WINDOWS 11 / 10 CHROME) -->
-            <div id="audio-mode-desktop" class="guide-viewport" style="display: block;">
-              <img src="/guide/img/03b-desktop-share-dialog.svg" alt="Real Windows 11 / 10 Chrome Screen & Audio Share Dialog with Arrows" />
-            </div>
-
-            <!-- MODE 2: MOBILE ANDROID SCREEN DIALOG (REAL USER INTERFACE) -->
-            <div id="audio-mode-mobile" class="guide-viewport" style="display: none; background: #0A0D12; padding: 16px;">
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; max-width: 740px; margin: 0 auto;">
-                
-                <!-- Phone Step 1: App Interface -->
-                <div style="position: relative; border-radius: 18px; overflow: hidden; border: 2px solid #28313E; box-shadow: 0 10px 24px rgba(0,0,0,0.6);">
-                  <img src="/guide/img/03c-mobile-real-room.jpg" alt="Real SangeetPitara Mobile App Screen" style="width: 100%; display: block;" />
-                  
-                  <!-- Hotspot on "Share device audio" button -->
-                  <div class="guide-hotspot" style="top: 72%; left: 50%;">
-                    <div class="guide-hotspot-pulse"></div>
-                    <div class="guide-hotspot-pin">1</div>
-                  </div>
-                  <!-- Callout Arrow -->
-                  <div class="guide-callout" style="top: 65%; left: 35%; font-size: 0.76rem; background: rgba(232, 93, 4, 0.95); border-color: #FFF;">
-                    STEP 1: Tap "Share device audio"
-                  </div>
-                </div>
-
-                <!-- Phone Step 2: Real Android System Dialog -->
-                <div style="position: relative; border-radius: 18px; overflow: hidden; border: 2px solid #28313E; box-shadow: 0 10px 24px rgba(0,0,0,0.6);">
-                  <img src="/guide/img/03d-mobile-real-dialog.jpg" alt="Real Android System Entire Screen Casting Dialog" style="width: 100%; display: block;" />
-                  
-                  <!-- Hotspot on Scope dropdown -->
-                  <div class="guide-hotspot" style="top: 71%; left: 74%;">
-                    <div class="guide-hotspot-pulse"></div>
-                    <div class="guide-hotspot-pin">2</div>
-                  </div>
-                  <div class="guide-callout" style="top: 64%; left: 24%; font-size: 0.74rem; background: #E85D04; border-color: #FFF;">
-                    STEP 2: Set Scope to "Entire screen"
-                  </div>
-
-                  <!-- Hotspot on Start button -->
-                  <div class="guide-hotspot" style="top: 92%; left: 70%;">
-                    <div class="guide-hotspot-pulse" style="background: #2563EB;"></div>
-                    <div class="guide-hotspot-pin" style="background: #2563EB;">3</div>
-                  </div>
-                  <div class="guide-callout" style="top: 85%; left: 42%; font-size: 0.74rem; background: #1D4ED8; border-color: #FFF;">
-                    STEP 3: Tap "Start"
-                  </div>
-                </div>
-
-              </div>
-              <div style="text-align: center; margin-top: 10px; font-size: 0.8rem; color: #9CA3AF;">
-                Real Android mobile interface showing <strong>Share device audio</strong> (left) and the <strong>Entire screen</strong> casting prompt (right).
-              </div>
-            </div>
-
-            <!-- MODE 3: LOCAL FILE SHARING -->
-            <div id="audio-mode-file" class="guide-viewport" style="display: none;">
-              <img src="/guide/img/03-share-audio.png" alt="SangeetPitara Cassette and Audio File Buttons" />
-              <!-- Hotspot for Share Audio File -->
-              <div class="guide-hotspot" style="top: 78%; left: 28%;"><div class="guide-hotspot-pulse"></div><div class="guide-hotspot-pin">📁</div></div>
-              <div class="guide-callout" style="top: 70%; left: 30%;">Share Audio File (Any Device)</div>
-            </div>
-
-          </div>
-
-          <!-- Sidebar Instructions -->
-          <div class="guide-sidebar">
-
-            <!-- Desktop Instructions -->
-            <div id="instructions-desktop">
-              <ul class="guide-step-list">
-                <li class="guide-step-item">
-                  <div class="guide-step-head"><span class="num">1</span> Click "Share audio"</div>
-                  <p class="guide-step-desc">On the Room tab, tap the orange button. Chrome / Edge will pop up the native share dialog.</p>
-                </li>
-                <li class="guide-step-item highlight">
-                  <div class="guide-step-head" style="color: #FF9E66;"><span class="num">2</span> ⚠️ TICK "Also share tab audio"</div>
-                  <p class="guide-step-desc"><strong>CRITICAL:</strong> Check the box at the bottom-left! If left unchecked, the browser sends only silent video without music.</p>
-                </li>
-                <li class="guide-step-item">
-                  <div class="guide-step-head"><span class="num">3</span> Pick the Music Tab or Screen</div>
-                  <p class="guide-step-desc">Choose YouTube, Spotify, or "Entire Screen" if playing from a desktop app.</p>
-                </li>
-                <li class="guide-step-item">
-                  <div class="guide-step-head"><span class="num">4</span> Click "Share"</div>
-                  <p class="guide-step-desc">Audio is captured in lossless high-fidelity PCM16 and streams live to everyone.</p>
-                </li>
-              </ul>
-              <div class="guide-quick-tip">
-                <strong>💡 Why the checkbox matters</strong>
-                Browsers protect privacy by muting screen shares by default. Ticking <strong>"Also share tab audio"</strong> gives SangeetPitara permission to stream pure digital sound!
-              </div>
-            </div>
-
-            <!-- Mobile Instructions -->
-            <div id="instructions-mobile" style="display: none;">
-              <ul class="guide-step-list">
-                <li class="guide-step-item">
-                  <div class="guide-step-head"><span class="num">1</span> Tap "Share device audio"</div>
-                  <p class="guide-step-desc">In the SangeetPitara Android app, tap the orange <strong>Share device audio</strong> button in the room.</p>
-                </li>
-                <li class="guide-step-item highlight">
-                  <div class="guide-step-head" style="color: #FF9E66;"><span class="num">2</span> ⚠️ Set Scope to "Entire screen"</div>
-                  <p class="guide-step-desc">When Android asks <em>"Start recording or casting with SangeetPitara?"</em>, ensure <strong>Scope</strong> is set to <strong>Entire screen</strong> (not a single app) so background music is captured!</p>
-                </li>
-                <li class="guide-step-item">
-                  <div class="guide-step-head"><span class="num">3</span> Tap "Start"</div>
-                  <p class="guide-step-desc">Tap the blue <strong>Start</strong> button. Android now captures device audio playback and streams it directly to the room.</p>
-                </li>
-                <li class="guide-step-item">
-                  <div class="guide-step-head"><span class="num">4</span> Open Your Music App</div>
-                  <p class="guide-step-desc">Switch to Spotify, YouTube Music, or any audio player. Everyone in the room will hear your music live in sync!</p>
-                </li>
-              </ul>
-              <div class="guide-quick-tip">
-                <strong>📱 In a Phone Browser?</strong>
-                If you are using a mobile browser without the app, tap <strong>"Share audio file"</strong> to stream any local MP3/WAV/FLAC track from your phone storage!
-              </div>
-            </div>
-
-            <!-- File Instructions -->
-            <div id="instructions-file" style="display: none;">
-              <ul class="guide-step-list">
-                <li class="guide-step-item">
-                  <div class="guide-step-head"><span class="num">1</span> Click "Share audio file"</div>
-                  <p class="guide-step-desc">Works on <strong>both Desktop and Mobile Phone</strong> browsers without needing any screen capture permissions!</p>
-                </li>
-                <li class="guide-step-item">
-                  <div class="guide-step-head"><span class="num">2</span> Select Local Song</div>
-                  <p class="guide-step-desc">Pick any MP3, WAV, AAC, or FLAC track from your computer or phone's downloads/music folder.</p>
-                </li>
-                <li class="guide-step-item">
-                  <div class="guide-step-head"><span class="num">3</span> Instant Synchronized Stream</div>
-                  <p class="guide-step-desc">The cassette visualizer will spin and all room participants will listen together.</p>
-                </li>
-              </ul>
-              <div class="guide-quick-tip">
-                <strong>⚡ Zero Quality Loss</strong>
-                Direct file streaming broadcasts native audio frames with zero re-encoding artifacts.
-              </div>
-            </div>
-
-            <div class="guide-stepper-ctrls">
-              <button class="guide-btn-secondary" onclick="switchGuideTab('sec-join')">⬅ Previous</button>
-              <button class="guide-btn-primary" onclick="switchGuideTab('sec-features')">Next: Essential Features ➔</button>
-            </div>
-          </div>
-        </div>
+    <!-- GROUP 3: IN-ROOM EXPERIENCE & TOOLS -->
+    <section class="guide-group">
+      <div class="guide-group-header">
+        <h2 class="guide-group-title">In-Room Experience & Tools</h2>
+        <p class="guide-group-sub">Everything you need to interact with listeners, inspect connection quality, and style your room.</p>
       </div>
-    </section>
 
-    <!-- 4. ESSENTIAL ROOM FEATURES (COMPACT & INTUITIVE) -->
-    <section id="sec-features" class="guide-section">
-      <div class="guide-card">
-        <div class="guide-card-header">
-          <div class="guide-card-title">
-            <h2>✨ Essential Room Features</h2>
-            <p>Everyday tools you can access directly inside any room in one click.</p>
+      <div class="guide-card-grid">
+        <!-- Card 7: Chat & Voice Notes -->
+        <div class="guide-topic-card" onclick="openTopicModal('chat-features')">
+          <div class="card-top">
+            <h3 class="card-topic-title">Chat & Voice Notes</h3>
+            <p class="card-topic-desc">One-tap floating reactions (❤️, 🔥, 👏, 🎧), in-room chat, and hold-to-talk voice notes.</p>
           </div>
-          <span class="guide-badge">Topic 4 / 4</span>
+          <span class="card-action-link">Get Started &gt;</span>
         </div>
 
-        <div class="guide-compact-grid">
-          <!-- Chat Card -->
-          <div class="compact-feature-card">
-            <img src="/guide/img/04-chat-features.png" alt="Real Chat Interface" />
-            <div class="compact-feature-body">
-              <h3>💬 Chat & Voice Notes</h3>
-              <p>Chat with friends while the music is playing without interrupting the audio stream.</p>
-              <ul style="padding-left: 18px; margin: 0 0 12px; font-size: 0.82rem; color: #9CA3AF;">
-                <li><strong>One-Tap Reactions:</strong> Tap ❤️, 🔥, 👏, or 🎧 to float animated emojis.</li>
-                <li><strong>Voice Notes:</strong> Hold the microphone button to send high-fidelity voice clips.</li>
-                <li><strong>Message Replies:</strong> Swipe or click any message to quote & reply.</li>
-              </ul>
-              <div class="compact-pill-list">
-                <span class="compact-pill">Live Reactions</span>
-                <span class="compact-pill">Voice Notes</span>
-                <span class="compact-pill">Text Chat</span>
-              </div>
-            </div>
+        <!-- Card 8: Stream Health & Diagnostics -->
+        <div class="guide-topic-card" onclick="openTopicModal('health-diagnostics')">
+          <div class="card-top">
+            <h3 class="card-topic-title">Stream Health & Diagnostics</h3>
+            <p class="card-topic-desc">Inspect real-time latency, packet loss, jitter buffer cushion, and export telemetry logs.</p>
           </div>
-
-          <!-- Health Diagnostics Card -->
-          <div class="compact-feature-card">
-            <img src="/guide/img/06-health-diagnostics.png" alt="Real Health Diagnostics" />
-            <div class="compact-feature-body">
-              <h3>🩺 Health Diagnostics</h3>
-              <p>Monitor real-time network stability, packet loss, and audio synchronization.</p>
-              <ul style="padding-left: 18px; margin: 0 0 12px; font-size: 0.82rem; color: #9CA3AF;">
-                <li><strong>LIVE Status:</strong> Green badge indicates optimal synchronized streaming.</li>
-                <li><strong>Stream Health:</strong> Measures jitter buffer latency and sequence continuity.</li>
-                <li><strong>Export Log:</strong> Click "Save audio diagnostics" to export an anonymous report.</li>
-              </ul>
-              <div class="compact-pill-list">
-                <span class="compact-pill">Auto Jitter Cushion</span>
-                <span class="compact-pill">Packet Telemetry</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Theme Personalization Card -->
-          <div class="compact-feature-card">
-            <img src="/guide/img/07-theme-selection.png" alt="Real Theme Dropdown" />
-            <div class="compact-feature-body">
-              <h3>🎨 5 Studio Themes</h3>
-              <p>Personalize your room's ambiance with studio-crafted color themes.</p>
-              <ul style="padding-left: 18px; margin: 0 0 12px; font-size: 0.82rem; color: #9CA3AF;">
-                <li><strong>Themes:</strong> Dark, Light, Forest, Brass, and Rose.</li>
-                <li><strong>Topbar Picker:</strong> Switch instantly from the top-right dropdown.</li>
-                <li><strong>Contrast Header:</strong> Room header tabs stay solid black across all themes for effortless readability.</li>
-              </ul>
-              <div class="compact-pill-list">
-                <span class="compact-pill">Dark</span>
-                <span class="compact-pill">Light</span>
-                <span class="compact-pill">Forest</span>
-                <span class="compact-pill">Brass</span>
-                <span class="compact-pill">Rose</span>
-              </div>
-            </div>
-          </div>
+          <span class="card-action-link">Get Started &gt;</span>
         </div>
 
-        <div style="padding: 20px 28px; background: #13171E; border-top: 1px solid var(--guide-border); display: flex; align-items: center; justify-content: space-between;">
-          <button class="guide-btn-secondary" onclick="switchGuideTab('sec-share')">⬅ Previous: Audio Sharing</button>
-          <a href="/" class="guide-btn-primary">Ready to Listen? Open SangeetPitara ➔</a>
+        <!-- Card 9: 5 Studio Themes -->
+        <div class="guide-topic-card" onclick="openTopicModal('themes-customization')">
+          <div class="card-top">
+            <h3 class="card-topic-title">5 Studio Themes</h3>
+            <p class="card-topic-desc">Switch between Dark, Light, Forest, Brass, and Rose with the high-contrast black header.</p>
+          </div>
+          <span class="card-action-link">Get Started &gt;</span>
         </div>
       </div>
     </section>
 
   </main>
 
+  <!-- POP-UP DETAIL MODAL -->
+  <div id="topicModal" class="guide-modal-overlay" onclick="closeTopicModal(event)">
+    <div class="guide-modal-window" onclick="event.stopPropagation()">
+      <div class="modal-head">
+        <div class="modal-title-wrap">
+          <span id="modalTag" class="modal-tag">Topic</span>
+          <h2 id="modalTitle">Topic Title</h2>
+        </div>
+        <button class="modal-close-btn" onclick="closeTopicModal()" aria-label="Close">✕</button>
+      </div>
+
+      <div class="modal-body" id="modalBody">
+        <!-- Content injected dynamically -->
+      </div>
+
+      <div class="modal-foot">
+        <button id="btnPrevTopic" class="btn-action-secondary" onclick="navigateTopic(-1)">⬅ Previous Topic</button>
+        <button id="btnNextTopic" class="btn-action-primary" onclick="navigateTopic(1)">Next Topic ➔</button>
+      </div>
+    </div>
+  </div>
+
   <footer class="guide-footer-info">
     <p>SangeetPitara — Listen together in sync with ultra-low latency.</p>
-    <p><a href="/">Home</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></p>
+    <p><a href="/">Home</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/guide/SangeetPitara-User-Manual.pdf">Download PDF</a></p>
   </footer>
 
   <script>
-    function switchGuideTab(targetId) {
-      document.querySelectorAll('.guide-tab-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.target === targetId);
+    // Detailed Topic Database
+    const topics = {
+      'create-room': {
+        title: 'How to Create a Room',
+        tag: 'Getting Started',
+        img: '/guide/img/01-create-room.png',
+        alt: 'Real SangeetPitara Room Creation Screen with Arrows',
+        steps: [
+          { title: '1. Enter Your Display Name', desc: 'Type your name (e.g., "Sam") so friends know who is hosting the room.' },
+          { title: '2. Name Your Room', desc: 'Give your listening session a title (e.g. "Music Lounge", "Late Night Vibes", or "Study Beats").' },
+          { title: '3. Click "+ Create private room"', desc: 'Your private room is generated instantly with an 8-character code, and you enter as Host.' }
+        ],
+        tip: '💡 <strong>Host Privileges:</strong> As host, you can broadcast tab audio, approve listener audio requests, and lock or end the room.'
+      },
+      'join-room': {
+        title: 'How to Join a Room',
+        tag: 'Getting Started',
+        img: '/guide/img/02-join-room.png',
+        alt: 'Real SangeetPitara Room Joining Screen with Arrows',
+        steps: [
+          { title: '1. Enter the 8-Character Room Code', desc: 'Paste the code (e.g. <code>3HLYQKQT</code>) sent by your friend. Spaces and hyphens are cleaned automatically.' },
+          { title: '2. Enter Your Display Name', desc: 'Let everyone in the room know who joined.' },
+          { title: '3. Click "Enter room"', desc: 'You are immediately connected and synchronized with whatever audio is playing.' }
+        ],
+        tip: '💡 <strong>Direct Invite Links:</strong> If your friend sent you a direct link like <code>?room=3HLYQKQT</code>, the code is filled automatically!'
+      },
+      'share-desktop': {
+        title: 'Sharing Audio on Desktop (Windows Chrome / Edge)',
+        tag: 'Audio Broadcasting',
+        img: '/guide/img/03b-desktop-share-dialog.svg',
+        alt: 'Windows Chrome Audio Share Dialog with Arrows',
+        steps: [
+          { title: '1. Click "Share audio"', desc: 'In the Room tab, click the orange button. Windows Chrome / Edge will pop up the native screen-sharing dialog.' },
+          { title: '⚠️ 2. TICK "Also share tab audio" (MANDATORY)', desc: '<strong>CRITICAL:</strong> In the bottom-left corner of the Chrome dialog, you must check the box for <em>"Also share tab audio"</em> (or <em>"Share system audio"</em>). If left unchecked, Chrome only streams silent video!', alert: true },
+          { title: '3. Pick the Music Tab or Entire Screen', desc: 'Under <strong>Chrome Tab</strong>, pick YouTube or Spotify. Or choose <strong>Entire Screen</strong> if playing from a desktop player.' },
+          { title: '4. Click "Share"', desc: 'Sound streams live to everyone in the room in lossless high-fidelity PCM16 format.' }
+        ],
+        tip: '💡 <strong>Why the checkbox matters:</strong> Browsers protect privacy by muting screen shares by default. Ticking <strong>"Also share tab audio"</strong> gives SangeetPitara permission to stream pure digital sound!'
+      },
+      'share-mobile': {
+        title: 'Sharing Audio on Mobile (Android & Casting)',
+        tag: 'Mobile Broadcasting',
+        htmlVisual: `
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 680px; margin: 0 auto;">
+            <div style="background:#0D1117; border: 1px solid #30363D; border-radius: 10px; padding: 8px; text-align: center;">
+              <img src="/guide/img/03c-mobile-real-room.jpg" alt="Step 1: Real Mobile App Screen" style="max-height: 280px; border-radius: 6px; margin: 0 auto 6px;" />
+              <div style="font-size: 0.76rem; font-weight: 700; color: #FFF; background: #E85D04; padding: 3px 8px; border-radius: 4px; display: inline-block;">Step 1: Tap "Share device audio"</div>
+            </div>
+            <div style="background:#0D1117; border: 1px solid #30363D; border-radius: 10px; padding: 8px; text-align: center;">
+              <img src="/guide/img/03d-mobile-real-dialog.jpg" alt="Step 2: Real Android System Dialog" style="max-height: 280px; border-radius: 6px; margin: 0 auto 6px;" />
+              <div style="font-size: 0.76rem; font-weight: 700; color: #FFF; background: #2563EB; padding: 3px 8px; border-radius: 4px; display: inline-block;">Step 2: Scope = "Entire screen" ➔ Tap "Start"</div>
+            </div>
+          </div>
+        `,
+        steps: [
+          { title: '1. Open the SangeetPitara Android App', desc: 'Mobile web browsers cannot capture background playback from other apps. Use the native Android app.' },
+          { title: '2. Tap the Orange "Share device audio" Button', desc: 'Inside your room in the app, tap <strong>Share device audio</strong>.' },
+          { title: '⚠️ 3. Set Scope to "Entire screen" (CRITICAL)', desc: 'When Android displays <em>"Start recording or casting with SangeetPitara?"</em>, ensure the <strong>Scope</strong> dropdown is set to <strong>Entire screen</strong> (not a single app) so background audio is captured!', alert: true },
+          { title: '4. Tap the Blue "Start" Button', desc: 'Tap <strong>Start</strong>, then switch to Spotify, YouTube Music, or any player. All phone audio streams live to the room!' }
+        ],
+        tip: '📱 <strong>In a phone browser without the app?</strong> Tap <strong>"Share audio file"</strong> to play any local MP3/WAV/FLAC track saved on your phone directly from your browser!'
+      },
+      'share-file': {
+        title: 'Playing Local Audio Files (MP3 / WAV / FLAC)',
+        tag: 'Audio Broadcasting',
+        img: '/guide/img/03-share-audio.png',
+        alt: 'Real SangeetPitara Cassette and Audio File Buttons',
+        steps: [
+          { title: '1. Click "Share audio file"', desc: 'Works on <strong>both Desktop and Mobile Phone</strong> browsers without needing screen capture permissions.' },
+          { title: '2. Pick Any Local Audio Track', desc: 'Select any MP3, WAV, AAC, or FLAC track stored on your computer or phone.' },
+          { title: '3. Instant Synchronized Playback', desc: 'The cassette reels spin in real time and everyone in the room listens together.' }
+        ],
+        tip: '⚡ <strong>Zero Quality Loss:</strong> Direct file streaming broadcasts native audio frames with no re-encoding artifacts.'
+      },
+      'room-management': {
+        title: 'Invites & Room Management',
+        tag: 'Hosting & Controls',
+        img: '/guide/img/05-people-features.png',
+        alt: 'Real SangeetPitara People Tab and Invite Code',
+        steps: [
+          { title: '1. Share Invite Link', desc: 'Click the <strong>Copy link</strong> button to copy the direct URL with the room code to your clipboard.' },
+          { title: '2. Promote to Co-Host', desc: 'Hosts can assign Co-host permissions so friends can manage playback and moderate listeners.' },
+          { title: '3. Room Locking & Passcode', desc: 'Lock the room anytime from the People tab to prevent new members from joining.' }
+        ],
+        tip: '🔒 <strong>Host Security:</strong> Hosts can remove disruptive listeners or end the room for everyone in one tap.'
+      },
+      'chat-features': {
+        title: 'Chat, Reactions & Voice Notes',
+        tag: 'In-Room Experience',
+        img: '/guide/img/04-chat-features.png',
+        alt: 'Real SangeetPitara Chat and Voice Notes Interface',
+        steps: [
+          { title: '1. One-Tap Reactions', desc: 'Tap ❤️, 🔥, 👏, or 🎧 to float animated reaction badges over everyone’s screen in real time.' },
+          { title: '2. Real-Time Text Messages', desc: 'Chat with everyone without interrupting the music stream.' },
+          { title: '3. Record Voice Notes', desc: 'Hold or tap the microphone button on the right side of the chat box to record and send voice clips.' }
+        ],
+        tip: '💬 <strong>Reply to Messages:</strong> Swipe or click on any chat message to quote and reply directly to that member.'
+      },
+      'health-diagnostics': {
+        title: 'Stream Health & Diagnostics',
+        tag: 'In-Room Tools',
+        img: '/guide/img/06-health-diagnostics.png',
+        alt: 'Real SangeetPitara Health Diagnostics Panel',
+        steps: [
+          { title: '1. Live Connection Status', desc: 'The green LIVE pill in the top-right corner confirms an active, synchronized connection.' },
+          { title: '2. Stream Telemetry', desc: 'Inspect real-time jitter buffer delay, sequence gaps, and packet loss metrics.' },
+          { title: '3. Export Diagnostic Logs', desc: 'Click <strong>Save audio diagnostics</strong> to download an anonymous JSON debug log if troubleshooting network issues.' }
+        ],
+        tip: '🩺 <strong>Auto Recovery:</strong> SangeetPitara automatically buffers jitter if your Wi-Fi fluctuates, keeping music playback stutter-free.'
+      },
+      'themes-customization': {
+        title: '5 Studio Themes & Contrast Header',
+        tag: 'Personalization',
+        img: '/guide/img/07-theme-selection.png',
+        alt: 'Real SangeetPitara Topbar Theme Dropdown',
+        steps: [
+          { title: '1. Located in the Topbar', desc: 'Click the <strong>Theme</strong> dropdown at the top right of your room anytime.' },
+          { title: '2. 5 Distinct Themes', desc: 'Choose between <strong>Dark</strong> (onyx night mode), <strong>Light</strong> (parchment console), <strong>Forest</strong> (moss & evergreen), <strong>Brass</strong> (vintage analog gold), and <strong>Rose</strong> (velvet acoustic tones).' },
+          { title: '3. High-Contrast Black Header', desc: 'The room navigation tabs (Room, Chat, People, Health) maintain a solid black background across all 5 themes for effortless legibility.' }
+        ],
+        tip: '🎨 <strong>Persistent Choice:</strong> SangeetPitara remembers your theme choice on your device across sessions.'
+      }
+    };
+
+    const topicKeys = Object.keys(topics);
+    let currentTopicIndex = 0;
+
+    function openTopicModal(key) {
+      const topic = topics[key];
+      if (!topic) return;
+      currentTopicIndex = topicKeys.indexOf(key);
+
+      document.getElementById('modalTitle').textContent = topic.title;
+      document.getElementById('modalTag').textContent = topic.tag;
+
+      let visualHtml = '';
+      if (topic.htmlVisual) {
+        visualHtml = topic.htmlVisual;
+      } else if (topic.img) {
+        visualHtml = `<div class="modal-visual-wrap"><img src="${topic.img}" alt="${topic.alt || topic.title}" /></div>`;
+      }
+
+      let stepsHtml = '<div class="modal-steps-list">';
+      topic.steps.forEach(s => {
+        stepsHtml += `
+          <div class="modal-step-card ${s.alert ? 'alert' : ''}">
+            <div class="step-card-head" ${s.alert ? 'style="color:#F87171;"' : ''}>${s.title}</div>
+            <p class="step-card-desc">${s.desc}</p>
+          </div>
+        `;
       });
-      document.querySelectorAll('.guide-section').forEach(sec => {
-        sec.classList.toggle('active', sec.id === targetId);
-      });
-      window.scrollTo({ top: 140, behavior: 'smooth' });
+      stepsHtml += '</div>';
+
+      let tipHtml = topic.tip ? `<div style="background: rgba(232, 93, 4, 0.1); border: 1px solid rgba(232, 93, 4, 0.3); padding: 12px 14px; border-radius: 8px; font-size: 0.85rem; color: #FDBA74;">${topic.tip}</div>` : '';
+
+      document.getElementById('modalBody').innerHTML = visualHtml + stepsHtml + tipHtml;
+
+      document.getElementById('btnPrevTopic').disabled = (currentTopicIndex === 0);
+      document.getElementById('btnNextTopic').disabled = (currentTopicIndex === topicKeys.length - 1);
+
+      document.getElementById('topicModal').classList.add('open');
+      document.body.style.overflow = 'hidden';
+      history.replaceState(null, '', '#' + key);
     }
 
-    document.getElementById('guideTabs').addEventListener('click', (e) => {
-      const btn = e.target.closest('.guide-tab-btn');
-      if (!btn) return;
-      switchGuideTab(btn.dataset.target);
+    function closeTopicModal(e) {
+      document.getElementById('topicModal').classList.remove('open');
+      document.body.style.overflow = '';
+      history.replaceState(null, '', window.location.pathname);
+    }
+
+    function navigateTopic(direction) {
+      const nextIndex = currentTopicIndex + direction;
+      if (nextIndex >= 0 && nextIndex < topicKeys.length) {
+        openTopicModal(topicKeys[nextIndex]);
+      }
+    }
+
+    // Keyboard support
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeTopicModal();
+      if (document.getElementById('topicModal').classList.contains('open')) {
+        if (e.key === 'ArrowLeft') navigateTopic(-1);
+        if (e.key === 'ArrowRight') navigateTopic(1);
+      }
     });
 
-    function switchAudioMode(mode, btnElement) {
-      document.querySelectorAll('.guide-subtab-btn').forEach(b => b.classList.remove('active'));
-      btnElement.classList.add('active');
-
-      document.getElementById('audio-mode-desktop').style.display = (mode === 'desktop') ? 'block' : 'none';
-      document.getElementById('audio-mode-mobile').style.display = (mode === 'mobile') ? 'block' : 'none';
-      document.getElementById('audio-mode-file').style.display = (mode === 'file') ? 'block' : 'none';
-
-      document.getElementById('instructions-desktop').style.display = (mode === 'desktop') ? 'block' : 'none';
-      document.getElementById('instructions-mobile').style.display = (mode === 'mobile') ? 'block' : 'none';
-      document.getElementById('instructions-file').style.display = (mode === 'file') ? 'block' : 'none';
-    }
+    // Deep link support
+    window.addEventListener('DOMContentLoaded', () => {
+      const hash = window.location.hash.replace('#', '');
+      if (hash && topics[hash]) {
+        openTopicModal(hash);
+      }
+    });
   </script>
 </body>
 </html>
