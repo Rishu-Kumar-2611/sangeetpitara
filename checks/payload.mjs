@@ -118,12 +118,12 @@ try {
   let closeCode = null;
   room.socket.once('close', (code) => { closeCode = code; });
   try {
-    room.socket.send(JSON.stringify({ type: 'chat', text: 'y'.repeat(600_000) }));
+    room.socket.send(JSON.stringify({ type: 'chat', text: 'y'.repeat(800_000) }));
   } catch {}
   await new Promise((resolve) => setTimeout(resolve, 1_500));
   assert(
     closeCode === 1009 || room.socket.readyState === WebSocket.CLOSED || room.socket.readyState === WebSocket.CLOSING,
-    `600k transport close/1009 got ${closeCode} state ${room.socket.readyState}`,
+    `800k transport close/1009 got ${closeCode} state ${room.socket.readyState}`,
   );
 } finally {
   room.socket.close();
