@@ -1,142 +1,178 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 540" width="880" height="540" style="background:#12151A; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 570" width="920" height="570" style="background:#0D1117; font-family:'Segoe UI', Tahoma, Arial, sans-serif;">
   <defs>
-    <!-- Drop Shadow Filter -->
-    <filter id="dlgShadow" x="-10%" y="-10%" width="125%" height="125%">
-      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.8"/>
+    <filter id="winShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="20" flood-color="#000000" flood-opacity="0.85"/>
     </filter>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
+    <filter id="winGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3.5" result="blur"/>
       <feComposite in="SourceGraphic" in2="blur" operator="over"/>
     </filter>
-    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#E85D04"/>
-      <stop offset="100%" stop-color="#FF7A00"/>
-    </linearGradient>
   </defs>
 
-  <!-- Desktop Backdrop Mockup -->
-  <rect x="0" y="0" width="880" height="540" fill="#0E1116"/>
-  
-  <!-- Subtle background browser window outline -->
-  <rect x="20" y="20" width="840" height="500" rx="12" fill="#181C23" stroke="#262D38" stroke-width="1.5"/>
-  <circle cx="48" cy="46" r="6" fill="#ED6A5E"/>
-  <circle cx="68" cy="46" r="6" fill="#F4BF4F"/>
-  <circle cx="88" cy="46" r="6" fill="#61C554"/>
-  <rect x="120" y="34" width="480" height="24" rx="6" fill="#242B36"/>
-  <text x="134" y="50" font-size="11" fill="#7E8B9B">https://sangeet-pitaraa.onrender.com</text>
+  <!-- Windows 11 Chrome Window Container -->
+  <rect x="15" y="15" width="890" height="540" rx="8" fill="#202124" stroke="#3C4043" stroke-width="1.5"/>
 
-  <!-- Dark Dim Overlay -->
-  <rect x="20" y="70" width="840" height="450" fill="#000000" opacity="0.65"/>
-
-  <!-- Chrome "Choose What to Share" Modal Window -->
-  <g transform="translate(130, 85)" filter="url(#dlgShadow)">
-    <!-- Modal Base -->
-    <rect x="0" y="0" width="620" height="375" rx="12" fill="#FFFFFF"/>
+  <!-- Windows Chrome Titlebar & Window Controls (Top Right: - [] X) -->
+  <g id="winCaptionControls" transform="translate(765, 15)">
+    <!-- Minimize -->
+    <rect x="0" y="0" width="45" height="34" fill="transparent"/>
+    <line x1="17" y1="18" x2="28" y2="18" stroke="#9AA0A6" stroke-width="1.2"/>
     
-    <!-- Modal Header -->
-    <text x="24" y="36" font-size="16" font-weight="700" fill="#1F2328">Choose what to share with sangeet-pitaraa.onrender.com</text>
-    <text x="24" y="54" font-size="12" fill="#656D76">sangeet-pitaraa.onrender.com wants to share the contents of your screen.</text>
+    <!-- Maximize / Restore -->
+    <rect x="45" y="0" width="45" height="34" fill="transparent"/>
+    <rect x="62" y="12" width="11" height="11" fill="none" stroke="#9AA0A6" stroke-width="1.2"/>
+    
+    <!-- Close Button (Hover red style in Windows) -->
+    <rect x="90" y="0" width="45" height="34" fill="transparent"/>
+    <line x1="107" y1="12" x2="117" y2="22" stroke="#9AA0A6" stroke-width="1.2"/>
+    <line x1="117" y1="12" x2="107" y2="22" stroke="#9AA0A6" stroke-width="1.2"/>
+  </g>
 
-    <!-- Tabs Navigation -->
-    <g transform="translate(24, 72)">
-      <!-- Chrome Tab (Active) -->
-      <rect x="0" y="0" width="130" height="32" rx="6" fill="#E8F0FE"/>
-      <text x="22" y="21" font-size="13" font-weight="700" fill="#1A73E8">Chrome Tab</text>
-      
-      <!-- Window Tab -->
-      <text x="160" y="21" font-size="13" font-weight="500" fill="#5F6368">Window</text>
-      
-      <!-- Entire Screen Tab -->
-      <text x="250" y="21" font-size="13" font-weight="500" fill="#5F6368">Entire Screen</text>
+  <!-- Chrome Tabs on Windows -->
+  <g transform="translate(25, 20)">
+    <!-- Active Tab: SangeetPitara -->
+    <path d="M 0 29 L 8 6 Q 10 2 15 2 L 175 2 Q 180 2 182 6 L 190 29 Z" fill="#323639"/>
+    <circle cx="26" cy="17" r="7" fill="#E85D04"/>
+    <text x="40" y="21" font-size="12" font-weight="600" fill="#E8EAED">SangeetPitara</text>
+    <text x="170" y="21" font-size="11" fill="#9AA0A6">×</text>
 
-      <line x1="0" y1="36" x2="572" y2="36" stroke="#E1E4E8" stroke-width="1"/>
+    <!-- Inactive Tab: YouTube -->
+    <text x="210" y="21" font-size="12" fill="#9AA0A6">YouTube - Music</text>
+    <!-- Plus button -->
+    <text x="325" y="21" font-size="14" fill="#9AA0A6">+</text>
+  </g>
+
+  <!-- Chrome Omnibox / Toolbar (Windows) -->
+  <g transform="translate(15, 52)">
+    <rect x="0" y="0" width="890" height="42" fill="#323639"/>
+    
+    <!-- Back / Forward / Refresh icons -->
+    <text x="20" y="26" font-size="15" fill="#9AA0A6">←</text>
+    <text x="45" y="26" font-size="15" fill="#5F6368">→</text>
+    <text x="70" y="26" font-size="15" fill="#9AA0A6">↻</text>
+
+    <!-- Address Bar -->
+    <rect x="100" y="6" width="680" height="30" rx="15" fill="#202124"/>
+    <!-- Lock icon -->
+    <path d="M 118 19 L 118 16 Q 118 13 122 13 Q 126 13 126 16 L 126 19 M 116 19 L 128 19 L 128 26 L 116 26 Z" fill="none" stroke="#9AA0A6" stroke-width="1.3"/>
+    <text x="136" y="26" font-size="12.5" fill="#E8EAED">https://sangeet-pitaraa.onrender.com<tspan fill="#9AA0A6">/?room=3HLYQKQT</tspan></text>
+  </g>
+
+  <!-- Windows Browser Content Area (Dimmed for modal dialog) -->
+  <rect x="15" y="94" width="890" height="460" fill="#000000" opacity="0.75"/>
+
+  <!-- CHROME "CHOOSE WHAT TO SHARE" DIALOG ON WINDOWS -->
+  <g transform="translate(135, 115)" filter="url(#winShadow)">
+    <!-- Modal Base (Windows Chrome Light Theme Dialog) -->
+    <rect x="0" y="0" width="650" height="400" rx="10" fill="#FFFFFF"/>
+    
+    <!-- Dialog Header -->
+    <text x="28" y="38" font-size="16.5" font-weight="700" fill="#1F1F1F">Choose what to share with sangeet-pitaraa.onrender.com</text>
+    <text x="28" y="58" font-size="12.5" fill="#444746">sangeet-pitaraa.onrender.com wants to share the contents of your screen.</text>
+
+    <!-- Windows Tabs (Chrome Tab | Window | Entire Screen) -->
+    <g transform="translate(28, 76)">
+      <!-- Tab 1: Chrome Tab (ACTIVE with Google Blue Underline) -->
+      <rect x="0" y="0" width="130" height="34" rx="6" fill="#E8F0FE"/>
+      <text x="22" y="22" font-size="13.5" font-weight="700" fill="#0B57D0">Chrome Tab</text>
+      
+      <!-- Tab 2: Window -->
+      <text x="160" y="22" font-size="13.5" font-weight="500" fill="#444746">Window</text>
+      
+      <!-- Tab 3: Entire Screen -->
+      <text x="250" y="22" font-size="13.5" font-weight="500" fill="#444746">Entire Screen</text>
+
+      <line x1="0" y1="38" x2="594" y2="38" stroke="#E0E2E6" stroke-width="1"/>
     </g>
 
-    <!-- Tab / Content List Container -->
-    <g transform="translate(24, 120)">
-      <rect x="0" y="0" width="572" height="155" rx="8" fill="#F8F9FA" stroke="#E1E4E8" stroke-width="1"/>
+    <!-- List of Open Tabs -->
+    <g transform="translate(28, 126)">
+      <rect x="0" y="0" width="594" height="175" rx="8" fill="#F8F9FA" stroke="#E0E2E6" stroke-width="1"/>
       
-      <!-- Selected Tab Item: YouTube Lo-Fi -->
+      <!-- Option 1: YouTube Music Tab (SELECTED) -->
       <g transform="translate(8, 8)">
-        <rect x="0" y="0" width="556" height="42" rx="6" fill="#E8F0FE" stroke="#1A73E8" stroke-width="1.5"/>
-        <rect x="12" y="11" width="20" height="20" rx="4" fill="#FF0000"/>
-        <polygon points="19,16 19,26 27,21" fill="#FFFFFF"/>
-        <text x="42" y="22" font-size="12" font-weight="700" fill="#1F2328">Lofi Hip Hop Radio - Beats to Relax/Study to - YouTube</text>
-        <text x="42" y="34" font-size="10" fill="#656D76">youtube.com</text>
+        <rect x="0" y="0" width="578" height="48" rx="6" fill="#E8F0FE" stroke="#0B57D0" stroke-width="1.8"/>
+        <!-- Red YouTube Icon -->
+        <rect x="14" y="13" width="22" height="22" rx="5" fill="#FF0000"/>
+        <polygon points="22,19 22,29 30,24" fill="#FFFFFF"/>
+        <text x="46" y="25" font-size="13" font-weight="700" fill="#1F1F1F">Lofi Hip Hop Radio - Beats to Relax/Study to - YouTube</text>
+        <text x="46" y="40" font-size="11" fill="#5E6368">youtube.com</text>
       </g>
 
-      <!-- Second Tab Item: Spotify Web -->
-      <g transform="translate(8, 54)">
-        <rect x="0" y="0" width="556" height="42" rx="6" fill="#FFFFFF"/>
-        <circle cx="22" cy="21" r="10" fill="#1DB954"/>
-        <text x="42" y="22" font-size="12" font-weight="600" fill="#1F2328">Spotify - Web Player: Music for everyone</text>
-        <text x="42" y="34" font-size="10" fill="#656D76">open.spotify.com</text>
+      <!-- Option 2: Spotify Web Player -->
+      <g transform="translate(8, 62)">
+        <rect x="0" y="0" width="578" height="48" rx="6" fill="#FFFFFF"/>
+        <!-- Spotify Green Icon -->
+        <circle cx="25" cy="24" r="11" fill="#1DB954"/>
+        <text x="46" y="25" font-size="13" font-weight="600" fill="#1F1F1F">Spotify - Web Player: Music for everyone</text>
+        <text x="46" y="40" font-size="11" fill="#5E6368">open.spotify.com</text>
       </g>
 
-      <!-- Third Tab Item: SangeetPitara -->
-      <g transform="translate(8, 100)">
-        <rect x="0" y="0" width="556" height="42" rx="6" fill="#FFFFFF"/>
-        <rect x="12" y="11" width="20" height="20" rx="4" fill="#E85D04"/>
-        <text x="42" y="22" font-size="12" font-weight="600" fill="#1F2328">SangeetPitara - Room Y8V4D67G</text>
-        <text x="42" y="34" font-size="10" fill="#656D76">sangeet-pitaraa.onrender.com</text>
+      <!-- Option 3: Soundcloud -->
+      <g transform="translate(8, 116)">
+        <rect x="0" y="0" width="578" height="48" rx="6" fill="#FFFFFF"/>
+        <circle cx="25" cy="24" r="11" fill="#FF5500"/>
+        <text x="46" y="25" font-size="13" font-weight="600" fill="#1F1F1F">Chill Beats Playlist - SoundCloud</text>
+        <text x="46" y="40" font-size="11" fill="#5E6368">soundcloud.com</text>
       </g>
     </g>
 
-    <!-- CRITICAL BOTTOM BAR WITH AUDIO CHECKBOX -->
-    <g transform="translate(24, 290)">
-      <!-- Highlight box around the audio checkbox -->
-      <rect x="0" y="12" width="240" height="38" rx="8" fill="#FFF3E8" stroke="#E85D04" stroke-width="2"/>
+    <!-- CRITICAL BOTTOM BAR WITH WINDOWS AUDIO CHECKBOX -->
+    <g transform="translate(28, 318)">
+      <!-- Prominent Highlight Box around the Checkbox -->
+      <rect x="0" y="10" width="260" height="44" rx="8" fill="#FFF3E8" stroke="#E85D04" stroke-width="2.5"/>
       
-      <!-- Checkbox Icon (Checked) -->
-      <rect x="14" y="23" width="16" height="16" rx="3" fill="#1A73E8"/>
-      <polyline points="18,31 22,35 28,26" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- Windows Blue Checkbox (Checked) -->
+      <rect x="16" y="22" width="18" height="18" rx="4" fill="#0B57D0"/>
+      <polyline points="20,31 24,35 30,26" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
       
-      <!-- Speaker Icon -->
-      <path d="M42 27 L46 27 L50 23 L50 39 L46 35 L42 35 Z" fill="#1F2328"/>
-      <path d="M53 28 A 4 4 0 0 1 53 34" fill="none" stroke="#1F2328" stroke-width="1.5" stroke-linecap="round"/>
+      <!-- Speaker Sound Icon -->
+      <path d="M 45 27 L 49 27 L 54 22 L 54 40 L 49 35 L 45 35 Z" fill="#1F1F1F"/>
+      <path d="M 57 27 A 5 5 0 0 1 57 35" fill="none" stroke="#1F1F1F" stroke-width="1.8" stroke-linecap="round"/>
 
-      <text x="60" y="34" font-size="13" font-weight="700" fill="#1F2328">Also share tab audio</text>
+      <text x="66" y="35" font-size="13.5" font-weight="700" fill="#1F1F1F">Also share tab audio</text>
 
-      <!-- Buttons: Cancel and Share -->
-      <rect x="425" y="16" width="68" height="32" rx="6" fill="#F1F3F4"/>
-      <text x="444" y="37" font-size="12" font-weight="600" fill="#1F2328">Cancel</text>
-
-      <rect x="502" y="16" width="70" height="32" rx="6" fill="#1A73E8"/>
-      <text x="522" y="37" font-size="12" font-weight="700" fill="#FFFFFF">Share</text>
+      <!-- Windows Dialog Buttons: Cancel & Share -->
+      <g transform="translate(435, 14)">
+        <rect x="0" y="0" width="75" height="36" rx="18" fill="#F1F3F4"/>
+        <text x="18" y="23" font-size="13" font-weight="600" fill="#1F1F1F">Cancel</text>
+        
+        <rect x="85" y="0" width="75" height="36" rx="18" fill="#0B57D0"/>
+        <text x="104" y="23" font-size="13" font-weight="700" fill="#FFFFFF">Share</text>
+      </g>
     </g>
   </g>
 
-  <!-- CALLOUT ARROW 1: Pointing to "Also share tab audio" Checkbox -->
-  <g transform="translate(60, 435)">
-    <!-- Callout Box -->
-    <rect x="0" y="0" width="290" height="66" rx="10" fill="#E85D04" filter="url(#glow)"/>
-    <text x="14" y="24" font-size="13" font-weight="800" fill="#FFFFFF">STEP 1: TICK THIS BOX!</text>
-    <text x="14" y="42" font-size="11" font-weight="600" fill="#FFF0E5">CRITICAL: Check "Also share tab audio"</text>
-    <text x="14" y="56" font-size="10" fill="#FFE2CC">Without this, no sound will reach listeners.</text>
+  <!-- CALLOUT ARROW 1 (ORANGE): Pointing to "Also share tab audio" Checkbox -->
+  <g transform="translate(55, 460)">
+    <rect x="0" y="0" width="310" height="70" rx="10" fill="#E85D04" filter="url(#winGlow)"/>
+    <text x="14" y="24" font-size="13.5" font-weight="800" fill="#FFFFFF">STEP 1: TICK THIS BOX! (CRITICAL)</text>
+    <text x="14" y="44" font-size="11.5" font-weight="600" fill="#FFF0E5">Check "Also share tab audio"</text>
+    <text x="14" y="58" font-size="10.5" fill="#FFE2CC">Without this, Chrome only streams silent video!</text>
 
-    <!-- Curved Arrow -->
-    <path d="M 230 0 C 240 -25, 230 -40, 220 -46" fill="none" stroke="#E85D04" stroke-width="4" stroke-linecap="round"/>
-    <polygon points="212,-48 226,-42 225,-54" fill="#E85D04"/>
+    <!-- Curved Arrow Pointing Up-Right to Checkbox -->
+    <path d="M 245 0 C 260 -25, 250 -40, 235 -48" fill="none" stroke="#E85D04" stroke-width="4" stroke-linecap="round"/>
+    <polygon points="225,-52 240,-44 242,-56" fill="#E85D04"/>
   </g>
 
-  <!-- CALLOUT ARROW 2: Pointing to Tab Selection -->
-  <g transform="translate(640, 160)">
-    <rect x="0" y="0" width="210" height="60" rx="10" fill="#1A73E8" filter="url(#glow)"/>
-    <text x="12" y="22" font-size="12" font-weight="800" fill="#FFFFFF">SELECT MUSIC TAB</text>
-    <text x="12" y="38" font-size="10.5" fill="#E8F0FE">Pick YouTube or Spotify</text>
-    <text x="12" y="50" font-size="9.5" fill="#C2E7FF">or "Entire Screen" for desktop</text>
+  <!-- CALLOUT ARROW 2 (BLUE): Pointing to Tab Selection -->
+  <g transform="translate(685, 175)">
+    <rect x="0" y="0" width="215" height="64" rx="10" fill="#0B57D0" filter="url(#winGlow)"/>
+    <text x="12" y="22" font-size="12.5" font-weight="800" fill="#FFFFFF">STEP 2: PICK MUSIC TAB</text>
+    <text x="12" y="38" font-size="11" fill="#E8F0FE">Select YouTube or Spotify</text>
+    <text x="12" y="52" font-size="10" fill="#C2E7FF">or Entire Screen for desktop apps</text>
 
-    <path d="M 0 30 C -25 30, -35 25, -45 15" fill="none" stroke="#1A73E8" stroke-width="3.5" stroke-linecap="round"/>
-    <polygon points="-52,10 -40,14 -46,22" fill="#1A73E8"/>
+    <path d="M 0 32 C -25 32, -35 25, -45 15" fill="none" stroke="#0B57D0" stroke-width="3.5" stroke-linecap="round"/>
+    <polygon points="-52,10 -40,14 -46,22" fill="#0B57D0"/>
   </g>
 
-  <!-- CALLOUT ARROW 3: Pointing to Share Button -->
-  <g transform="translate(660, 420)">
-    <rect x="0" y="0" width="180" height="52" rx="10" fill="#107C41" filter="url(#glow)"/>
-    <text x="12" y="22" font-size="12" font-weight="800" fill="#FFFFFF">STEP 2: CLICK SHARE</text>
-    <text x="12" y="38" font-size="10.5" fill="#DFF6DD">Start streaming instantly!</text>
+  <!-- CALLOUT ARROW 3 (GREEN): Pointing to Share Button -->
+  <g transform="translate(685, 440)">
+    <rect x="0" y="0" width="195" height="56" rx="10" fill="#107C41" filter="url(#winGlow)"/>
+    <text x="14" y="23" font-size="13" font-weight="800" fill="#FFFFFF">STEP 3: CLICK SHARE</text>
+    <text x="14" y="41" font-size="11" fill="#DFF6DD">Music streams live in sync!</text>
 
-    <path d="M 20 0 C 0 -18, -12 -25, -20 -30" fill="none" stroke="#107C41" stroke-width="3" stroke-linecap="round"/>
+    <path d="M 20 0 C 0 -18, -10 -25, -20 -30" fill="none" stroke="#107C41" stroke-width="3.5" stroke-linecap="round"/>
     <polygon points="-28,-34 -17,-27 -23,-21" fill="#107C41"/>
   </g>
 </svg>

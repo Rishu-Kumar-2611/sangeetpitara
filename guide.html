@@ -748,14 +748,57 @@
           <!-- Canvas with dynamic content based on mode -->
           <div class="guide-canvas-wrap">
 
-            <!-- MODE 1: DESKTOP BROWSER DIALOG -->
+            <!-- MODE 1: DESKTOP BROWSER DIALOG (WINDOWS 11 / 10 CHROME) -->
             <div id="audio-mode-desktop" class="guide-viewport" style="display: block;">
-              <img src="/guide/img/03b-desktop-share-dialog.svg" alt="Real Chrome / Edge Screen & Audio Share Dialog with Arrows" />
+              <img src="/guide/img/03b-desktop-share-dialog.svg" alt="Real Windows 11 / 10 Chrome Screen & Audio Share Dialog with Arrows" />
             </div>
 
-            <!-- MODE 2: MOBILE ANDROID SCREEN DIALOG -->
-            <div id="audio-mode-mobile" class="guide-viewport" style="display: none;">
-              <img src="/guide/img/03c-mobile-share-dialog.svg" alt="Real Android MediaProjection Entire Screen Cast Dialog with Arrows" />
+            <!-- MODE 2: MOBILE ANDROID SCREEN DIALOG (REAL USER INTERFACE) -->
+            <div id="audio-mode-mobile" class="guide-viewport" style="display: none; background: #0A0D12; padding: 16px;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; max-width: 740px; margin: 0 auto;">
+                
+                <!-- Phone Step 1: App Interface -->
+                <div style="position: relative; border-radius: 18px; overflow: hidden; border: 2px solid #28313E; box-shadow: 0 10px 24px rgba(0,0,0,0.6);">
+                  <img src="/guide/img/03c-mobile-real-room.jpg" alt="Real SangeetPitara Mobile App Screen" style="width: 100%; display: block;" />
+                  
+                  <!-- Hotspot on "Share device audio" button -->
+                  <div class="guide-hotspot" style="top: 72%; left: 50%;">
+                    <div class="guide-hotspot-pulse"></div>
+                    <div class="guide-hotspot-pin">1</div>
+                  </div>
+                  <!-- Callout Arrow -->
+                  <div class="guide-callout" style="top: 65%; left: 35%; font-size: 0.76rem; background: rgba(232, 93, 4, 0.95); border-color: #FFF;">
+                    STEP 1: Tap "Share device audio"
+                  </div>
+                </div>
+
+                <!-- Phone Step 2: Real Android System Dialog -->
+                <div style="position: relative; border-radius: 18px; overflow: hidden; border: 2px solid #28313E; box-shadow: 0 10px 24px rgba(0,0,0,0.6);">
+                  <img src="/guide/img/03d-mobile-real-dialog.jpg" alt="Real Android System Entire Screen Casting Dialog" style="width: 100%; display: block;" />
+                  
+                  <!-- Hotspot on Scope dropdown -->
+                  <div class="guide-hotspot" style="top: 71%; left: 74%;">
+                    <div class="guide-hotspot-pulse"></div>
+                    <div class="guide-hotspot-pin">2</div>
+                  </div>
+                  <div class="guide-callout" style="top: 64%; left: 24%; font-size: 0.74rem; background: #E85D04; border-color: #FFF;">
+                    STEP 2: Set Scope to "Entire screen"
+                  </div>
+
+                  <!-- Hotspot on Start button -->
+                  <div class="guide-hotspot" style="top: 92%; left: 70%;">
+                    <div class="guide-hotspot-pulse" style="background: #2563EB;"></div>
+                    <div class="guide-hotspot-pin" style="background: #2563EB;">3</div>
+                  </div>
+                  <div class="guide-callout" style="top: 85%; left: 42%; font-size: 0.74rem; background: #1D4ED8; border-color: #FFF;">
+                    STEP 3: Tap "Start"
+                  </div>
+                </div>
+
+              </div>
+              <div style="text-align: center; margin-top: 10px; font-size: 0.8rem; color: #9CA3AF;">
+                Real Android mobile interface showing <strong>Share device audio</strong> (left) and the <strong>Entire screen</strong> casting prompt (right).
+              </div>
             </div>
 
             <!-- MODE 3: LOCAL FILE SHARING -->
@@ -801,25 +844,25 @@
             <div id="instructions-mobile" style="display: none;">
               <ul class="guide-step-list">
                 <li class="guide-step-item">
-                  <div class="guide-step-head"><span class="num">1</span> Open the SangeetPitara Android App</div>
-                  <p class="guide-step-desc">Mobile browsers cannot capture background audio from other apps (Spotify / YouTube). Use the native Android app.</p>
+                  <div class="guide-step-head"><span class="num">1</span> Tap "Share device audio"</div>
+                  <p class="guide-step-desc">In the SangeetPitara Android app, tap the orange <strong>Share device audio</strong> button in the room.</p>
                 </li>
                 <li class="guide-step-item highlight">
-                  <div class="guide-step-head" style="color: #FF9E66;"><span class="num">2</span> ⚠️ SELECT "Entire screen"</div>
-                  <p class="guide-step-desc">When Android asks <em>"Start recording or casting?"</em>, select <strong>"Entire screen"</strong> instead of a single app.</p>
+                  <div class="guide-step-head" style="color: #FF9E66;"><span class="num">2</span> ⚠️ Set Scope to "Entire screen"</div>
+                  <p class="guide-step-desc">When Android asks <em>"Start recording or casting with SangeetPitara?"</em>, ensure <strong>Scope</strong> is set to <strong>Entire screen</strong> (not a single app) so background music is captured!</p>
                 </li>
                 <li class="guide-step-item">
-                  <div class="guide-step-head"><span class="num">3</span> Tap "Start now"</div>
-                  <p class="guide-step-desc">SangeetPitara captures all system audio playback and streams it to the room.</p>
+                  <div class="guide-step-head"><span class="num">3</span> Tap "Start"</div>
+                  <p class="guide-step-desc">Tap the blue <strong>Start</strong> button. Android now captures device audio playback and streams it directly to the room.</p>
                 </li>
                 <li class="guide-step-item">
                   <div class="guide-step-head"><span class="num">4</span> Open Your Music App</div>
-                  <p class="guide-step-desc">Switch to Spotify, YouTube Music, or any player. Everyone in the room will hear it in real time!</p>
+                  <p class="guide-step-desc">Switch to Spotify, YouTube Music, or any audio player. Everyone in the room will hear your music live in sync!</p>
                 </li>
               </ul>
               <div class="guide-quick-tip">
-                <strong>📱 In a Mobile Browser?</strong>
-                If you are on a phone browser without the app, tap <strong>"Share audio file"</strong> to play any song stored on your phone!
+                <strong>📱 In a Phone Browser?</strong>
+                If you are using a mobile browser without the app, tap <strong>"Share audio file"</strong> to stream any local MP3/WAV/FLAC track from your phone storage!
               </div>
             </div>
 
