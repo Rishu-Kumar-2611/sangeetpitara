@@ -4,18 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SangeetPitara — How to Use & User Guide</title>
-  <meta name="description" content="SangeetPitara User Manual: Creating Room, Joining Room, Hosting & Audio Sharing, Inviting Users, and Other Features with real-time environment screenshots and step-by-step procedures." />
+  <meta name="description" content="SangeetPitara User Manual: Creating Room, Joining Room, Host Room & Audio Sharing, Inviting Users, and Other Features." />
   <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261110-chat-review1" />
   <style>
     :root {
       --gh-bg: #FFFFFF;
-      --gh-text: #1F2328;
-      --gh-text-muted: #656D76;
+      --gh-card-bg: #FFFFFF;
       --gh-border: #D0D7DE;
-      --gh-card-hover: #F6F8FA;
+      --gh-text: #1F2328;
+      --gh-text-muted: #57606A;
       --gh-blue: #0969DA;
-      --gh-blue-hover: #0860CA;
-      --sp-orange: #E85D04;
+      --gh-blue-hover: #08499B;
     }
 
     * {
@@ -29,13 +28,12 @@
       margin: 0;
       padding: 0;
       line-height: 1.5;
-      -webkit-font-smoothing: antialiased;
     }
 
-    /* Top Navigation Bar */
+    /* Top Navigation Header */
     .site-nav {
-      border-bottom: 1px solid var(--gh-border);
-      background: #FFFFFF;
+      background: #0E1218;
+      border-bottom: 1px solid #272B30;
       position: sticky;
       top: 0;
       z-index: 100;
@@ -52,27 +50,29 @@
     }
 
     .brand-group {
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 12px;
       text-decoration: none;
-      color: var(--gh-text);
+      color: #FFFFFF;
       font-weight: 700;
-      font-size: 1.25rem;
+      font-size: 1.15rem;
+      cursor: pointer;
     }
 
     .brand-badge {
-      font-size: 0.75rem;
-      background: #F6F8FA;
-      border: 1px solid var(--gh-border);
-      color: var(--gh-text-muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: #E85D04;
+      color: #FFFFFF;
       padding: 2px 8px;
-      border-radius: 999px;
-      font-weight: 600;
+      border-radius: 12px;
+      font-weight: 700;
     }
 
     .nav-actions {
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 10px;
     }
@@ -81,131 +81,100 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 14px;
+      padding: 7px 14px;
       border-radius: 6px;
       font-size: 0.88rem;
       font-weight: 600;
       text-decoration: none;
-      cursor: pointer;
       transition: all 0.15s ease;
-    }
-
-    .btn-gh-secondary {
-      background: #F6F8FA;
-      border: 1px solid var(--gh-border);
-      color: var(--gh-text);
-    }
-
-    .btn-gh-secondary:hover {
-      background: #EFF2F5;
-      border-color: #AFB8C1;
+      cursor: pointer;
+      border: 1px solid transparent;
     }
 
     .btn-gh-primary {
-      background: #1F2328;
-      border: 1px solid #1F2328;
+      background: #238636;
       color: #FFFFFF;
+      border-color: rgba(240, 246, 252, 0.1);
     }
 
     .btn-gh-primary:hover {
+      background: #2EA043;
+    }
+
+    .btn-gh-secondary {
+      background: #21262D;
+      color: #C9D1D9;
+      border-color: #363B42;
+    }
+
+    .btn-gh-secondary:hover {
       background: #2D333B;
+      color: #FFFFFF;
     }
 
     /* Main Container (Plain White Background) */
     .page-main {
       max-width: 1240px;
       margin: 0 auto;
-      padding: 36px 24px 80px;
+      padding: 44px 24px 80px;
     }
 
-    .page-intro {
-      margin-bottom: 24px;
+    /* THE FIVE SQUARE / RECTANGULAR BOXES (Matching GitHub Skills Cards) */
+    .boxes-grid-view {
+      display: block;
+      animation: fadeIn 0.2s ease;
     }
 
-    .page-title {
-      font-size: 1.9rem;
-      font-weight: 800;
-      color: #1F2328;
-      margin: 0 0 6px;
-      letter-spacing: -0.01em;
-    }
-
-    .page-sub {
-      color: var(--gh-text-muted);
-      font-size: 1.05rem;
-      margin: 0;
-    }
-
-    /* THE RECTANGLES GRID (Creating Room, Joining Room, Hosting, Inviting Users, Other Feature) */
     .rectangles-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 18px;
-      margin-bottom: 36px;
+      gap: 20px;
     }
 
-    /* The Rectangle Card (Matching the user's reference image) */
-    .topic-rectangle {
+    .topic-card {
       background: #FFFFFF;
       border: 1px solid var(--gh-border);
       border-radius: 8px;
-      padding: 22px 20px;
+      padding: 24px 22px;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      min-height: 160px;
+      min-height: 180px;
       cursor: pointer;
       text-decoration: none;
-      transition: all 0.15s ease;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
       position: relative;
     }
 
-    .topic-rectangle:hover {
-      background: #F6F8FA;
+    .topic-card:hover {
       border-color: #8C959F;
-      box-shadow: 0 4px 14px rgba(140, 149, 159, 0.15);
+      box-shadow: 0 6px 16px rgba(140, 149, 159, 0.18);
       transform: translateY(-2px);
+      background: #FAFBFC;
     }
 
-    .topic-rectangle.active {
-      border-color: #0969DA;
-      border-width: 2px;
-      background: #F8FAFD;
-      box-shadow: 0 4px 16px rgba(9, 105, 218, 0.14);
-      padding: 21px 19px; /* adjust for 2px border */
+    .topic-card:active {
+      transform: translateY(0);
     }
 
-    .topic-rectangle.active::after {
-      content: "";
-      position: absolute;
-      bottom: -11px;
-      left: 50%;
-      transform: translateX(-50%);
-      border-width: 10px 10px 0;
-      border-style: solid;
-      border-color: #0969DA transparent;
-      display: block;
-      width: 0;
-    }
-
-    .rect-title {
-      font-size: 1.18rem;
+    .card-title {
+      font-size: 1.22rem;
       font-weight: 700;
       color: #1F2328;
-      margin: 0 0 8px;
+      margin: 0 0 10px;
       line-height: 1.35;
     }
 
-    .rect-desc {
+    .card-desc {
       color: var(--gh-text-muted);
-      font-size: 0.88rem;
-      margin: 0 0 16px;
-      line-height: 1.45;
+      font-size: 0.92rem;
+      margin: 0 0 20px;
+      line-height: 1.5;
     }
 
-    .rect-link {
+    .card-action {
       color: var(--gh-blue);
-      font-size: 0.92rem;
+      font-size: 0.94rem;
       font-weight: 600;
       display: inline-flex;
       align-items: center;
@@ -213,20 +182,14 @@
       margin-top: auto;
     }
 
-    .topic-rectangle:hover .rect-link,
-    .topic-rectangle.active .rect-link {
+    .topic-card:hover .card-action {
       color: var(--gh-blue-hover);
       text-decoration: underline;
     }
 
-    /* DOCUMENTATION DISPLAY AREA */
-    .doc-display-panel {
-      background: #FFFFFF;
-      border: 1px solid var(--gh-border);
-      border-radius: 12px;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
-      overflow: hidden;
-      margin-top: 10px;
+    /* DOCUMENTATION VIEW (Hidden until a card is selected) */
+    .topic-doc-view {
+      display: none;
       animation: fadeIn 0.25s ease;
     }
 
@@ -235,8 +198,46 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
+    /* Back Bar */
+    .top-back-bar {
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #F6F8FA;
+      border: 1px solid var(--gh-border);
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: #1F2328;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .back-btn:hover {
+      background: #EAEFF2;
+      border-color: #8C959F;
+    }
+
+    .doc-container {
+      background: #FFFFFF;
+      border: 1px solid var(--gh-border);
+      border-radius: 12px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.05);
+      overflow: hidden;
+    }
+
     .doc-header {
-      padding: 22px 28px;
+      padding: 24px 32px;
       border-bottom: 1px solid var(--gh-border);
       background: #F6F8FA;
       display: flex;
@@ -246,10 +247,11 @@
     }
 
     .doc-title-group h2 {
-      margin: 0 0 4px;
-      font-size: 1.55rem;
-      font-weight: 800;
+      margin: 0 0 6px;
+      font-size: 1.65rem;
       color: #1F2328;
+      font-weight: 800;
+      letter-spacing: -0.01em;
     }
 
     .doc-title-group p {
@@ -259,73 +261,72 @@
     }
 
     .doc-badge {
-      background: #E85D04;
+      background: #0969DA;
       color: #FFFFFF;
-      font-size: 0.78rem;
+      font-size: 0.72rem;
       font-weight: 700;
       padding: 4px 10px;
-      border-radius: 999px;
+      border-radius: 20px;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.05em;
       white-space: nowrap;
     }
 
     .doc-content {
-      padding: 28px;
+      padding: 32px;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 28px;
+      gap: 36px;
       align-items: start;
     }
 
-    @media (max-width: 920px) {
+    @media (max-width: 900px) {
       .doc-content {
         grid-template-columns: 1fr;
+        padding: 20px;
+        gap: 24px;
       }
     }
 
-    /* Visual Media Wrap (Real-time environment screenshot) */
+    /* Real-Time Environment Visual Card */
     .realtime-visual-card {
-      background: #0D1117;
-      border: 1px solid #D0D7DE;
-      border-radius: 10px;
-      overflow: hidden;
-      padding: 12px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      background: #F6F8FA;
+      border: 1px solid var(--gh-border);
+      border-radius: 8px;
+      padding: 16px;
       text-align: center;
     }
 
-    .realtime-visual-card img,
-    .realtime-visual-card svg {
+    .realtime-visual-card img {
       max-width: 100%;
       height: auto;
+      border-radius: 6px;
+      border: 1px solid #D0D7DE;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
       display: block;
       margin: 0 auto;
-      border-radius: 6px;
     }
 
     .visual-caption {
       margin-top: 10px;
-      font-size: 0.8rem;
-      color: #94A3B8;
-      text-align: center;
+      font-size: 0.85rem;
+      color: var(--gh-text-muted);
+      line-height: 1.4;
+      font-style: italic;
     }
 
-    /* Step-by-Step Procedure Details */
+    /* Procedure Details */
     .procedure-details {
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 16px;
     }
 
     .procedure-head {
-      font-size: 1.15rem;
+      font-size: 1.25rem;
       font-weight: 700;
       color: #1F2328;
       margin: 0 0 4px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
     }
 
     .step-box {
@@ -333,7 +334,7 @@
       border: 1px solid var(--gh-border);
       border-left: 4px solid #0969DA;
       border-radius: 6px;
-      padding: 14px 16px;
+      padding: 14px 18px;
     }
 
     .step-box.critical {
@@ -344,7 +345,7 @@
 
     .step-box-title {
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 0.98rem;
       color: #1F2328;
       margin-bottom: 4px;
     }
@@ -352,7 +353,7 @@
     .step-box-desc {
       margin: 0;
       color: #57606A;
-      font-size: 0.9rem;
+      font-size: 0.92rem;
       line-height: 1.5;
     }
 
@@ -360,10 +361,10 @@
       background: #FFF8C5;
       border: 1px solid #E3B341;
       border-radius: 6px;
-      padding: 12px 16px;
-      font-size: 0.88rem;
+      padding: 12px 18px;
+      font-size: 0.9rem;
       color: #7D4E00;
-      margin-top: 6px;
+      margin-top: 8px;
     }
 
     .pro-tip-box strong {
@@ -372,16 +373,17 @@
       color: #4D2D00;
     }
 
-    /* Sub-tabs for Hosting (Desktop vs Mobile vs File) */
+    /* Sub-mode selector for Hosting (Desktop vs Mobile vs File) */
     .submode-switch {
       display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
     }
 
     .submode-btn {
-      padding: 8px 14px;
-      font-size: 0.85rem;
+      padding: 9px 16px;
+      font-size: 0.88rem;
       font-weight: 600;
       border: 1px solid var(--gh-border);
       border-radius: 6px;
@@ -400,35 +402,65 @@
       border-color: #1F2328;
     }
 
-    /* Features Grid inside Other Features */
+    /* Other features grid */
     .other-features-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 16px;
-      margin-top: 10px;
+      gap: 20px;
+      padding: 32px;
+    }
+
+    @media (max-width: 600px) {
+      .other-features-grid {
+        grid-template-columns: 1fr;
+        padding: 18px;
+      }
     }
 
     .feature-tile {
       background: #F6F8FA;
       border: 1px solid var(--gh-border);
       border-radius: 8px;
-      padding: 16px;
+      padding: 20px;
     }
 
     .feature-tile h4 {
-      margin: 0 0 6px;
-      font-size: 1.05rem;
+      margin: 0 0 10px;
+      font-size: 1.12rem;
       color: #1F2328;
-      display: flex;
-      align-items: center;
-      gap: 8px;
     }
 
     .feature-tile p {
-      margin: 0;
+      margin: 10px 0 0;
       color: #57606A;
-      font-size: 0.86rem;
-      line-height: 1.45;
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+
+    /* Bottom Navigation Bar inside Doc */
+    .bottom-nav-bar {
+      padding: 18px 32px;
+      background: #F6F8FA;
+      border-top: 1px solid var(--gh-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .topic-nav-link {
+      color: var(--gh-blue);
+      font-size: 0.92rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .topic-nav-link:hover {
+      text-decoration: underline;
     }
 
     /* Footer */
@@ -437,7 +469,7 @@
       text-align: center;
       padding: 36px 20px;
       color: var(--gh-text-muted);
-      font-size: 0.86rem;
+      font-size: 0.88rem;
       background: #FFFFFF;
     }
 
@@ -446,13 +478,14 @@
       text-decoration: underline;
     }
   </style>
+  <script src="/guide.js"></script>
 </head>
 <body>
 
   <!-- Topmost Navigation Header -->
   <header class="site-nav">
     <div class="nav-inner">
-      <a href="/" class="brand-group">
+      <a href="/guide.html" class="brand-group" title="Back to Topics">
         <img src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261110-chat-review1" alt="SangeetPitara logo" width="32" height="32" />
         <span>SangeetPitara</span>
         <span class="brand-badge">How to Use</span>
@@ -468,310 +501,320 @@
   <!-- Plain White Background Main Area -->
   <main class="page-main">
 
-    <div class="page-intro">
-      <h1 class="page-title">SangeetPitara User Manual</h1>
-      <p class="page-sub">Select any topic below to view the step-by-step procedures and real-time environment screenshots.</p>
-    </div>
+    <!-- 1. THE FIVE SQUARE / RECTANGULAR BOXES (Matching GitHub Skills Cards) -->
+    <section id="topicsGridView" class="boxes-grid-view">
+      <div class="rectangles-grid" role="list">
 
-    <!-- THE RECTANGLES (Creating Room, Joining Room, Host Room & Audio Sharing, Inviting Users, Other Feature) -->
-    <div class="rectangles-grid" id="topicRectangles" role="tablist">
+        <!-- Square 1: Creating Room -->
+        <a href="#creating-room" class="topic-card" data-topic="creating-room" role="listitem">
+          <div>
+            <h3 class="card-title">Creating Room</h3>
+            <p class="card-desc">Start a private listening room as Host with a unique 8-character code in under a minute.</p>
+          </div>
+          <span class="card-action">View Documentation &rarr;</span>
+        </a>
 
-      <!-- Rectangle 1: Creating Room -->
-      <div class="topic-rectangle active" data-topic="creating-room" role="tab" tabindex="0">
-        <div>
-          <h3 class="rect-title">Creating Room</h3>
-          <p class="rect-desc">Start a private listening room as Host with a unique 8-character code in under a minute.</p>
-        </div>
-        <span class="rect-link">View Documentation &gt;</span>
+        <!-- Square 2: Joining Room -->
+        <a href="#joining-room" class="topic-card" data-topic="joining-room" role="listitem">
+          <div>
+            <h3 class="card-title">Joining Room</h3>
+            <p class="card-desc">Connect using an 8-character code or direct invite link to sync to live audio.</p>
+          </div>
+          <span class="card-action">View Documentation &rarr;</span>
+        </a>
+
+        <!-- Square 3: Host Room & Audio -->
+        <a href="#host-room" class="topic-card" data-topic="host-room" role="listitem">
+          <div>
+            <h3 class="card-title">Host Room & Audio</h3>
+            <p class="card-desc">Broadcast music from Windows desktop, Android phone casting, or local MP3 files.</p>
+          </div>
+          <span class="card-action">View Documentation &rarr;</span>
+        </a>
+
+        <!-- Square 4: Inviting Users -->
+        <a href="#inviting-users" class="topic-card" data-topic="inviting-users" role="listitem">
+          <div>
+            <h3 class="card-title">Inviting Users</h3>
+            <p class="card-desc">Copy invite links, promote Co-hosts, lock rooms, and manage participant access.</p>
+          </div>
+          <span class="card-action">View Documentation &rarr;</span>
+        </a>
+
+        <!-- Square 5: Other Feature -->
+        <a href="#other-feature" class="topic-card" data-topic="other-feature" role="listitem">
+          <div>
+            <h3 class="card-title">Other Feature</h3>
+            <p class="card-desc">Chat section, People roster, Help & Health diagnostics, and 5 studio themes.</p>
+          </div>
+          <span class="card-action">View Documentation &rarr;</span>
+        </a>
+
       </div>
+    </section>
 
-      <!-- Rectangle 2: Joining Room -->
-      <div class="topic-rectangle" data-topic="joining-room" role="tab" tabindex="0">
-        <div>
-          <h3 class="rect-title">Joining Room</h3>
-          <p class="rect-desc">Connect using an 8-character code or direct invite link to sync to live audio.</p>
-        </div>
-        <span class="rect-link">View Documentation &gt;</span>
-      </div>
-
-      <!-- Rectangle 3: Hosting Room & Audio Sharing -->
-      <div class="topic-rectangle" data-topic="host-room" role="tab" tabindex="0">
-        <div>
-          <h3 class="rect-title">Host Room & Audio</h3>
-          <p class="rect-desc">Broadcast music from Windows desktop, Android phone casting, or local MP3 files.</p>
-        </div>
-        <span class="rect-link">View Documentation &gt;</span>
-      </div>
-
-      <!-- Rectangle 4: Inviting Users -->
-      <div class="topic-rectangle" data-topic="inviting-users" role="tab" tabindex="0">
-        <div>
-          <h3 class="rect-title">Inviting Users</h3>
-          <p class="rect-desc">Copy invite links, promote Co-hosts, lock rooms, and manage participant access.</p>
-        </div>
-        <span class="rect-link">View Documentation &gt;</span>
-      </div>
-
-      <!-- Rectangle 5: Other Feature -->
-      <div class="topic-rectangle" data-topic="other-feature" role="tab" tabindex="0">
-        <div>
-          <h3 class="rect-title">Other Feature</h3>
-          <p class="rect-desc">Chat section, People roster, Help & Health diagnostics, and 5 studio themes.</p>
-        </div>
-        <span class="rect-link">View Documentation &gt;</span>
-      </div>
-
-    </div>
-
-    <!-- DOCUMENTATION DISPLAY CONTAINER (Switches based on clicked rectangle) -->
-    <div class="doc-display-panel" id="docDisplayPanel">
+    <!-- 2. TOPIC DOCUMENTATION VIEW (Shown when a square is clicked) -->
+    <section id="topicDocView" class="topic-doc-view">
       
-      <!-- 1. CREATING ROOM DOCUMENTATION -->
-      <div id="doc-creating-room" class="doc-panel" style="display: block;">
-        <div class="doc-header">
-          <div class="doc-title-group">
-            <h2>Creating Room</h2>
-            <p>Step-by-step procedure and real-time environment for launching a new listening session.</p>
-          </div>
-          <span class="doc-badge">Step-by-Step Guide</span>
-        </div>
-        <div class="doc-content">
-          <!-- Real-time Environment Picture -->
-          <div class="realtime-visual-card">
-            <img src="/guide/img/01-create-room.png" alt="Real Room Creation Screen with Arrows" />
-            <div class="visual-caption">Real-time SangeetPitara Room Creation Screen showing Display Name, Room Name, and "+ Create private room".</div>
-          </div>
-          <!-- Procedure Details -->
-          <div class="procedure-details">
-            <h3 class="procedure-head">Procedure Details</h3>
-            <div class="step-box">
-              <div class="step-box-title">Step 1: Enter Your Display Name</div>
-              <p class="step-box-desc">Type your name (e.g., "Sam") in the first field so other listeners know who is hosting.</p>
-            </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 2: Enter Room Title</div>
-              <p class="step-box-desc">Name your room (e.g., "Music Lounge", "Study Beats", or "Midnight Acoustic").</p>
-            </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 3: Click "+ Create private room"</div>
-              <p class="step-box-desc">Your private room is generated immediately with an unambiguous 8-character code, and you enter as the Host.</p>
-            </div>
-            <div class="pro-tip-box">
-              <strong>💡 Host Privileges</strong>
-              As Host, you have exclusive control to broadcast tab/device audio, review listener requests, assign Co-hosts, lock the room, or end the session.
-            </div>
-          </div>
-        </div>
+      <!-- Top Back Navigation -->
+      <div class="top-back-bar">
+        <button type="button" class="back-btn back-to-topics-btn">&larr; Back to all topics</button>
       </div>
 
-      <!-- 2. JOINING ROOM DOCUMENTATION -->
-      <div id="doc-joining-room" class="doc-panel" style="display: none;">
-        <div class="doc-header">
-          <div class="doc-title-group">
-            <h2>Joining Room</h2>
-            <p>Step-by-step procedure and real-time environment for connecting to an existing room.</p>
-          </div>
-          <span class="doc-badge">Step-by-Step Guide</span>
-        </div>
-        <div class="doc-content">
-          <!-- Real-time Environment Picture -->
-          <div class="realtime-visual-card">
-            <img src="/guide/img/02-join-room.png" alt="Real Room Joining Screen with Arrows" />
-            <div class="visual-caption">Real-time SangeetPitara Room Joining Screen showing the 8-character code input and Enter Room button.</div>
-          </div>
-          <!-- Procedure Details -->
-          <div class="procedure-details">
-            <h3 class="procedure-head">Procedure Details</h3>
-            <div class="step-box">
-              <div class="step-box-title">Step 1: Enter 8-Character Room Code</div>
-              <p class="step-box-desc">Paste or type the code (e.g. <code>3HLYQKQT</code>) sent by your friend. Hyphens, spaces, and lowercase letters are automatically cleaned.</p>
-            </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 2: Enter Your Display Name</div>
-              <p class="step-box-desc">Type your nickname so the host and other listeners see you in the active room roster.</p>
-            </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 3: Click "Enter room"</div>
-              <p class="step-box-desc">You are immediately connected and synchronized with whatever audio is playing in the room.</p>
-            </div>
-            <div class="pro-tip-box">
-              <strong>💡 Direct Invite Links</strong>
-              If your friend shared a direct link (e.g. <code>?room=3HLYQKQT</code>), the room code is pre-filled automatically when you open the page!
-            </div>
-          </div>
-        </div>
-      </div>
+      <div class="doc-container">
 
-      <!-- 3. HOST ROOM & AUDIO SHARING DOCUMENTATION -->
-      <div id="doc-host-room" class="doc-panel" style="display: none;">
-        <div class="doc-header">
-          <div class="doc-title-group">
-            <h2>Host Room & Audio Sharing</h2>
-            <p>Detailed real-time environments for sharing audio on Windows Desktop, Android Phone, and MP3 files.</p>
-          </div>
-          <span class="doc-badge">Audio Guide</span>
-        </div>
-        
-        <div style="padding: 20px 28px 0; background: #FFFFFF;">
-          <div class="submode-switch">
-            <button class="submode-btn active" onclick="switchHostMode('desktop', this)">💻 Windows Desktop (Chrome / Edge)</button>
-            <button class="submode-btn" onclick="switchHostMode('mobile', this)">📱 Mobile Phone (Android App & Casting)</button>
-            <button class="submode-btn" onclick="switchHostMode('file', this)">📁 Play Local Audio Files (MP3/WAV)</button>
-          </div>
-        </div>
-
-        <!-- Mode A: Desktop Windows -->
-        <div id="host-mode-desktop" class="doc-content">
-          <div class="realtime-visual-card">
-            <img src="/guide/img/03b-desktop-share-dialog.svg" alt="Windows Chrome Screen & Audio Share Dialog with Arrows" />
-            <div class="visual-caption">Windows 11 / 10 Chrome screen share modal showing the critical "Also share tab audio" checkbox.</div>
-          </div>
-          <div class="procedure-details">
-            <h3 class="procedure-head">Desktop Procedure Details</h3>
-            <div class="step-box">
-              <div class="step-box-title">Step 1: Click "Share audio"</div>
-              <p class="step-box-desc">In the Room tab, click the orange button. Windows Chrome / Edge pops up the screen-sharing picker.</p>
+        <!-- PANEL 1: CREATING ROOM -->
+        <article id="panel-creating-room" class="topic-panel" style="display: none;">
+          <div class="doc-header">
+            <div class="doc-title-group">
+              <h2>Creating Room</h2>
+              <p>Step-by-step procedure and real-time environment for launching a new listening session.</p>
             </div>
-            <div class="step-box critical">
-              <div class="step-box-title" style="color: #CF222E;">⚠️ Step 2: TICK "Also share tab audio" (MANDATORY)</div>
-              <p class="step-box-desc"><strong>CRITICAL:</strong> In the bottom-left corner of the dialog, check <em>"Also share tab audio"</em> (or <em>"Share system audio"</em>). If left unchecked, Chrome streams only silent video!</p>
-            </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 3: Select Music Tab or Screen</div>
-              <p class="step-box-desc">Under <strong>Chrome Tab</strong>, pick YouTube or Spotify. Or choose <strong>Entire Screen</strong> if playing from a desktop app.</p>
-            </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 4: Click "Share"</div>
-              <p class="step-box-desc">The retro cassette reels spin and high-fidelity lossless sound streams live to everyone.</p>
-            </div>
+            <span class="doc-badge">Step-by-Step Guide</span>
           </div>
-        </div>
-
-        <!-- Mode B: Mobile Android -->
-        <div id="host-mode-mobile" class="doc-content" style="display: none;">
-          <div class="realtime-visual-card">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-              <div>
-                <img src="/guide/img/03c-mobile-real-room.jpg" alt="Step 1: Real Mobile App Screen" style="max-height: 270px; border-radius: 6px; margin: 0 auto 6px;" />
-                <div style="font-size: 0.74rem; font-weight: 700; color: #FFF; background: #E85D04; padding: 2px 6px; border-radius: 4px; display: inline-block;">Step 1: Tap "Share device audio"</div>
+          <div class="doc-content">
+            <div class="realtime-visual-card">
+              <img src="/guide/img/01-create-room.png" alt="Real Room Creation Screen with Arrows" />
+              <div class="visual-caption">Real-time SangeetPitara Room Creation Screen showing Display Name, Room Name, and "+ Create private room".</div>
+            </div>
+            <div class="procedure-details">
+              <h3 class="procedure-head">Procedure Details</h3>
+              <div class="step-box">
+                <div class="step-box-title">Step 1: Enter Your Display Name</div>
+                <p class="step-box-desc">Type your name (e.g., "Sam") in the first field so other listeners know who is hosting.</p>
               </div>
-              <div>
-                <img src="/guide/img/03d-mobile-real-dialog.jpg" alt="Step 2: Real Android System Dialog" style="max-height: 270px; border-radius: 6px; margin: 0 auto 6px;" />
-                <div style="font-size: 0.74rem; font-weight: 700; color: #FFF; background: #2563EB; padding: 2px 6px; border-radius: 4px; display: inline-block;">Step 2: Scope = "Entire screen" ➔ "Start"</div>
+              <div class="step-box">
+                <div class="step-box-title">Step 2: Enter Room Title</div>
+                <p class="step-box-desc">Name your room (e.g., "Music Lounge", "Study Beats", or "Midnight Acoustic").</p>
+              </div>
+              <div class="step-box">
+                <div class="step-box-title">Step 3: Click "+ Create private room"</div>
+                <p class="step-box-desc">Your private room is generated immediately with an unambiguous 8-character code, and you enter as the Host.</p>
+              </div>
+              <div class="pro-tip-box">
+                <strong>💡 Host Privileges</strong>
+                As Host, you have exclusive control to broadcast tab/device audio, review listener requests, assign Co-hosts, lock the room, or end the session.
               </div>
             </div>
-            <div class="visual-caption">Real-time Android Mobile screenshots showing "Share device audio" and "Entire screen" casting prompt.</div>
           </div>
-          <div class="procedure-details">
-            <h3 class="procedure-head">Mobile Procedure Details</h3>
-            <div class="step-box">
-              <div class="step-box-title">Step 1: Open SangeetPitara Android App</div>
-              <p class="step-box-desc">Join your room and tap the orange <strong>Share device audio</strong> button.</p>
-            </div>
-            <div class="step-box critical">
-              <div class="step-box-title" style="color: #CF222E;">⚠️ Step 2: Set Scope to "Entire screen" (CRITICAL)</div>
-              <p class="step-box-desc">When Android displays <em>"Start recording or casting with SangeetPitara?"</em>, set <strong>Scope</strong> to <strong>Entire screen</strong> (not a single app) so background music is captured!</p>
-            </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 3: Tap Blue "Start" Button</div>
-              <p class="step-box-desc">Tap <strong>Start</strong>, then switch to Spotify, YouTube Music, or any music app. All audio streams live to the room!</p>
-            </div>
-            <div class="pro-tip-box">
-              <strong>📱 Using Phone Browser without the App?</strong>
-              Tap <strong>"Share audio file"</strong> to stream any local MP3/WAV/FLAC track saved on your phone directly from your browser!
-            </div>
+          <div class="bottom-nav-bar">
+            <span></span>
+            <button type="button" class="back-btn back-to-topics-btn">&larr; Back to topics</button>
+            <a href="#joining-room" class="topic-nav-link" data-target="joining-room">Next: Joining Room &rarr;</a>
           </div>
-        </div>
+        </article>
 
-        <!-- Mode C: Local File -->
-        <div id="host-mode-file" class="doc-content" style="display: none;">
-          <div class="realtime-visual-card">
-            <img src="/guide/img/03-share-audio.png" alt="Cassette Deck and Audio File Buttons" />
-            <div class="visual-caption">Real-time SangeetPitara Cassette Deck showing "Share audio file" button.</div>
+        <!-- PANEL 2: JOINING ROOM -->
+        <article id="panel-joining-room" class="topic-panel" style="display: none;">
+          <div class="doc-header">
+            <div class="doc-title-group">
+              <h2>Joining Room</h2>
+              <p>Connect with a room code or an invite URL to listen to synchronized audio instantly.</p>
+            </div>
+            <span class="doc-badge">Step-by-Step Guide</span>
           </div>
-          <div class="procedure-details">
-            <h3 class="procedure-head">Local File Procedure Details</h3>
-            <div class="step-box">
-              <div class="step-box-title">Step 1: Click "Share audio file"</div>
-              <p class="step-box-desc">Works on both Desktop and Mobile Phone browsers without requiring any screen capture permissions.</p>
+          <div class="doc-content">
+            <div class="realtime-visual-card">
+              <img src="/guide/img/02-join-room.png" alt="Real Room Joining Screen with Arrows" />
+              <div class="visual-caption">Real-time SangeetPitara Join Screen showing Room Code field, Display Name, and "→ Join room" button.</div>
             </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 2: Pick Local Music Track</div>
-              <p class="step-box-desc">Select any MP3, WAV, AAC, or FLAC track from your computer or phone's downloads folder.</p>
-            </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 3: Instant Playback</div>
-              <p class="step-box-desc">The cassette reels spin in real time and everyone in the room listens together with zero re-encoding loss.</p>
+            <div class="procedure-details">
+              <h3 class="procedure-head">Procedure Details</h3>
+              <div class="step-box">
+                <div class="step-box-title">Step 1: Get the 8-Character Room Code</div>
+                <p class="step-box-desc">Ask the room Host for their 8-character room code (e.g., <code>3HLYQKQT</code>) or click their invite link.</p>
+              </div>
+              <div class="step-box">
+                <div class="step-box-title">Step 2: Enter Your Display Name</div>
+                <p class="step-box-desc">Type the name you want listeners in the room to see in the chat and participants roster.</p>
+              </div>
+              <div class="step-box">
+                <div class="step-box-title">Step 3: Click "→ Join room"</div>
+                <p class="step-box-desc">You are connected to the live room immediately. Once audio begins, sound plays through your speakers or headphones in sync.</p>
+              </div>
+              <div class="pro-tip-box">
+                <strong>🎧 Instant Sync</strong>
+                No user account or password is required. Just open the link and start listening!
+              </div>
             </div>
           </div>
-        </div>
+          <div class="bottom-nav-bar">
+            <a href="#creating-room" class="topic-nav-link" data-target="creating-room">&larr; Previous: Creating Room</a>
+            <button type="button" class="back-btn back-to-topics-btn">&larr; Back to topics</button>
+            <a href="#host-room" class="topic-nav-link" data-target="host-room">Next: Host Room & Audio &rarr;</a>
+          </div>
+        </article>
 
-      </div>
+        <!-- PANEL 3: HOST ROOM & AUDIO -->
+        <article id="panel-host-room" class="topic-panel" style="display: none;">
+          <div class="doc-header">
+            <div class="doc-title-group">
+              <h2>Host Room & Audio Sharing</h2>
+              <p>Broadcast music with real-time interfaces across Windows Desktop, Android Phone casting, or local audio files.</p>
+            </div>
+            <span class="doc-badge">Audio Controls</span>
+          </div>
 
-      <!-- 4. INVITING USERS DOCUMENTATION -->
-      <div id="doc-inviting-users" class="doc-panel" style="display: none;">
-        <div class="doc-header">
-          <div class="doc-title-group">
-            <h2>Inviting Users</h2>
-            <p>Step-by-step procedure and real-time environment for sharing room links and managing participants.</p>
-          </div>
-          <span class="doc-badge">Invite Guide</span>
-        </div>
-        <div class="doc-content">
-          <!-- Real-time Environment Picture -->
-          <div class="realtime-visual-card">
-            <img src="/guide/img/05-people-features.png" alt="Real People Tab and Invite Link Screen" />
-            <div class="visual-caption">Real-time SangeetPitara People tab showing the room code, Copy Link button, and participant roster.</div>
-          </div>
-          <!-- Procedure Details -->
-          <div class="procedure-details">
-            <h3 class="procedure-head">Procedure Details</h3>
-            <div class="step-box">
-              <div class="step-box-title">Step 1: Open the People Tab</div>
-              <p class="step-box-desc">Click on the "People" tab in the room header.</p>
-            </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 2: Click "Copy link"</div>
-              <p class="step-box-desc">Click the "Copy link" button to copy the direct URL with the 8-character room code to your clipboard.</p>
-            </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 3: Send to Friends</div>
-              <p class="step-box-desc">Send via WhatsApp, Telegram, Discord, or SMS. Anyone clicking the link joins your room immediately without an account.</p>
-            </div>
-            <div class="step-box">
-              <div class="step-box-title">Step 4: Promote Co-Hosts or Lock Room</div>
-              <p class="step-box-desc">Promote trusted listeners to Co-host to share audio control, or click "Lock room" to prevent uninvited guests.</p>
+          <div style="padding: 24px 32px 0;">
+            <div class="submode-switch">
+              <button type="button" class="submode-btn active" data-mode="desktop">💻 Windows Desktop (Chrome/Edge Tab Audio)</button>
+              <button type="button" class="submode-btn" data-mode="mobile">📱 Android Phone (Real Casting Dialog)</button>
+              <button type="button" class="submode-btn" data-mode="file">🎵 Local Audio File (Cassette Player)</button>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- 5. OTHER FEATURE DOCUMENTATION -->
-      <div id="doc-other-feature" class="doc-panel" style="display: none;">
-        <div class="doc-header">
-          <div class="doc-title-group">
-            <h2>Other Feature</h2>
-            <p>Real-time environments for Chat, People roster, Help & Health diagnostics, and Studio Themes.</p>
+          <!-- Mode 1: Desktop Tab Audio -->
+          <div id="host-mode-desktop" class="doc-content">
+            <div class="realtime-visual-card">
+              <img src="/guide/img/03b-desktop-share-dialog.svg" alt="Windows 11 Chrome Share Dialog with Arrows" />
+              <div class="visual-caption">Real Windows 11 Chrome share dialog with arrows pointing to the critical "Also share tab audio" checkbox.</div>
+            </div>
+            <div class="procedure-details">
+              <h3 class="procedure-head">Windows Desktop Audio Procedure</h3>
+              <div class="step-box">
+                <div class="step-box-title">Step 1: Open SangeetPitara in Chrome or Edge</div>
+                <p class="step-box-desc">Make sure your music service (Spotify Web, YouTube, SoundCloud) is open in another browser tab.</p>
+              </div>
+              <div class="step-box">
+                <div class="step-box-title">Step 2: Click "Share tab audio" in Your Room</div>
+                <p class="step-box-desc">The native Chrome/Edge screen share dialog appears automatically.</p>
+              </div>
+              <div class="step-box critical">
+                <div class="step-box-title">Step 3: Check "Also share tab audio" (CRITICAL)</div>
+                <p class="step-box-desc">Select the tab playing your music, and make sure the <strong>"Also share tab audio"</strong> checkbox in the bottom left is checked!</p>
+              </div>
+              <div class="step-box">
+                <div class="step-box-title">Step 4: Click "Share"</div>
+                <p class="step-box-desc">Audio is captured in pristine fidelity and relayed instantly to every listener in the room.</p>
+              </div>
+            </div>
           </div>
-          <span class="doc-badge">Features</span>
-        </div>
-        <div style="padding: 24px 28px;">
+
+          <!-- Mode 2: Mobile Phone Audio -->
+          <div id="host-mode-mobile" class="doc-content" style="display: none;">
+            <div class="realtime-visual-card">
+              <div style="display: flex; gap: 12px; justify-content: center;">
+                <img src="/guide/img/03c-mobile-real-room.jpg" alt="Android Room with Share device audio" style="max-height: 380px; width: auto;" />
+                <img src="/guide/img/03d-mobile-real-dialog.jpg" alt="Android Casting Permission Dialog" style="max-height: 380px; width: auto;" />
+              </div>
+              <div class="visual-caption">Real Android Phone Interface: Tap "Share device audio" &rarr; Select Scope: "Entire screen" &rarr; Tap "Start".</div>
+            </div>
+            <div class="procedure-details">
+              <h3 class="procedure-head">Android Phone Audio Procedure</h3>
+              <div class="step-box">
+                <div class="step-box-title">Step 1: Tap "Share device audio"</div>
+                <p class="step-box-desc">In your mobile room, tap the prominent orange <strong>"Share device audio"</strong> button.</p>
+              </div>
+              <div class="step-box critical">
+                <div class="step-box-title">Step 2: Choose Scope: "Entire screen" (CRITICAL)</div>
+                <p class="step-box-desc">When Android asks <em>"Start recording or casting with SangeetPitara?"</em>, set Scope to <strong>"Entire screen"</strong> so playback from music apps is captured.</p>
+              </div>
+              <div class="step-box">
+                <div class="step-box-title">Step 3: Tap "Start"</div>
+                <p class="step-box-desc">Now switch to any music app (Spotify, YouTube Music, Apple Music) and press Play — your friends hear everything live!</p>
+              </div>
+              <div class="pro-tip-box">
+                <strong>📱 Native Android App:</strong> For background casting without keeping the screen on, install the free SangeetPitara Android APK.
+              </div>
+            </div>
+          </div>
+
+          <!-- Mode 3: Local File Sharing -->
+          <div id="host-mode-file" class="doc-content" style="display: none;">
+            <div class="realtime-visual-card">
+              <img src="/guide/img/03-share-audio.png" alt="Cassette Audio Player with Arrows" />
+              <div class="visual-caption">Built-in Cassette Audio Visualizer with "Share audio file" button.</div>
+            </div>
+            <div class="procedure-details">
+              <h3 class="procedure-head">Local Audio File Procedure</h3>
+              <div class="step-box">
+                <div class="step-box-title">Step 1: Click "Share audio file"</div>
+                <p class="step-box-desc">Click the audio file button directly below the cassette visualizer.</p>
+              </div>
+              <div class="step-box">
+                <div class="step-box-title">Step 2: Select Your Music File</div>
+                <p class="step-box-desc">Pick any MP3, FLAC, WAV, AAC, or OGG file from your device storage.</p>
+              </div>
+              <div class="step-box">
+                <div class="step-box-title">Step 3: Play & Synchronize</div>
+                <p class="step-box-desc">The retro cassette reels spin and high-fidelity audio streams in real-time to everyone in the room.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="bottom-nav-bar">
+            <a href="#joining-room" class="topic-nav-link" data-target="joining-room">&larr; Previous: Joining Room</a>
+            <button type="button" class="back-btn back-to-topics-btn">&larr; Back to topics</button>
+            <a href="#inviting-users" class="topic-nav-link" data-target="inviting-users">Next: Inviting Users &rarr;</a>
+          </div>
+        </article>
+
+        <!-- PANEL 4: INVITING USERS -->
+        <article id="panel-inviting-users" class="topic-panel" style="display: none;">
+          <div class="doc-header">
+            <div class="doc-title-group">
+              <h2>Inviting Users</h2>
+              <p>Manage participants, copy instant invite links, promote Co-hosts, and secure your room.</p>
+            </div>
+            <span class="doc-badge">Room Management</span>
+          </div>
+          <div class="doc-content">
+            <div class="realtime-visual-card">
+              <img src="/guide/img/05-people-features.png" alt="People and Invite Management Screen with Arrows" />
+              <div class="visual-caption">Real-time SangeetPitara People Panel showing Share invite link, Room Code, and Role badges.</div>
+            </div>
+            <div class="procedure-details">
+              <h3 class="procedure-head">Procedure Details</h3>
+              <div class="step-box">
+                <div class="step-box-title">Step 1: Click "Share invite link"</div>
+                <p class="step-box-desc">Click <strong>"Share invite link"</strong> inside the room or on the People panel to copy the direct URL to your clipboard.</p>
+              </div>
+              <div class="step-box">
+                <div class="step-box-title">Step 2: Send to Friends</div>
+                <p class="step-box-desc">Paste the link into WhatsApp, Telegram, Discord, or SMS. Anyone clicking the link joins immediately.</p>
+              </div>
+              <div class="step-box">
+                <div class="step-box-title">Step 3: Share the 8-Character Code</div>
+                <p class="step-box-desc">Alternatively, give friends the 8-character room code to enter on the landing page.</p>
+              </div>
+              <div class="step-box">
+                <div class="step-box-title">Step 4: Promote Co-Hosts or Lock Room</div>
+                <p class="step-box-desc">Promote trusted listeners to Co-host to share audio control, or click "Lock room" to prevent uninvited guests.</p>
+              </div>
+            </div>
+          </div>
+          <div class="bottom-nav-bar">
+            <a href="#host-room" class="topic-nav-link" data-target="host-room">&larr; Previous: Host Room & Audio</a>
+            <button type="button" class="back-btn back-to-topics-btn">&larr; Back to topics</button>
+            <a href="#other-feature" class="topic-nav-link" data-target="other-feature">Next: Other Feature &rarr;</a>
+          </div>
+        </article>
+
+        <!-- PANEL 5: OTHER FEATURE -->
+        <article id="panel-other-feature" class="topic-panel" style="display: none;">
+          <div class="doc-header">
+            <div class="doc-title-group">
+              <h2>Other Feature</h2>
+              <p>Explore real-time features for Chat, People roster, Help & Health diagnostics, and Studio Themes.</p>
+            </div>
+            <span class="doc-badge">Features</span>
+          </div>
+
           <div class="other-features-grid">
-            
             <!-- Chat Section -->
             <div class="feature-tile">
               <h4>💬 Chat Section</h4>
-              <div class="realtime-visual-card" style="margin: 8px 0;">
-                <img src="/guide/img/04-chat-features.png" alt="Real Chat Interface" style="max-height: 160px;" />
+              <div class="realtime-visual-card" style="margin: 10px 0;">
+                <img src="/guide/img/04-chat-features.png" alt="Real Chat Interface" style="max-height: 180px;" />
               </div>
-              <p>• <strong>Floating Reactions:</strong> Tap ❤️, 🔥, 👏, 🎧 for real-time animated emojis.<br/>• <strong>Voice Notes:</strong> Hold the microphone button to record and send voice clips.<br/>• <strong>Text Messages:</strong> Chat without interrupting live playback.</p>
+              <p>• <strong>Floating Reactions:</strong> Tap ❤️, 🔥, 👏, 🎧 for animated real-time emojis.<br/>• <strong>Voice Notes:</strong> Hold the microphone button to record and send voice clips.<br/>• <strong>Text Messages:</strong> Chat without interrupting live playback.</p>
             </div>
 
             <!-- People Section -->
             <div class="feature-tile">
               <h4>👥 People Section</h4>
-              <div class="realtime-visual-card" style="margin: 8px 0;">
-                <img src="/guide/img/05-people-features.png" alt="People Roster" style="max-height: 160px;" />
+              <div class="realtime-visual-card" style="margin: 10px 0;">
+                <img src="/guide/img/05-people-features.png" alt="People Roster" style="max-height: 180px;" />
               </div>
               <p>• <strong>Active Roster:</strong> See all connected listeners.<br/>• <strong>Role Badges:</strong> Distinguish Host, Co-hosts, and Listeners.<br/>• <strong>Moderation:</strong> Remove disruptive listeners in one click.</p>
             </div>
@@ -779,8 +822,8 @@
             <!-- Help & Health Section -->
             <div class="feature-tile">
               <h4>🩺 Help & Health Section</h4>
-              <div class="realtime-visual-card" style="margin: 8px 0;">
-                <img src="/guide/img/06-health-diagnostics.png" alt="Health Diagnostics" style="max-height: 160px;" />
+              <div class="realtime-visual-card" style="margin: 10px 0;">
+                <img src="/guide/img/06-health-diagnostics.png" alt="Health Diagnostics" style="max-height: 180px;" />
               </div>
               <p>• <strong>LIVE Status:</strong> Green badge confirms synchronized playback.<br/>• <strong>Stream Health:</strong> Jitter buffer delay and packet loss telemetry.<br/>• <strong>Save Diagnostics:</strong> Export anonymous debug logs.</p>
             </div>
@@ -788,17 +831,22 @@
             <!-- Themes Section -->
             <div class="feature-tile">
               <h4>🎨 Studio Themes</h4>
-              <div class="realtime-visual-card" style="margin: 8px 0;">
-                <img src="/guide/img/07-theme-selection.png" alt="Theme Selector" style="max-height: 160px;" />
+              <div class="realtime-visual-card" style="margin: 10px 0;">
+                <img src="/guide/img/07-theme-selection.png" alt="Theme Selector" style="max-height: 180px;" />
               </div>
               <p>• <strong>5 Themes:</strong> Dark, Light, Forest, Brass, and Rose.<br/>• <strong>Topbar Switcher:</strong> Change theme instantly.<br/>• <strong>Black Header:</strong> High contrast on all 5 themes.</p>
             </div>
-
           </div>
-        </div>
-      </div>
 
-    </div>
+          <div class="bottom-nav-bar">
+            <a href="#inviting-users" class="topic-nav-link" data-target="inviting-users">&larr; Previous: Inviting Users</a>
+            <button type="button" class="back-btn back-to-topics-btn">&larr; Back to topics</button>
+            <span></span>
+          </div>
+        </article>
+
+      </div>
+    </section>
 
   </main>
 
@@ -807,46 +855,5 @@
     <p><a href="/">Home</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/guide/SangeetPitara-User-Manual.pdf">Download PDF</a></p>
   </footer>
 
-  <script>
-    // Rectangle selection and documentation switching
-    const rectangles = document.querySelectorAll('.topic-rectangle');
-    const docPanels = document.querySelectorAll('.doc-panel');
-
-    rectangles.forEach(rect => {
-      rect.addEventListener('click', () => {
-        rectangles.forEach(r => r.classList.remove('active'));
-        docPanels.forEach(p => p.style.display = 'none');
-
-        rect.classList.add('active');
-        const topic = rect.dataset.topic;
-        const targetDoc = document.getElementById('doc-' + topic);
-        if (targetDoc) {
-          targetDoc.style.display = 'block';
-          // Smooth scroll to documentation panel
-          const panelTop = document.getElementById('docDisplayPanel').getBoundingClientRect().top + window.pageYOffset - 80;
-          window.scrollTo({ top: panelTop, behavior: 'smooth' });
-        }
-      });
-    });
-
-    // Submode switcher for Host Room (Desktop vs Mobile vs File)
-    function switchHostMode(mode, btn) {
-      document.querySelectorAll('.submode-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-
-      document.getElementById('host-mode-desktop').style.display = (mode === 'desktop') ? 'grid' : 'none';
-      document.getElementById('host-mode-mobile').style.display = (mode === 'mobile') ? 'grid' : 'none';
-      document.getElementById('host-mode-file').style.display = (mode === 'file') ? 'grid' : 'none';
-    }
-
-    // Deep link support
-    window.addEventListener('DOMContentLoaded', () => {
-      const hash = window.location.hash.replace('#', '');
-      if (hash) {
-        const targetRect = document.querySelector(`.topic-rectangle[data-topic="${hash}"]`);
-        if (targetRect) targetRect.click();
-      }
-    });
-  </script>
 </body>
 </html>
