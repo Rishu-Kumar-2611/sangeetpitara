@@ -290,9 +290,10 @@ class Pcm16RelayPlayer internal constructor(
         session.queuedBytes += payload.size
         // The blocking write is the clock, so a backlog left by a network stall
         // would otherwise play late forever. Once playing, skip it in one jump.
-        // Adaptive players also catch up once more than 1 s behind their cushion.
-        val catchUpAt = if (adaptiveBuffering) minOf(catchUpQueuedBytes, session.cushionBytes + CATCH_UP_EXCESS_BYTES) else catchUpQueuedBytes
-        val landAt = if (adaptiveBuffering) minOf(catchUpLandingBytes, session.cushionBytes + CATCH_UP_LANDING_EXTRA_BYTES) else catchUpLandingBytes
+        // Never interpret a decaying adaptive target as permission to discard music.
+        // Production catches up only at the absolute three-second backlog limit.
+        val catchUpAt = catchUpQueuedBytes
+        val landAt = if (adaptiveBuffering) minOf(catchUpLandingBytes, maxOf(MIN_CATCH_UP_LANDING_BYTES, session.cushionBytes + CATCH_UP_LANDING_EXTRA_BYTES)) else catchUpLandingBytes
         if (session.playbackStarted && session.queuedBytes > catchUpAt) {
             while (session.queuedBytes > landAt && session.queue.size > 1) {
                 session.queuedBytes -= session.queue.removeFirst().size
@@ -507,7 +508,7 @@ class Pcm16RelayPlayer internal constructor(
         const val PRODUCTION_CATCH_UP_LANDING_BYTES = 48_000 * 2 * 2_100 / 1_000
         private const val PAUSE_GAP_MS = 2_000L
         private const val MAX_CUSHION_MS = 2_000L
-        private const val CATCH_UP_EXCESS_BYTES = 48_000 * 2 // 1 s above the cushion
+        private const val MIN_CATCH_UP_LANDING_BYTES = 48_000 * 2 / 2 // 500 ms after recovery
         private const val CATCH_UP_LANDING_EXTRA_BYTES = 48_000 * 2 / 10 // land 100 ms above it
         private const val LONG_GAP_MS = 500L
         private val RECURRING_HOLD_NANOS = TimeUnit.SECONDS.toNanos(40)

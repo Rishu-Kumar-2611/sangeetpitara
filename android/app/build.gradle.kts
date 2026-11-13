@@ -188,3 +188,15 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
+
+// Keep the Android guide identical to the website, with no network dependency.
+val bundleUserManual = tasks.register<Sync>("bundleUserManual") {
+    from(rootProject.layout.projectDirectory.dir("..")) {
+        include("guide.html", "guide.js", "guide/**", "privacy.html", "terms.html")
+        include("branding/sangeetpitara/05-diya-eighth-note.svg")
+        into("manual")
+    }
+    into(layout.buildDirectory.dir("generated/manualAssets"))
+}
+android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/manualAssets"))
+tasks.named("preBuild").configure { dependsOn(bundleUserManual) }
