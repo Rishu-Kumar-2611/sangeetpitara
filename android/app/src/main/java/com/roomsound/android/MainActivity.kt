@@ -478,6 +478,7 @@ class MainActivity : Activity() {
     private var displayedAudioRequestId: String? = null
     private val nativePanels = mutableMapOf<String, View>()
     private var nativeScroll: ScrollView? = null
+    private lateinit var homeManualButton: Button
     private lateinit var nativeBack: Button
     private lateinit var nativeTabStrip: android.widget.HorizontalScrollView
     private lateinit var nativeTabs: LinearLayout
@@ -526,6 +527,7 @@ class MainActivity : Activity() {
         nativePanels.forEach { (name, panel) ->
             panel.visibility = if (name == nativePage || (name == "entry" && nativePage in setOf("create", "join", "room")) || (name == "capture" && nativePage == "sound")) View.VISIBLE else View.GONE
         }
+        homeManualButton.visibility = if (nativePage == "home") View.VISIBLE else View.GONE
         nativeBack.visibility = if (nativePage == "home" || compactLandscape) View.GONE else View.VISIBLE
         nativeReturnButton.visibility = if (roomSession?.currentRoomState() != null) View.VISIBLE else View.GONE
         nativeLocalInviteButton.visibility = if (roomSession?.currentEndpoint()?.startsWith("ws://127.0.0.1:") == true) View.VISIBLE else View.GONE
@@ -584,7 +586,9 @@ class MainActivity : Activity() {
         brandRow.addView(brandCopy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         brandRow.addView(button("Menu", ButtonTone.SECONDARY) {
             android.widget.PopupMenu(this, brandRow.getChildAt(2)).apply {
-                menu.add("User manual").setOnMenuItemClickListener { navigateNative("manual"); true }
+                if (nativePage != "home") {
+                    menu.add("User manual").setOnMenuItemClickListener { navigateNative("manual"); true }
+                }
                 menu.add("Choose theme").setOnMenuItemClickListener {
                     android.app.AlertDialog.Builder(this@MainActivity).setTitle("Choose your theme")
                         .setSingleChoiceItems(AppThemes.names, AppThemes.selected(this@MainActivity)) { dialog, index ->
@@ -596,14 +600,15 @@ class MainActivity : Activity() {
                 }
                 show()
             }
-        }.apply { contentDescription = "Menu: user manual and theme" }, LinearLayout.LayoutParams(
+        }.apply { contentDescription = "Menu" }, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply { marginStart = dp(8) })
         header.addView(brandRow, matchWrap())
         content.addView(header, panelLayout())
-        content.addView(button("User manual", ButtonTone.SECONDARY) {
+        homeManualButton = button("User manual", ButtonTone.SECONDARY) {
             navigateNative("manual")
-        }.apply { contentDescription = "Open the offline user manual" }, panelLayout())
+        }.apply { contentDescription = "Open the offline user manual" }
+        content.addView(homeManualButton, panelLayout())
         nativeBack = button("← Welcome", ButtonTone.SECONDARY) { navigateNative("home") }
         content.addView(nativeBack, panelLayout())
         val welcome = panelContainer()
@@ -630,9 +635,9 @@ class MainActivity : Activity() {
             setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream_muted))
             setPadding(0, 0, 0, dp(24))
         }, matchWrap())
-        welcome.addView(welcomeChoice("Create a room", "Host and listen together online", "create"), matchWrap())
-        welcome.addView(welcomeChoice("Join a room", "Enter an online room code", "join"), matchWrap())
-        welcome.addView(welcomeChoice("Play Close", "Offline rooms over Wi-Fi or hotspot", "nearby"), matchWrap())
+        welcome.addView(welcomeChoice("Create a room", "Host and listen together online", "create"), marginLayout())
+        welcome.addView(welcomeChoice("Join a room", "Enter an online room code", "join"), marginLayout())
+        welcome.addView(welcomeChoice("Play Close", "Offline rooms over Wi-Fi or hotspot", "nearby"), marginLayout())
         nativeReturnButton = button("Return to your room", ButtonTone.SECONDARY) {
             if (roomSession?.currentRoomState() != null) navigateNative("room") else android.widget.Toast.makeText(this,"Create or join a room first",android.widget.Toast.LENGTH_SHORT).show()
         }
@@ -643,7 +648,7 @@ class MainActivity : Activity() {
             val introduction = verticalContainer()
             for (index in 0..2) introduction.addView(parts[index], matchWrap())
             val choices = verticalContainer()
-            for (index in 3 until parts.size) choices.addView(parts[index], matchWrap())
+            for (index in 3 until parts.size) choices.addView(parts[index], marginLayout())
             welcome.addView(introduction, LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f).apply { marginEnd = dp(24) })
             welcome.addView(choices, LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
         }
@@ -2598,7 +2603,6 @@ class MainActivity : Activity() {
 
     private fun welcomeChoice(title: String, subtitle: String, page: String): View {
         val wrapper = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        wrapper.addView(View(this).apply { setBackgroundColor(AppThemes.color(this@MainActivity, R.color.roomsound_panel_stroke)) }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)))
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
