@@ -601,6 +601,9 @@ class MainActivity : Activity() {
         ).apply { marginStart = dp(8) })
         header.addView(brandRow, matchWrap())
         content.addView(header, panelLayout())
+        content.addView(button("User manual", ButtonTone.SECONDARY) {
+            navigateNative("manual")
+        }.apply { contentDescription = "Open the offline user manual" }, panelLayout())
         nativeBack = button("← Welcome", ButtonTone.SECONDARY) { navigateNative("home") }
         content.addView(nativeBack, panelLayout())
         val welcome = panelContainer()
@@ -630,7 +633,6 @@ class MainActivity : Activity() {
         welcome.addView(welcomeChoice("Create a room", "Host and listen together online", "create"), matchWrap())
         welcome.addView(welcomeChoice("Join a room", "Enter an online room code", "join"), matchWrap())
         welcome.addView(welcomeChoice("Play Close", "Offline rooms over Wi-Fi or hotspot", "nearby"), matchWrap())
-        welcome.addView(welcomeChoice("User manual", "Setup, audio sharing and troubleshooting", "manual"), matchWrap())
         nativeReturnButton = button("Return to your room", ButtonTone.SECONDARY) {
             if (roomSession?.currentRoomState() != null) navigateNative("room") else android.widget.Toast.makeText(this,"Create or join a room first",android.widget.Toast.LENGTH_SHORT).show()
         }
