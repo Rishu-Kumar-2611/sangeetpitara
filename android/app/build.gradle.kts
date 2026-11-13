@@ -193,6 +193,7 @@ dependencies {
 val bundleUserManual = tasks.register<Sync>("bundleUserManual") {
     from(rootProject.layout.projectDirectory.dir("..")) {
         include("guide.html", "guide.js", "guide/**", "privacy.html", "terms.html")
+        include("styles.css", "themes.css", "themes.js", "fonts/**")
         include("branding/sangeetpitara/05-diya-eighth-note.svg")
         into("manual")
     }

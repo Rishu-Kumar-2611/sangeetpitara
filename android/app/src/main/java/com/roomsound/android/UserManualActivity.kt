@@ -54,7 +54,14 @@ class UserManualActivity : Activity() {
                 }
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    val path = localPath(request.url) ?: return true
+                    val path = localPath(request.url)
+                    if (path == null) {
+                        // Optional policy links open in the browser only after a tap.
+                        if (request.isForMainFrame && request.hasGesture() && request.url.scheme == "https") {
+                            runCatching { startActivity(Intent(Intent.ACTION_VIEW, request.url)) }
+                        }
+                        return true
+                    }
                     if (path == "/") { finish(); return true }
                     if (path in EXPORTS) { export(path); return true }
                     return false
