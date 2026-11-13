@@ -1,16 +1,16 @@
-import { RoomChatUI } from './chat-ui.mjs?v=20261110-chat-review1';
+import { RoomChatUI } from './chat-ui.mjs?v=20261113-audio-continuity1';
 let roomChatUI = null;
-import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261110-chat-review1';
-import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261110-chat-review1';
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261110-chat-review1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261110-chat-review1';
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261113-audio-continuity1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261113-audio-continuity1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261113-audio-continuity1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261113-audio-continuity1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261110-chat-review1';
+} from './capture-tracks.js?v=20261113-audio-continuity1';
 import {
   decodeOpusFrame,
   decodePcm16Frame,
@@ -21,8 +21,8 @@ import {
   MEDIA_RELAY_VERSION_OPUS,
   RelaySequenceTracker,
   relayFrameVersion,
-} from './media-relay.mjs?v=20261110-chat-review1';
-import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261110-chat-review1';
+} from './media-relay.mjs?v=20261113-audio-continuity1';
+import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261113-audio-continuity1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -34,8 +34,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261110-chat-review1';
-import { roomPalette } from './room-palette.js?v=20261110-chat-review1';
+} from './ads.mjs?v=20261113-audio-continuity1';
+import { roomPalette } from './room-palette.js?v=20261113-audio-continuity1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -970,7 +970,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261110-chat-review1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261113-audio-continuity1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -1048,7 +1048,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261110-chat-review1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261113-audio-continuity1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
