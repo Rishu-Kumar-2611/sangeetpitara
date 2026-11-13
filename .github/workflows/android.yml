@@ -45,7 +45,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
       - name: Run JVM unit tests, lint, and build a test APK
-        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --no-daemon --console=plain
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug -PROOMSOUND_PREVIEW_BUILD=1 --no-daemon --console=plain
       - name: Verify offline manual is inside the APK
         run: |
           python3 - <<'PY'
