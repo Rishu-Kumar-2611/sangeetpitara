@@ -532,9 +532,10 @@ class MainActivity : Activity() {
         nativeTabStrip.visibility = if (roomSession?.currentRoomState() != null && nativePage != "home") View.VISIBLE else View.GONE
         for (index in 0 until nativeTabs.childCount) {
             val tab = nativeTabs.getChildAt(index)
+            val wasSelected = tab.isSelected
             tab.isSelected = tab.tag == nativePage
             tab.alpha = if (tab.isSelected) 1f else .7f
-            if (tab.isSelected) nativeTabStrip.post { nativeTabStrip.smoothScrollTo(maxOf(0, tab.left - dp(8)), 0) }
+            if (tab.isSelected && !wasSelected) nativeTabStrip.post { nativeTabStrip.smoothScrollTo(maxOf(0, tab.left - dp(8)), 0) }
         }
         nativeEntry.visibility = if (nativePage in setOf("create", "join")) View.VISIBLE else View.GONE
         nativeSessionControls.visibility = if (nativePage == "room") View.VISIBLE else View.GONE
