@@ -7,9 +7,9 @@ const DEFAULT_TARGET_FILL = 1_920; // 40 ms base on a healthy path
 // adaptive cushion never exceeds 2 s, and playout catches up to live audio.
 const MAX_TARGET_FILL = 96_000; // 2,000 ms adaptive ceiling
 const PAUSE_GAP_SECONDS = 2; // Longer gaps are a paused source, not network jitter
-const CATCH_UP_EXCESS_SAMPLES = 48_000; // Skip ahead once more than 1 s behind the target...
+const CATCH_UP_BACKLOG_SAMPLES = 144_000; // Recoverable bursts keep up to 3 s of music.
 const CATCH_UP_PERSIST_SAMPLES = 48_000; // ...for one continuous second
-const CATCH_UP_LANDING_EXTRA = 4_800; // Land 100 ms above the target
+const CATCH_UP_LANDING_EXTRA = 24_000; // Keep 500 ms of recovery headroom
 const STABLE_BEFORE_DECAY_SECONDS = 8;
 const RECURRING_GAP_HOLD_SECONDS = 40;
 const LONG_GAP_SECONDS = 0.5;
@@ -237,10 +237,10 @@ class RelayPlayoutProcessor extends AudioWorkletProcessor {
       this.updateTargetFill();
     }
 
-    // Catch up to live audio: a backlog more than 1 s above the target for a
-    // full second is skipped with a crossfade, so a stall never leaves a
-    // lasting delay between listeners.
-    if (this.available > this.targetFill + CATCH_UP_EXCESS_SAMPLES) {
+    // A falling target is not excess audio: trimming relative to that target
+    // used to delete ~1 s of music when the learned cushion decayed. Preserve
+    // recoverable bursts; only a sustained absolute backlog needs a live reset.
+    if (this.available > Math.max(CATCH_UP_BACKLOG_SAMPLES, this.targetFill + 48_000)) {
       this.excessRendered += blockLength;
       if (this.excessRendered >= CATCH_UP_PERSIST_SAMPLES) {
         const drop = Math.floor(this.available - (this.targetFill + CATCH_UP_LANDING_EXTRA));

@@ -473,10 +473,10 @@ class Pcm16RelayPlayerTest {
     }
 
     @Test
-    fun adaptivePlayerStaysWithinOneSecondOfItsCushionAfterAStall() {
+    fun adaptivePlayerPreservesRecoverableBurstsAndBoundsLongBacklogs() {
         val output = Output(capacity = 960, manualConsumption = true)
-        // Production ceilings (3 s / 2.1 s); with no earned cushion the adaptive
-        // player catches up once 1 s behind and lands 100 ms above the cushion.
+        // An ordinary 1.5 s network burst is still music; only a backlog
+        // above the absolute production bound permits a discontinuity.
         player(output, maxFrames = 1_000, catchUpBytes = Pcm16RelayPlayer.PRODUCTION_CATCH_UP_QUEUED_BYTES,
             catchUpLandingBytes = Pcm16RelayPlayer.PRODUCTION_CATCH_UP_LANDING_BYTES,
             maxBytes = Pcm16RelayPlayer.PRODUCTION_MAX_QUEUED_BYTES, adaptive = true).use { player ->
@@ -487,8 +487,10 @@ class Pcm16RelayPlayerTest {
             output.await { waitingWrites > 0 }
             // A stalled sender delivers 1.5 s (150 x 10 ms) at once.
             (2L..151L).forEach { assertTrue(player.play(packet(it))) }
-            assertTrue("old audio must be skipped, not queued for seconds", player.droppedFrames() > 0)
-            assertTrue("no more than about one second remains queued", player.droppedFrames() >= 150 - 100)
+            assertEquals("recoverable delayed music must stay intact", 0L, player.droppedFrames())
+            // A prolonged output stall still cannot accumulate unbounded latency.
+            (152L..401L).forEach { assertTrue(player.play(packet(it))) }
+            assertTrue("multi-second backlog must remain bounded", player.droppedFrames() > 0)
         }
     }
 

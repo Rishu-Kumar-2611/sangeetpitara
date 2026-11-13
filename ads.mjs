@@ -1,4 +1,4 @@
-import { createSafeStorage } from './guest-id.js?v=20261110-chat-review1';
+import { createSafeStorage } from './guest-id.js?v=20261113-audio-continuity1';
 const browserStorage = createSafeStorage();
 
 /**

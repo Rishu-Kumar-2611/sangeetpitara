@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SangeetPitara — How to Use & User Guide</title>
   <meta name="description" content="SangeetPitara User Manual: Creating Room, Joining Room, Host Room & Audio Sharing, Inviting Users, and Other Features." />
-  <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261110-chat-review1" />
+  <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261113-audio-continuity1" />
   <style>
     :root {
       --gh-bg: #FFFFFF;
@@ -477,6 +477,23 @@
       color: var(--gh-text-muted);
       text-decoration: underline;
     }
+    /* The same guide is also embedded in the Android app. */
+    @media (max-width: 600px) {
+      .site-nav { position: static; }
+      .nav-inner { flex-direction: column; align-items: stretch; padding: 16px; }
+      .brand-group { flex-wrap: wrap; }
+      .nav-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+      .nav-actions a:last-child { grid-column: 1 / -1; }
+      .btn-gh { min-height: 48px; justify-content: center; white-space: normal; text-align: center; }
+      .page-main { padding: 20px 16px; }
+      .rectangles-grid { grid-template-columns: minmax(0, 1fr); }
+      .doc-header, .top-back-bar, .bottom-nav-bar { flex-wrap: wrap; padding: 16px; }
+      .doc-title-group, .procedure-details, .realtime-visual-card { min-width: 0; }
+      .doc-content { padding: 16px; }
+      .submode-btn, .back-btn, .topic-nav-link { min-height: 48px; align-items: center; }
+      .submode-btn { flex: 1 1 120px; }
+      .step-box, .feature-tile { overflow-wrap: anywhere; }
+    }
   </style>
   <script src="/guide.js"></script>
 </head>
@@ -486,7 +503,7 @@
   <header class="site-nav">
     <div class="nav-inner">
       <a href="/guide.html" class="brand-group" title="Back to Topics">
-        <img src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261110-chat-review1" alt="SangeetPitara logo" width="32" height="32" />
+        <img src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261113-audio-continuity1" alt="SangeetPitara logo" width="32" height="32" />
         <span>SangeetPitara</span>
         <span class="brand-badge">How to Use</span>
       </a>

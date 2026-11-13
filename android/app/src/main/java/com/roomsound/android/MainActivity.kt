@@ -478,7 +478,9 @@ class MainActivity : Activity() {
     private var displayedAudioRequestId: String? = null
     private val nativePanels = mutableMapOf<String, View>()
     private var nativeScroll: ScrollView? = null
+    private lateinit var homeManualButton: Button
     private lateinit var nativeBack: Button
+    private lateinit var nativeTabStrip: android.widget.HorizontalScrollView
     private lateinit var nativeTabs: LinearLayout
     private lateinit var nativeLocalInviteButton: Button
     private lateinit var nativeReturnButton: Button
@@ -503,6 +505,7 @@ class MainActivity : Activity() {
     }
 
     private fun navigateNative(page: String) {
+        if (page == "manual") { startActivity(Intent(this, UserManualActivity::class.java)); return }
         if (page == "chat" && chatUnread > 0) { chatUnread = 0; renderChatUnread() }
         if (page != "chat" && ::voiceRecordButton.isInitialized) voiceNotes.cancelRecording()
         if (page in setOf("create", "join")) {
@@ -524,14 +527,17 @@ class MainActivity : Activity() {
         nativePanels.forEach { (name, panel) ->
             panel.visibility = if (name == nativePage || (name == "entry" && nativePage in setOf("create", "join", "room")) || (name == "capture" && nativePage == "sound")) View.VISIBLE else View.GONE
         }
+        homeManualButton.visibility = if (nativePage == "home") View.VISIBLE else View.GONE
         nativeBack.visibility = if (nativePage == "home" || compactLandscape) View.GONE else View.VISIBLE
         nativeReturnButton.visibility = if (roomSession?.currentRoomState() != null) View.VISIBLE else View.GONE
         nativeLocalInviteButton.visibility = if (roomSession?.currentEndpoint()?.startsWith("ws://127.0.0.1:") == true) View.VISIBLE else View.GONE
-        nativeTabs.visibility = if (roomSession?.currentRoomState() != null && nativePage != "home") View.VISIBLE else View.GONE
+        nativeTabStrip.visibility = if (roomSession?.currentRoomState() != null && nativePage != "home") View.VISIBLE else View.GONE
         for (index in 0 until nativeTabs.childCount) {
             val tab = nativeTabs.getChildAt(index)
+            val wasSelected = tab.isSelected
             tab.isSelected = tab.tag == nativePage
             tab.alpha = if (tab.isSelected) 1f else .7f
+            if (tab.isSelected && !wasSelected) nativeTabStrip.post { nativeTabStrip.smoothScrollTo(maxOf(0, tab.left - dp(8)), 0) }
         }
         nativeEntry.visibility = if (nativePage in setOf("create", "join")) View.VISIBLE else View.GONE
         nativeSessionControls.visibility = if (nativePage == "room") View.VISIBLE else View.GONE
@@ -548,7 +554,10 @@ class MainActivity : Activity() {
         if (nativePage != "home") navigateNative("home") else super.onBackPressed()
     }
 
-    private val compactLandscape get() = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    private val compactLandscape get() = resources.configuration.let {
+        it.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
+            it.screenWidthDp >= 600 && it.screenHeightDp >= 320 && it.fontScale <= 1.3f
+    }
 
     private fun buildContentView(): View {
         val content = LinearLayout(this).apply {
@@ -575,14 +584,31 @@ class MainActivity : Activity() {
             setPadding(0, dp(4), 0, dp(4))
         }, matchWrap())
         brandRow.addView(brandCopy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        brandRow.addView(button("Theme", ButtonTone.SECONDARY) {
-            android.app.AlertDialog.Builder(this).setTitle("Choose your theme")
-                .setSingleChoiceItems(AppThemes.names,AppThemes.selected(this)) { dialog,index ->
-                    if(index != AppThemes.selected(this)) { AppThemes.save(this,index); dialog.dismiss(); recreate() } else dialog.dismiss()
-                }.setNegativeButton("Cancel",null).show()
-        }, LinearLayout.LayoutParams(dp(76),LinearLayout.LayoutParams.WRAP_CONTENT))
+        brandRow.addView(button("Menu", ButtonTone.SECONDARY) {
+            android.widget.PopupMenu(this, brandRow.getChildAt(2)).apply {
+                if (nativePage != "home") {
+                    menu.add("User manual").setOnMenuItemClickListener { navigateNative("manual"); true }
+                }
+                menu.add("Choose theme").setOnMenuItemClickListener {
+                    android.app.AlertDialog.Builder(this@MainActivity).setTitle("Choose your theme")
+                        .setSingleChoiceItems(AppThemes.names, AppThemes.selected(this@MainActivity)) { dialog, index ->
+                            if (index != AppThemes.selected(this@MainActivity)) {
+                                AppThemes.save(this@MainActivity, index); dialog.dismiss(); recreate()
+                            } else dialog.dismiss()
+                        }.setNegativeButton("Cancel", null).show()
+                    true
+                }
+                show()
+            }
+        }.apply { contentDescription = "Menu" }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { marginStart = dp(8) })
         header.addView(brandRow, matchWrap())
         content.addView(header, panelLayout())
+        homeManualButton = button("User manual", ButtonTone.SECONDARY) {
+            navigateNative("manual")
+        }.apply { contentDescription = "Open the offline user manual" }
+        content.addView(homeManualButton, panelLayout())
         nativeBack = button("← Welcome", ButtonTone.SECONDARY) { navigateNative("home") }
         content.addView(nativeBack, panelLayout())
         val welcome = panelContainer()
@@ -609,9 +635,9 @@ class MainActivity : Activity() {
             setTextColor(AppThemes.color(this@MainActivity, R.color.roomsound_cream_muted))
             setPadding(0, 0, 0, dp(24))
         }, matchWrap())
-        welcome.addView(welcomeChoice("Create a room", "Host and listen together online", "create"), matchWrap())
-        welcome.addView(welcomeChoice("Join a room", "Enter an online room code", "join"), matchWrap())
-        welcome.addView(welcomeChoice("Play Close", "Offline rooms over Wi-Fi or hotspot", "nearby"), matchWrap())
+        welcome.addView(welcomeChoice("Create a room", "Host and listen together online", "create"), marginLayout())
+        welcome.addView(welcomeChoice("Join a room", "Enter an online room code", "join"), marginLayout())
+        welcome.addView(welcomeChoice("Play Close", "Offline rooms over Wi-Fi or hotspot", "nearby"), marginLayout())
         nativeReturnButton = button("Return to your room", ButtonTone.SECONDARY) {
             if (roomSession?.currentRoomState() != null) navigateNative("room") else android.widget.Toast.makeText(this,"Create or join a room first",android.widget.Toast.LENGTH_SHORT).show()
         }
@@ -622,7 +648,7 @@ class MainActivity : Activity() {
             val introduction = verticalContainer()
             for (index in 0..2) introduction.addView(parts[index], matchWrap())
             val choices = verticalContainer()
-            for (index in 3 until parts.size) choices.addView(parts[index], matchWrap())
+            for (index in 3 until parts.size) choices.addView(parts[index], marginLayout())
             welcome.addView(introduction, LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f).apply { marginEnd = dp(24) })
             welcome.addView(choices, LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1f))
         }
@@ -630,9 +656,15 @@ class MainActivity : Activity() {
         content.addView(welcome, panelLayout())
         nativeTabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         listOf("room" to "Room", "chat" to "Chat", "people" to "People", "sound" to "Audio", "status" to "Status").forEach { (page, title) ->
-            nativeTabs.addView(button(title, ButtonTone.SECONDARY) { navigateNative(page) }.apply { tag = page; textSize = 12f; setPadding(dp(3), 0, dp(3), 0) }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            nativeTabs.addView(button(title, ButtonTone.SECONDARY) { navigateNative(page) }.apply {
+                tag = page; textSize = 14f; minWidth = dp(72); minimumWidth = dp(72)
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(8) })
         }
-        content.addView(nativeTabs, panelLayout())
+        nativeTabStrip = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(nativeTabs)
+        }
+        content.addView(nativeTabStrip, panelLayout())
 
         updatePanel = panelContainer().apply { visibility = View.GONE }
         updateText = labelText().apply {
@@ -705,13 +737,13 @@ class MainActivity : Activity() {
             (getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Nearby Vibe", link))
             android.widget.Toast.makeText(this, "Local invite copied", android.widget.Toast.LENGTH_SHORT).show()
         }
-        val inviteActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        inviteActions.addView(nearbyCopyButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val inviteActions = actionRow()
+        addAction(inviteActions, nearbyCopyButton)
         nearbyShareButton = button("Share invite", ButtonTone.SECONDARY) {
             val links = roomSession?.nearbyInvites().orEmpty()
             if (links.isNotEmpty()) startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Join my hotspot or Wi-Fi, then open Nearby Vibe:\n" + links.joinToString("\n")) }, "Share Nearby Vibe"))
         }
-        inviteActions.addView(nearbyShareButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8) })
+        addAction(inviteActions, nearbyShareButton)
         nearbyPanel.addView(inviteActions, marginLayout())
         nearbyPanel.addView(button("Refresh invite", ButtonTone.SECONDARY) { refreshNearbyInvite() }, marginLayout())
         refreshNearbyInvite()
@@ -841,15 +873,14 @@ class MainActivity : Activity() {
         shareInviteButton.visibility = View.GONE
         roomCodePanel.addView(shareInviteButton, marginLayout())
         // Host and co-host controls: lock the room, or replace the code so old invites stop working.
-        roomAccessRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        roomAccessRow = actionRow().apply {
             visibility = View.GONE
             setPadding(0, dp(10), 0, 0)
         }
         lockRoomButton = button("Lock room", ButtonTone.SECONDARY) { toggleRoomLock() }
         newRoomCodeButton = button("New code", ButtonTone.SECONDARY) { confirmNewRoomCode() }
-        roomAccessRow.addView(lockRoomButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
-        roomAccessRow.addView(newRoomCodeButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        addAction(roomAccessRow, lockRoomButton)
+        addAction(roomAccessRow, newRoomCodeButton)
         roomCodePanel.addView(roomAccessRow, matchWrap())
         nativeSessionControls.addView(roomCodePanel, marginLayout())
 
@@ -913,7 +944,7 @@ class MainActivity : Activity() {
         }
         chatPanel.addView(reactionRow, marginLayout())
         val chatComposer = verticalContainer()
-        val chatRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        val chatRow = actionRow()
         chatInput = inputText("Message", null).apply {
             setSingleLine(false)
             setHorizontallyScrolling(false)
@@ -927,11 +958,9 @@ class MainActivity : Activity() {
         chatComposer.addView(chatInput, matchWrap())
         // Voice notes work like Telegram: tap the mic to record, tap again to stop and send.
         voiceRecordButton = button("\uD83C\uDFA4", ButtonTone.SECONDARY) { toggleVoiceRecording() }
-        chatRow.addView(voiceRecordButton, LinearLayout.LayoutParams(dp(56), LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) })
-        chatRow.addView(
-            button("Send") { sendChat() },
-            LinearLayout.LayoutParams(dp(88), LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) },
-        )
+        voiceRecordButton.contentDescription = "Record voice message"
+        addAction(chatRow, voiceRecordButton)
+        addAction(chatRow, button("Send") { sendChat() })
         chatComposer.addView(chatRow, matchWrap())
         chatPanel.addView(chatComposer, marginLayout())
         voiceStatusRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; visibility = View.GONE }
@@ -942,13 +971,13 @@ class MainActivity : Activity() {
         voiceNotes.onDraftReady = { sendVoiceDraft() }
         voiceNotes.onPlaybackChanged = { playing -> roomSession?.setVoiceNotePlaying(playing) }
         voiceNotes.onRecordingChanged = { recording -> roomSession?.setVoiceNoteRecording(recording) }
-        voicePreviewRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
+        voicePreviewRow = actionRow().apply { visibility = View.GONE }
         voicePreviewPlayButton = button("Play", ButtonTone.SECONDARY) {
             if (voiceNotes.playing) voiceNotes.stopPlayback() else voiceNotes.draft?.let(voiceNotes::play)
         }
-        voicePreviewRow.addView(voicePreviewPlayButton, LinearLayout.LayoutParams(0,dp(48),1f))
-        voicePreviewRow.addView(button("Send") { sendVoiceDraft() }, LinearLayout.LayoutParams(0,dp(48),1f).apply { marginStart = dp(6) })
-        voicePreviewRow.addView(button("Discard", ButtonTone.SECONDARY) { voiceNotes.discard() }, LinearLayout.LayoutParams(0,dp(48),1f).apply { marginStart = dp(6) })
+        addAction(voicePreviewRow, voicePreviewPlayButton)
+        addAction(voicePreviewRow, button("Send") { sendVoiceDraft() })
+        addAction(voicePreviewRow, button("Discard", ButtonTone.SECONDARY) { voiceNotes.discard() })
         chatPanel.addView(voicePreviewRow, marginLayout())
         if (compactLandscape) {
             val parts = (0 until chatPanel.childCount).map { chatPanel.getChildAt(it) }
@@ -2548,8 +2577,12 @@ class MainActivity : Activity() {
         setTypeface(strongTypeface)
         minHeight = dp(48)
         minimumHeight = dp(48)
+        minWidth = 0
+        minimumWidth = 0
+        includeFontPadding = false
+        maxLines = 3
         stateListAnimator = null
-        setPadding(dp(12), 0, dp(12), 0)
+        setPadding(dp(12), dp(10), dp(12), dp(10))
         gravity = Gravity.CENTER
         setTextColor(
             when (tone) {
@@ -2570,7 +2603,6 @@ class MainActivity : Activity() {
 
     private fun welcomeChoice(title: String, subtitle: String, page: String): View {
         val wrapper = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        wrapper.addView(View(this).apply { setBackgroundColor(AppThemes.color(this@MainActivity, R.color.roomsound_panel_stroke)) }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)))
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -2659,6 +2691,25 @@ class MainActivity : Activity() {
         setLineSpacing(0f, 1.12f)
     }
 
+    private fun actionRow() = LinearLayout(this).apply {
+        orientation = if (resources.configuration.screenWidthDp < 360 ||
+            resources.configuration.fontScale > 1.15f) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+    }
+
+    private fun addAction(row: LinearLayout, action: View) {
+        val horizontal = row.orientation == LinearLayout.HORIZONTAL
+        row.addView(action, LinearLayout.LayoutParams(
+            if (horizontal) 0 else LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            if (horizontal) 1f else 0f,
+        ).apply {
+            if (row.childCount > 0) {
+                if (horizontal) marginStart = dp(8) else topMargin = dp(8)
+            }
+        })
+    }
+
     private fun matchWrap() = LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -2666,7 +2717,7 @@ class MainActivity : Activity() {
 
     private fun requestButtonLayout() = LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
-        dp(52),
+        LinearLayout.LayoutParams.WRAP_CONTENT,
     )
 
     private fun marginLayout() = LinearLayout.LayoutParams(

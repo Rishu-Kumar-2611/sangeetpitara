@@ -7,11 +7,21 @@ on:
     paths:
       - 'android/**'
       - 'release.properties'
+      - 'guide/**'
+      - 'guide.html'
+      - 'guide.js'
+      - 'privacy.html'
+      - 'terms.html'
       - '.github/workflows/android.yml'
   pull_request:
     paths:
       - 'android/**'
       - 'release.properties'
+      - 'guide/**'
+      - 'guide.html'
+      - 'guide.js'
+      - 'privacy.html'
+      - 'terms.html'
       - '.github/workflows/android.yml'
 
 permissions:
@@ -35,7 +45,19 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
       - name: Run JVM unit tests, lint, and build a test APK
-        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --no-daemon --console=plain
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug -PROOMSOUND_PREVIEW_BUILD=1 --no-daemon --console=plain
+      - name: Verify offline manual is inside the APK
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+          root = Path("..")
+          with zipfile.ZipFile("app/build/outputs/apk/debug/app-debug.apk") as apk:
+              for path in [root / "guide.html", root / "guide.js", *sorted((root / "guide").rglob("*"))]:
+                  if path.is_file():
+                      entry = "assets/manual/" + path.relative_to(root).as_posix()
+                      assert apk.read(entry) == path.read_bytes(), entry
+          PY
       # Debug-signed build for trying a pull request on a phone before merge.
       # Published releases come only from release.yml.
       - name: Upload test APK

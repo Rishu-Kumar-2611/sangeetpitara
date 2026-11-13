@@ -44,9 +44,9 @@ val inviteLinkHost = Regex("^wss://([^/:]+)").find(configuredDefaultEndpoint)?.g
     ?: "sangeet-pitaraa.onrender.com"
 // The release workflow derives both from the pushed v<major>.<minor>.<patch> tag.
 val configuredVersionName = configuredValue("ROOMSOUND_VERSION_NAME")
-    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.24")
+    ?: releaseProperties.getProperty("VERSION_NAME", "1.1.25")
 val configuredVersionCode = configuredValue("ROOMSOUND_VERSION_CODE")?.toInt()
-    ?: releaseProperties.getProperty("VERSION_CODE", "10124").toInt()
+    ?: releaseProperties.getProperty("VERSION_CODE", "10125").toInt()
 // GitHub repository whose latest release the app checks for an update notice.
 val configuredReleasesRepository = configuredValue("ROOMSOUND_RELEASES_REPOSITORY")
     ?: "Rishu-Kumar-2611/sangeetpitara"
@@ -188,3 +188,16 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
+
+// Keep the Android guide identical to the website, with no network dependency.
+val bundleUserManual = tasks.register<Sync>("bundleUserManual") {
+    from(rootProject.layout.projectDirectory.dir("..")) {
+        include("guide.html", "guide.js", "guide/**", "privacy.html", "terms.html")
+        include("styles.css", "themes.css", "themes.js", "fonts/**")
+        include("branding/sangeetpitara/05-diya-eighth-note.svg")
+        into("manual")
+    }
+    into(layout.buildDirectory.dir("generated/manualAssets"))
+}
+android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/manualAssets"))
+tasks.named("preBuild").configure { dependsOn(bundleUserManual) }

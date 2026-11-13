@@ -9,6 +9,8 @@ name: Android release
 #   ANDROID_KEY_PASSWORD       key password
 on:
   push:
+    branches: [main]
+    paths: [release.properties]
     tags:
       - 'v*.*.*'
 
@@ -27,12 +29,16 @@ jobs:
       run:
         working-directory: android
     steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
       - name: Derive version from tag
         id: version
         working-directory: .
         env:
           TAG: ${{ github.ref_name }}
         run: |
+          if [ "$TAG" = "main" ]; then TAG="v$(sed -n 's/^VERSION_NAME=//p' release.properties)"; fi
           if [[ ! "$TAG" =~ ^v([0-9]+)\.([0-9]{1,2})\.([0-9]{1,2})$ ]]; then
             echo "::error::Tag $TAG must look like v1.2.3 (minor and patch below 100)."
             exit 1
@@ -48,9 +54,6 @@ jobs:
           echo "name=$major.$minor.$patch" >> "$GITHUB_OUTPUT"
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
-      - name: Check out source
-        uses: actions/checkout@v4
-
       - name: Set up Node.js and run web release checks
         uses: actions/setup-node@v4
         with:
@@ -64,7 +67,7 @@ jobs:
       - name: Verify repository release identity
         working-directory: .
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ format('v{0}', steps.version.outputs.name) }}
         run: |
           expected="$(sed -n 's/^VERSION_NAME=//p' release.properties)"
           if [ "$TAG" != "v$expected" ]; then
@@ -104,7 +107,7 @@ jobs:
 
       - name: Verify signature and stage assets
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ format('v{0}', steps.version.outputs.name) }}
         run: |
           apk=app/build/outputs/apk/release/app-release.apk
           apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
@@ -126,7 +129,7 @@ jobs:
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ format('v{0}', steps.version.outputs.name) }}
           NAME: ${{ steps.version.outputs.name }}
         run: |
           gh release create "$TAG" \

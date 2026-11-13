@@ -110,17 +110,18 @@ test('a five-second delayed burst is caught up so the listener returns near live
  assert.ok(p.node.targetFill<=96_000);
  p.run(4000);
  assert.ok(p.node.skippedSamples>0,'stale backlog is skipped');
- assert.ok(p.node.available<=p.node.targetFill+48_000,'latency returns to within 1 s of the target');
+ assert.ok(p.node.available<=144_000,'latency returns to within 1 s of the target');
  assert.equal(p.node.playing,true);
 });
 
-test('a lasting cushion is released within seconds once the network is stable', async () => {
+test('a lasting cushion decays without deleting the delayed music', async () => {
  const p=await playout();p.run(2000);
  p.run(1500,{connected:false});p.flush(75);
  assert.ok(p.node.adaptiveExtraFill>0);
  p.run(20_000);
  assert.equal(p.node.adaptiveExtraFill,0,'cushion decays back to the base delay');
- assert.ok(p.node.available<=p.node.targetFill+48_000);
+ assert.equal(p.node.skippedSamples,0,'decaying the target must not delete recovered music');
+ assert.ok(p.node.available<=144_000);
 });
 
 test('small late packets do not pin a large cushion after a stall', async () => {
@@ -133,7 +134,7 @@ test('small late packets do not pin a large cushion after a stall', async () => 
  for(let i=0;i<10;i+=1){p.run(120,{connected:false});p.run(1880);}
  assert.ok(p.node.adaptiveExtraFill<=Math.ceil(0.25*48_000),`cushion follows the small hiccups (${p.node.adaptiveExtraFill} samples)`);
  assert.ok(p.node.adaptiveExtraFill>=Math.floor(0.1*48_000),'but still covers them');
- assert.ok(p.node.available<=p.node.targetFill+48_000);
+ assert.ok(p.node.available<=144_000);
 });
 
 test('a repeated large stall keeps its cushion while it keeps happening', async () => {
@@ -192,5 +193,16 @@ test('playout bridges a repeated 1.5 s stall after learning its 25 s cadence', a
   p.run(2_000);
   assert.equal(p.node.underruns, underruns, 'the learned buffer must span the third stall');
   assert.equal(p.node.skippedSamples, skipped, 'no music is dropped after the cadence is learned');
+  assert.equal(p.node.playing, true);
+});
+
+test('recorded one-second catch-up cutoff is preserved during a target reduction', async () => {
+  const p = await playout();
+  p.run(2_000);
+  p.flush(60); // A delayed 1.2 s delivery, still safely inside the recovery bound.
+  const skipped = p.node.skippedSamples;
+  p.node.port.onmessage({ data: { type: 'config', targetDelayMs: 40 } });
+  p.run(20_000);
+  assert.equal(p.node.skippedSamples, skipped, 'a falling target must never cause the recorded ~1.1 s skip');
   assert.equal(p.node.playing, true);
 });
