@@ -22,3 +22,11 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['^desktop/nearby-desktop\.test\.mjs$']
 regexes = ['^dGhlIHNhbXBsZSBub25jZQ==$']
+
+# RFC 6238 Appendix B's public test key; never used by a deployed account.
+[[allowlists]]
+description = "Exact RFC 6238 vector in owner authenticator unit tests"
+condition = "AND"
+regexTarget = "secret"
+paths = ['^owner-admin\.test\.mjs$']
+regexes = ['^GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ$']
