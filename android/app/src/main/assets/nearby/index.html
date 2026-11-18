@@ -648,6 +648,12 @@ html[data-theme] .source-cover[data-visual=radio] { transform: none !important; 
   html[data-theme] .room-tabs,
   html[data-theme] .motion-studio .room-tabs { position: static; top: auto; }
 }
+
+/* Allow header controls to wrap instead of pushing 320px rooms sideways. */
+@media (max-width: 600px) {
+  html[data-theme] .topbar-actions { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+  html[data-theme] .room-theme-bar { flex-wrap: wrap; max-width: 100%; }
+}
 /* Shared room chat controls, including the offline guest page. */
 .chat-message { display:flex; padding:10px 0; border-bottom:1px solid var(--line); }
 .chat-meta { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }

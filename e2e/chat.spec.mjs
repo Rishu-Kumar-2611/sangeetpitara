@@ -69,7 +69,11 @@ test('all public sections and room tabs reflow at phone portrait, landscape and 
     const content=await page.locator('.room-layout').boundingBox();
     expect(nav.y+nav.height,'Phone navigation comes before room content').toBeLessThanOrEqual(content.y);
     const theme=await page.locator('.theme-bar').boundingBox();
-    expect(theme.y,'Theme comes below section navigation').toBeGreaterThanOrEqual(nav.y+nav.height);
+    const header=await page.locator('.topbar').boundingBox();
+     expect(theme.y,'Theme belongs inside the room header').toBeGreaterThanOrEqual(header.y);
+     expect(theme.y+theme.height,'Theme stays above section navigation').toBeLessThanOrEqual(nav.y);
+     expect(theme.x+theme.width,'Theme fits the phone viewport').toBeLessThanOrEqual(viewport.width);
+     expect(await page.locator('#room-tabs').evaluate(el=>getComputedStyle(el).position),'Room tabs scroll with content').toBe('static');
    }
   }
   await expect(page.locator('#mini-player')).toBeVisible();
