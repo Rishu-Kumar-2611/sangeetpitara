@@ -16,6 +16,7 @@ COPY --chown=node:node branding/sangeetpitara/05-diya-eighth-note.svg ./branding
 COPY --chown=node:node branding/sangeetpitara/1?-visual-*.svg ./branding/sangeetpitara/
 COPY --chown=node:node guide ./guide
 COPY --chown=node:node fonts ./fonts
+COPY --chown=node:node admin.html admin.js admin.css owner-admin.mjs usage-analytics.mjs ./
 COPY --chown=node:node server.mjs client-address.mjs auth.mjs persistence.mjs migrate.mjs security.mjs moderation.mjs observability.mjs audit.mjs billing.mjs config.mjs smoke.mjs release.properties ./
 COPY --chown=node:node migrations ./migrations
 COPY --chown=node:node checks ./checks

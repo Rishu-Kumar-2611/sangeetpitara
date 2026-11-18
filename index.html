@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light" data-theme-reset>
   <head>
     <meta charset="UTF-8" />
-    <meta name="app-version" content="1.1.25" />
+    <meta name="app-version" content="1.1.26" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="SangeetPitara — private live audio rooms for listening together. Share sound live with friends in sync from phone to laptop." />
     <meta name="google-site-verification" content="google4e6792fe7b47be54" />
@@ -30,7 +30,7 @@
     <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261113-audio-continuity1" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="stylesheet" href="/styles.css?v=20261113-audio-continuity1" />
-    <link rel="stylesheet" href="/themes.css?v=20261112-topbar1" />
+    <link rel="stylesheet" href="/themes.css?v=20261118-nearby-admin1" />
     <link rel="stylesheet" href="/chat.css?v=20261113-audio-continuity1" />
     <script src="/themes.js?v=20261112-topbar1"></script>
   </head>
@@ -114,7 +114,7 @@
           <section class="entry-card nearby-card" hidden aria-labelledby="nearby-vibe-title">
             <div class="eyebrow">TOGETHER, OFFLINE</div><h2 id="nearby-vibe-title">Play Close</h2><span class="nearby-badge">Same Wi-Fi. No internet.</span>
             <p>Share music over the same Wi-Fi or phone hotspot. No internet connection needed for the local room.</p>
-            <details class="nearby-guide"><summary>How do we join and take turns playing?</summary><ol><li>The host opens Play Close in the updated Android app and enables a hotspot.</li><li>Friends join that hotspot or the same Wi-Fi.</li><li>The host enters a name and taps Host &amp; create nearby room, then View local invite to copy or share the link.</li><li>Android friends open Play Close → Join nearby room in app and paste the complete invite. They can request audio control; the host approves or grants it from People. The approved friend taps Share device audio and accepts Android's consent dialog.</li><li>Browser friends open the invite to listen or request a turn to stream a music file saved on their device. The host can take back control at any time.</li></ol></details>
+            <details class="nearby-guide"><summary>How do we join and take turns playing?</summary><ol><li>Everyone connects to the same trusted Wi-Fi or the host's hotspot.</li><li>In the updated Android app, open Play Close, choose Create a room, enter your name and create it.</li><li>Friends open Play Close, choose Join a room, then enter their name and the host's six-character code. Android finds the host locally, without an invite link.</li><li>If the network blocks discovery, the host can open Invite link / discovery help and copy a fallback invite. Friends can paste it in the same help section.</li><li>Browser guests still need the fallback invite because browsers cannot discover Wi-Fi rooms by code. Open the invite to listen, chat or request a turn to stream a saved music file.</li></ol></details>
             <p>The host phone serves the listening page locally, so friends do not need to load this website again. Windows guests can use the desktop companion to share screen or tab audio after host approval. Download it once, extract it and run Start Play Close.cmd; paste the host's fresh invite into its local page. Audio stays on your hotspot.</p>
             <a class="secondary-button full-button" href="/downloads/SangeetPitara-Desktop-Windows.zip">Download Windows companion</a>
             <form id="nearby-invite-form"><label class="field-label" for="nearby-invite">Local invite link</label><input id="nearby-invite" class="text-input" type="url" placeholder="http://192.168.…:8765/#invite=…" required><button class="secondary-button full-button" type="submit">Open nearby room</button><p id="nearby-invite-error" role="alert"></p></form>

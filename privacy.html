@@ -15,7 +15,7 @@
 <main class="legal-page">
 <a class="brand-mark" href="/"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261113-audio-continuity1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></a>
 <h1>Privacy Policy</h1>
-<p class="legal-muted">Effective 24 Oct 2024 · Updated 8 Nov 2026 · DG, India</p>
+<p class="legal-muted">Effective 24 Oct 2024 · Updated 18 Nov 2026 · DG, India</p>
 <p>SangeetPitara runs private live audio rooms at sangeet-pitaraa.onrender.com. Live music is relayed in memory. Voice messages are short recordings that are shared with room participants only when you tap Send. They are temporarily retained in bounded room history; Android uses private temporary files when recording and playing them. We collect only what is needed to keep rooms working.</p>
 <h2>Data we process</h2>
 <ul>
@@ -26,6 +26,8 @@
 <li>Preferences and identity: ad consent, volume, a public guest ID and a private reconnect secret in browser localStorage or Android private app storage. The reconnect secret authenticates room recovery; do not share it.</li>
 </ul>
 <h2>Cookies</h2>
+<p>Operational usage statistics store a SHA-256 pseudonym of the app/browser identity, platform category, daily connected time, estimated relay listening time, room creations, joins, reconnects and relay backlog drops. They contain no names, chat content, audio recordings or IP addresses. These daily statistics are retained in PostgreSQL for usage reporting and are accessible only through the owner dashboard. Offline nearby sessions are excluded. A device identity is an estimate, not a verified person.</p>
+<p>The owner dashboard requires a provisioned account, password and authenticator code. Its separate HttpOnly, SameSite=Strict <code>sangeetpitara_admin</code> cookie expires after one hour, with a server-enforced 15-minute idle timeout. It is sent only to the admin API.</p>
 <table class="legal-table">
 <tr><th>Name</th><th>Purpose</th><th>Duration</th></tr>
 <tr><td>roomsound_session</td><td>Keep admin session</td><td>Up to 30 days</td></tr>
