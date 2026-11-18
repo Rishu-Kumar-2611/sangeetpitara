@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { summarizeUsage } from './usage-analytics.mjs';
 
 const { Pool } = pg;
 
@@ -166,6 +167,9 @@ export class InMemoryRepository {
     this.bansById = new Map();
     this.entitlementsBySubject = new Map();
     this.billingEvents = new Set();
+    this.usageRows = new Map();
+    this.usageBatches = new Set();
+    this.adminTotpSteps = new Map();
   }
 
   async migrate() {
@@ -362,6 +366,27 @@ export class InMemoryRepository {
     if (this.billingEvents.has(key)) return false;
     this.billingEvents.add(key);
     return true;
+  }
+
+  async consumeAdminTotp(userId, step) {
+    if (step <= (this.adminTotpSteps.get(userId) ?? -1)) return false;
+    this.adminTotpSteps.set(userId, step); return true;
+  }
+
+  async writeUsageBatch({ id, rows }) {
+    if (this.usageBatches.has(id)) return;
+    for (const row of rows) {
+      const key = `${row.day}:${row.visitor}:${row.platform}`;
+      const current = this.usageRows.get(key) || { day: row.day, visitor: row.visitor, platform: row.platform };
+      for (const field of ['onlineMs', 'listeningMs', 'sessions', 'roomsCreated', 'reconnects', 'forwarded', 'dropped']) current[field] = (current[field] || 0) + row[field];
+      this.usageRows.set(key, current);
+    }
+    this.usageBatches.add(id);
+  }
+
+  async usageSummary(since) {
+    const rows = [...this.usageRows.values()];
+    return { ...summarizeUsage(rows, since), lifetime: summarizeUsage(rows, '0000').totals };
   }
 
   async close() {}
@@ -685,6 +710,40 @@ export class PostgresRepository {
       [provider, providerEventId],
     );
     return result.rowCount > 0;
+  }
+
+  async consumeAdminTotp(userId, step) {
+    const result = await this.pool.query('UPDATE users SET admin_totp_step = $2 WHERE id = $1 AND is_admin = TRUE AND revoked_at IS NULL AND admin_totp_step < $2 RETURNING id', [userId, step]);
+    return result.rowCount === 1;
+  }
+
+  async writeUsageBatch({ id, rows }) {
+    // One atomic statement makes a retry safe even after a lost commit response.
+    await this.pool.query(`WITH batch AS (
+      INSERT INTO usage_batches (id) VALUES ($1) ON CONFLICT DO NOTHING RETURNING id
+    ), incoming AS (
+      SELECT * FROM jsonb_to_recordset($2::jsonb) AS x(day date, visitor text, platform text, "onlineMs" bigint, "listeningMs" bigint, sessions bigint, "roomsCreated" bigint, reconnects bigint, forwarded bigint, dropped bigint)
+    ) INSERT INTO usage_daily (day, visitor, platform, online_ms, listening_ms, sessions, rooms_created, reconnects, forwarded, dropped)
+      SELECT day, visitor, platform, "onlineMs", "listeningMs", sessions, "roomsCreated", reconnects, forwarded, dropped FROM incoming WHERE EXISTS (SELECT 1 FROM batch)
+      ON CONFLICT (day, visitor, platform) DO UPDATE SET
+        online_ms = usage_daily.online_ms + EXCLUDED.online_ms,
+        listening_ms = usage_daily.listening_ms + EXCLUDED.listening_ms,
+        sessions = usage_daily.sessions + EXCLUDED.sessions,
+        rooms_created = usage_daily.rooms_created + EXCLUDED.rooms_created,
+        reconnects = usage_daily.reconnects + EXCLUDED.reconnects,
+        forwarded = usage_daily.forwarded + EXCLUDED.forwarded,
+        dropped = usage_daily.dropped + EXCLUDED.dropped`, [id, JSON.stringify(rows)]);
+  }
+
+  async usageSummary(since) {
+    const fields = `COUNT(DISTINCT visitor)::float AS users, COALESCE(SUM(online_ms),0)::float AS "onlineMs", COALESCE(SUM(listening_ms),0)::float AS "listeningMs", COALESCE(SUM(sessions),0)::float AS sessions, COALESCE(SUM(rooms_created),0)::float AS "roomsCreated", COALESCE(SUM(reconnects),0)::float AS reconnects, COALESCE(SUM(forwarded),0)::float AS forwarded, COALESCE(SUM(dropped),0)::float AS dropped`;
+    const [lifetime, totals, daily, platforms] = await Promise.all([
+      this.pool.query(`SELECT ${fields} FROM usage_daily`),
+      this.pool.query(`SELECT ${fields} FROM usage_daily WHERE day >= $1::date`, [since]),
+      this.pool.query(`SELECT to_char(day, 'YYYY-MM-DD') AS day, ${fields} FROM usage_daily WHERE day >= $1::date GROUP BY day ORDER BY day`, [since]),
+      this.pool.query(`SELECT platform, ${fields} FROM usage_daily WHERE day >= $1::date GROUP BY platform ORDER BY platform`, [since]),
+    ]);
+    return { lifetime: lifetime.rows[0], totals: totals.rows[0], daily: daily.rows, platforms: platforms.rows };
   }
 
   async close() {

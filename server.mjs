@@ -1,3 +1,5 @@
+import { createUsageAnalytics } from './usage-analytics.mjs';
+import { createOwnerAdmin } from './owner-admin.mjs';
 import { chatContent, boundVoiceHistory, chatSnapshot, VOICE_MAX_BYTES, VOICE_MAX_DURATION_MS } from './chat-content.mjs';
 import { clientAddress } from './client-address.mjs';
 import http from 'node:http';
@@ -215,6 +217,15 @@ const audit = createAuditRecorder({
   sink: (event) => logger.info('audit event', event),
   onSinkError: (error) => logger.warn('audit sink failed', { error }),
 });
+const usage = createUsageAnalytics({ repository, onError: () => logger.error('Usage persistence failed') });
+const handleOwnerAdmin = createOwnerAdmin({ auth, repository, analytics: usage, sendJson, audit, logger, ip: getClientIp,
+  live: () => ({ users: usage.onlineUsers, sessions: usage.onlineSessions, rooms: rooms.size,
+    streams: [...rooms.values()].filter(room => room.activeSourceId && room.sourceStatus === 'LIVE').length,
+    version: appVersion, uptimeSeconds: Math.floor(process.uptime()) }),
+});
+const usageTimer = setInterval(() => { if (!databaseMaintenance) void usage.flush().catch(() => {}); }, 15_000);
+usageTimer.unref();
+
 const health = createHealthState({
   service: 'roomsound',
   version: appVersion,
@@ -268,7 +279,7 @@ const publicFiles = new Set([
   'chat-ui.mjs', 'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
   'room-palette.js', 'media-relay.mjs', 'relay-pcm.js', 'relay-opus.mjs', 'stream-health.mjs', 'audio-diagnostics.mjs',
   'relay-capture-worklet.js', 'relay-playout-worklet.js', 'notifications-sw.js',
-  'manifest.webmanifest',
+  'manifest.webmanifest', 'admin.html', 'admin.js', 'admin.css',
 ]);
 
 function isPublicFile(name) {
@@ -911,6 +922,8 @@ async function moderationBlocksEntry(ws, room = null) {
 }
 
 function attachRoom(ws, room, member) {
+  usage.attach(ws, member, { created: member._usageCreated === true, reconnect: member.disconnectedAt != null });
+  member._usageCreated = false;
   if (room.hostFailoverTimer && member.id === room.hostId) {
     clearTimeout(room.hostFailoverTimer);
     room.hostFailoverTimer = null;
@@ -986,6 +999,7 @@ async function createRoom(ws, message) {
     role: 'HOST',
     codecs: message.codecs,
   });
+  member._usageCreated = true;
   room.hostId = member.id;
   try {
     await createPersistedRoom(room);
@@ -1163,6 +1177,7 @@ function promoteCohost(room) {
 }
 
 function handleDisconnect(ws, allowSourceRecovery = true) {
+  usage.detach(ws);
   const room = ws.roomId ? rooms.get(ws.roomId) : null;
   if (!room) {
     clearSocketRoom(ws);
@@ -1250,8 +1265,9 @@ function handleBinaryFrame(ws, raw) {
     if (target.listening === false) { relayPackets.inc(1,{outcome:'paused_skip'}); continue; }
     // During a codec switch a listener that cannot decode Opus skips those frames.
     if (opus && !target.codecs?.has('opus')) { relayPackets.inc(1,{outcome:'codec_skip'}); continue; }
-    if (Number(target.ws.bufferedAmount) > MEDIA_RELAY_MAX_BACKLOG_BYTES) { relayPackets.inc(1,{outcome:'backlog_drop'}); continue; }
+    if (Number(target.ws.bufferedAmount) > MEDIA_RELAY_MAX_BACKLOG_BYTES) { usage.delivery(target.ws, header, true); relayPackets.inc(1,{outcome:'backlog_drop'}); continue; }
     target.ws.send(bytes);
+    usage.delivery(target.ws, header);
     relayPackets.inc(1,{outcome:'forwarded'});
   }
 }
@@ -1594,6 +1610,7 @@ async function handleMessage(ws, message) {
       target.ws.close(4003, ban ? 'Banned from room' : 'Removed from room');
     }
     addSystemMessage(room, `${target.name} was ${ban ? 'banned' : 'removed'} by ${member.name}.`);
+    if (target.ws) usage.detach(target.ws);
     room.members.delete(target.id);
     if (room.cohostId === target.id) {
       room.cohostId = null;
@@ -1612,6 +1629,7 @@ async function handleMessage(ws, message) {
     broadcast(room, { type: 'room-ended', message: 'The host ended the room.' });
     for (const participant of room.members.values()) {
       const participantSocket = participant.ws;
+      if (participantSocket) usage.detach(participantSocket);
       participant.ws = null;
       if (participantSocket) {
         clearSocketRoom(participantSocket);
@@ -1750,6 +1768,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (await handleOwnerAdmin(req, res, requestPath, url.searchParams)) return;
   if (await handleAuthRequest(req, res, requestPath)) return;
   if (await handleProductApiRequest(req, res, requestPath)) return;
 
@@ -1855,7 +1874,7 @@ const server = http.createServer(async (req, res) => {
     res.end(`google.com, ${publisher}, DIRECT, f08c47fec0942fa0\n`);
     return;
   }
-  const fileName = requestPath === '/' ? 'index.html' : requestPath.replace(/^\//, '');
+  const fileName = requestPath === '/' ? 'index.html' : ['/admin', '/admin/'].includes(requestPath) ? 'admin.html' : requestPath.replace(/^\//, '');
   if (!isPublicFile(fileName)) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not found');
@@ -1900,6 +1919,11 @@ const server = http.createServer(async (req, res) => {
       headers['Cache-Control'] = 'public, max-age=3600';
     }
 
+    if (fileName.startsWith('admin.')) {
+      headers['Cache-Control'] = 'no-store';
+      headers['X-Robots-Tag'] = 'noindex, nofollow';
+      headers['Content-Security-Policy'] = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+    }
     const fileStats = await stat(filePath);
     if (!fileStats.isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -2013,6 +2037,7 @@ function checkBinaryFrameRate(ws, byteLength) {
 }
 
 wss.on('connection', (ws, req) => {
+  ws._usageAgent = String(req.headers['user-agent'] || '');
   try { req.socket?.setNoDelay?.(true); } catch {}
   ws._ip = getClientIp(req);
   ws._connectedAt = Date.now();
@@ -2134,6 +2159,8 @@ const sessionCleanup = setInterval(() => {
 sessionCleanup.unref();
 
 function shutdown(signal) {
+  clearInterval(usageTimer);
+  usage.tick();
   clearInterval(maintenance);
   clearInterval(sessionCleanup);
   health.setReady(false);
@@ -2150,6 +2177,7 @@ function shutdown(signal) {
     ws.close(1012, 'Service restarting');
   }
   wss.close(() => server.close(async () => {
+    await usage.flush().catch(() => {});
     await repository.close().catch((error) => console.error('Repository shutdown failed:', error.message));
     process.exit(0);
   }));

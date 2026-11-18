@@ -6,6 +6,9 @@ import { existsSync } from 'node:fs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const files = [
   'server.mjs',
+  'owner-admin.mjs',
+  'usage-analytics.mjs',
+  'admin.js',
   'client-address.mjs',
   'auth.mjs',
   'persistence.mjs',

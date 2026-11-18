@@ -633,3 +633,9 @@ html[data-theme] .source-cover[data-visual=radio] { transform: none !important; 
   html[data-theme] .source-card { grid-template-columns: minmax(0, 1fr); gap: 16px; text-align: left; justify-items: stretch; }
   html[data-theme] .source-card-copy { grid-row: 1; align-items: flex-start; }
 }
+
+/* Room tabs scroll with the content on phones, including Android WebView. */
+@media (max-width: 760px) {
+  html[data-theme] .room-tabs,
+  html[data-theme] .motion-studio .room-tabs { position: static; top: auto; }
+}

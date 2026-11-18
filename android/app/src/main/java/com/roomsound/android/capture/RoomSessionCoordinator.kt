@@ -113,6 +113,7 @@ class RoomSessionCoordinator(
     }
 
     private var nearbyHost: com.roomsound.android.nearby.NearbyRoomHost? = null
+    private val nearbyDiscovery = com.roomsound.android.nearby.NearbyDiscovery(appContext)
     @Volatile private var nearbyIdentity: com.roomsound.android.nearby.NearbyTlsIdentity? = null
     /** Key generation may take seconds on older hardware; call on a worker. */
     fun prepareNearbyIdentity() = synchronized(this) {
@@ -215,7 +216,7 @@ class RoomSessionCoordinator(
             status("Leave the current room before changing its endpoint.")
             return false
         }
-        disposeRoom(notifyStopped = false)
+        disposeRoom(notifyStopped = false, keepNearbyHost = nearbyHost?.let { next == RoomEndpointValidator.normalize(it.ownerEndpoint) } == true)
         pairedHttpClient = localClient
         val nextClient = if(localClient == null) RoomSoundWebSocketClient(next, reconnectSecret = reconnectSecret)
             else RoomSoundWebSocketClient(next, okHttpClient = localClient, reconnectSecret = requireNotNull(localReconnectSecret))
@@ -709,6 +710,12 @@ class RoomSessionCoordinator(
                     roomSelectionPending = false
                     requestPending = false
                     reconcileRoomState()
+                    if (event is RoomSoundEvent.Joined) nearbyHost?.let { host ->
+                        if (endpoint == RoomEndpointValidator.normalize(host.ownerEndpoint)) {
+                            runCatching { nearbyDiscovery.advertise(host, requireNotNull(nearbyIdentity).fingerprint) { status(it) } }
+                                .onFailure { nearbyDiscovery.close(); status("Automatic discovery unavailable. Use the fallback invite.") }
+                        }
+                    }
                 }
                 is RoomSoundEvent.Error, is RoomSoundEvent.LocalError -> {
                     roomSelectionPending = false
@@ -867,7 +874,9 @@ class RoomSessionCoordinator(
         return selfId == state.room.hostId || selfId == state.room.cohostId
     }
 
-    private fun disposeRoom(notifyStopped: Boolean = true) {
+    private fun disposeRoom(notifyStopped: Boolean = true, keepNearbyHost: Boolean = false) {
+        nearbyDiscovery.close()
+        if (!keepNearbyHost) { nearbyHost?.close(); nearbyHost = null }
         if (notifyStopped) notifyRoomSessionStopped()
         mediaBinding = null
         clientListener?.let { client?.removeListener(it) }

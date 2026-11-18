@@ -25,6 +25,7 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
     private val history = ArrayDeque<JSONObject>()
     private val roomId = UUID.randomUUID().toString()
     private val code = (1..6).map { "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[SecureRandom().nextInt(32)] }.joinToString("")
+    val roomCode get() = code
     private var title = "Nearby Vibe"
     private var hostId: String? = null
     private var sourceId: String? = null

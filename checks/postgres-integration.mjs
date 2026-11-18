@@ -2,7 +2,8 @@
 // a disposable CI database. Never point this check at production data.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { totp } from '../owner-admin.mjs';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -25,7 +26,7 @@ async function unusedPort() {
   return port;
 }
 
-async function start(databaseUrl) {
+async function start(databaseUrl, extraEnv = {}) {
   const port = await unusedPort();
   const base = `http://127.0.0.1:${port}`;
   const output = [];
@@ -35,7 +36,7 @@ async function start(databaseUrl) {
     DATABASE_SSL: '0', ALLOWED_ORIGINS: 'https://app.example.test',
     TRUST_PROXY: '1', SESSION_COOKIE_SECURE: '1',
     CANONICAL_PUBLIC_HOST: '', ADMIN_EMAILS: 'operator@example.test',
-    METRICS_BEARER_TOKEN: randomBytes(32).toString('hex'),
+    METRICS_BEARER_TOKEN: randomBytes(32).toString('hex'), ...extraEnv,
   }, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.on('data', (chunk) => output.push(chunk.toString()));
   server.stderr.on('data', (chunk) => output.push(chunk.toString()));
@@ -74,9 +75,9 @@ async function room(base, message, cookie) {
   return answer;
 }
 
-async function post(base, path, body, cookie) {
+async function post(base, path, body, cookie, extraHeaders = {}) {
   return fetch(base + path, { method: 'POST', headers: {
-    'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}),
+    'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}), ...extraHeaders,
   }, body: JSON.stringify(body || {}) });
 }
 
@@ -99,13 +100,46 @@ try {
   const password = 'Synthetic integration password 2026';
   const operator = await auth.register({ email: 'operator@example.test', password });
   const victim = await auth.register({ email: 'victim@example.test', password });
-  let base = await start(databaseUrl);
+  const ownerSecret = Array.from(randomBytes(32), byte => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'[byte % 32]).join('');
+  const batch = { id: randomUUID(), rows: [{ day: '2000-01-01', visitor: 'a'.repeat(64), platform: 'android', onlineMs: 1000, listeningMs: 500, sessions: 1, roomsCreated: 1, reconnects: 0, forwarded: 25, dropped: 1 }] };
+  await repository.writeUsageBatch(batch);
+  await repository.writeUsageBatch(batch);
+  let summary = await repository.usageSummary('2000-01-01');
+  assert.equal(summary.totals.onlineMs, 1000, 'Committed batch retries must not double count');
+  assert.equal(summary.totals.listeningMs, 500);
+  assert.equal(summary.totals.users, 1);
+  assert.equal(summary.daily[0].day, '2000-01-01');
+  assert.equal(summary.platforms[0].platform, 'android');
+  await repository.writeUsageBatch({ id: randomUUID(), rows: [{ ...batch.rows[0], onlineMs: 500, listeningMs: 250, sessions: 0, roomsCreated: 0 }] });
+  summary = await repository.usageSummary('2000-01-01');
+  assert.equal(summary.lifetime.onlineMs, 1500);
+  assert.equal(summary.lifetime.listeningMs, 750);
+  assert.equal(summary.lifetime.users, 1);
+  let base = await start(databaseUrl, { ADMIN_OWNER_ID: operator.user.id, ADMIN_TOTP_SECRET: ownerSecret });
   const login = await post(base, '/api/auth/login', { email: operator.user.email, password });
   assert.equal(login.status, 200);
   const cookie = login.headers.get('set-cookie').split(';')[0];
   assert.equal((await post(base, '/api/moderation/bans', {}, cookie)).status, 403,
     'An existing unverified allowlisted email must not gain privileges');
   await repository.pool.query('UPDATE users SET is_admin = TRUE WHERE id = $1', [operator.user.id]);
+  assert.deepEqual((await Promise.all([repository.consumeAdminTotp(operator.user.id, 42), repository.consumeAdminTotp(operator.user.id, 42)])).sort(), [false, true]);
+  assert.equal(await repository.consumeAdminTotp(operator.user.id, 43), true);
+  assert.equal(await repository.consumeAdminTotp(operator.user.id, 41), false);
+  assert.equal(await repository.consumeAdminTotp(victim.user.id, 44), false);
+  assert.equal((await fetch(base + '/api/admin/analytics')).status, 401);
+  assert.equal((await fetch(base + '/api/admin/analytics', { headers: { Cookie: cookie } })).status, 401, 'An ordinary admin account cookie must not bypass MFA');
+  const credentials = { email: operator.user.email, password, code: totp(ownerSecret, Math.floor(Date.now() / 30000)) };
+  const ownerLogin = await post(base, '/api/admin/login', credentials, null, { Origin: 'https://app.example.test' });
+  assert.equal(ownerLogin.status, 200, 'Provisioned owner must be able to complete password + MFA sign-in');
+  const ownerCookie = ownerLogin.headers.get('set-cookie').split(';')[0];
+  const analyticsResponse = await fetch(base + '/api/admin/analytics?days=7', { headers: { Cookie: ownerCookie } });
+  assert.equal(analyticsResponse.status, 200);
+  assert.equal(analyticsResponse.headers.get('cache-control'), 'no-store');
+  assert.equal((await analyticsResponse.json()).lifetime.listeningMs, 750);
+  assert.equal((await post(base, '/api/admin/login', credentials, null, { Origin: 'https://app.example.test' })).status, 401, 'Consumed authenticator codes cannot be replayed');
+  assert.equal((await post(base, '/api/admin/logout', {}, ownerCookie, { Origin: 'https://app.example.test' })).status, 200);
+  assert.equal((await fetch(base + '/api/admin/session', { headers: { Cookie: ownerCookie } })).status, 401);
+  console.log('OWNER ANALYTICS PASS: database aggregation, idempotent batches, atomic TOTP replay protection, MFA login and logout.');
   assert.equal((await post(base, `/api/admin/accounts/${victim.user.id}/revoke`, {}, cookie)).status, 200);
   assert.equal((await post(base, '/api/auth/login', { email: victim.user.email, password })).status, 401);
   const guest = await room(base, { type: 'create-room', name: 'Ephemeral guest room', displayName: 'Guest', guestId: 'integration-guest' });
