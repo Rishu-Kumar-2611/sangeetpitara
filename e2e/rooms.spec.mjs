@@ -49,21 +49,22 @@ test('browser room creation, separate listener, chat, reconnect and leaving', as
   } finally { await listenerContext.close(); }
 });
 
-test('all five appearances persist across reload and keep the welcome layout usable', async ({ page }, info) => {
+test('all five appearances work and fresh visits keep the default light appearance', async ({ page }, info) => {
   await page.goto('/');
   const picker=page.getByRole('combobox',{name:'Theme',exact:true});
   const themes=['dark','light','forest','brass','rose'];
   expect(await picker.locator('option').evaluateAll(options=>options.map(option=>option.value))).toEqual(themes);
+  await expect(page.locator('html')).toHaveAttribute('data-theme-reset','');
   const colors=[];
   for(const key of themes){
     await picker.selectOption(key);await expect(page.locator('html')).toHaveAttribute('data-theme',key);
     colors.push(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()));
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-    await page.reload();await expect(picker).toHaveValue(key);await expect(page.locator('html')).toHaveAttribute('data-theme',key);
     await page.screenshot({path:info.outputPath(`theme-${key}.png`),fullPage:true});
+    await page.reload();await expect(picker).toHaveValue('light');await expect(page.locator('html')).toHaveAttribute('data-theme','light');
   }
   expect(new Set(colors).size).toBe(themes.length);
-  
+
 });
 
 test('room creation remains usable when localStorage is denied', async ({ page }) => {
