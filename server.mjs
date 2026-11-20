@@ -1327,8 +1327,8 @@ async function handleMessage(ws, message) {
     if (!target || target.id === member.id) return sendError(ws, 'Choose another participant in this room.');
     if (member.lastReportAt && Date.now() - member.lastReportAt < 60_000) return sendError(ws, 'Please wait a minute before submitting another report.');
     let report;
-    try { report = createReport({ roomId: room.id, reporterId: member.accountId || `guest:${guestIdentityKey(member.guestId)}`,
-      targetId: target.accountId || `guest:${guestIdentityKey(target.guestId)}`, category: message.category || 'OTHER', description: message.description }); }
+    try { report = createReport({ roomId: room.id, reporterId: member.accountId || `guest:${member.guestKey || guestIdentityKey(member.guestId)}`,
+      targetId: target.accountId || `guest:${target.guestKey || guestIdentityKey(target.guestId)}`, category: message.category || 'OTHER', description: message.description }); }
     catch (error) { return sendError(ws, error.message); }
     await repository.createReport(report); member.lastReportAt = Date.now();
     audit.record({ type: 'moderation.report.created', roomId: room.id, severity: 'info' });
@@ -1338,7 +1338,11 @@ async function handleMessage(ws, message) {
   if (type === 'set-chat-slow-mode') {
     if (!isModerator(room, member)) return sendError(ws, 'Only the host or co-host can change chat settings.');
     if (![0, 2, 5, 10].includes(message.seconds)) return sendError(ws, 'Choose a supported slow-mode interval.');
-    room.chatSlowModeSeconds = message.seconds; await persistRoom(room); broadcastState(room); return;
+    const previousSlowMode = room.chatSlowModeSeconds || 0;
+    room.chatSlowModeSeconds = message.seconds;
+    try { await persistRoom(room); }
+    catch { room.chatSlowModeSeconds = previousSlowMode; return sendError(ws, 'Chat settings could not be saved. Retry shortly.'); }
+    broadcastState(room); return;
   }
 
   if (type === 'set-listening') {

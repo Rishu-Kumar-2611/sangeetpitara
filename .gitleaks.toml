@@ -28,5 +28,5 @@ regexes = ['^dGhlIHNhbXBsZSBub25jZQ==$']
 description = "Exact RFC 6238 vector in owner authenticator unit tests"
 condition = "AND"
 regexTarget = "secret"
-paths = ['^owner-admin\.test\.mjs$']
+paths = ['^owner-(admin|security)\.test\.mjs$']
 regexes = ['^GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ$']
