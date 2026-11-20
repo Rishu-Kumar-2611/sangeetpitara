@@ -29,9 +29,11 @@ function streamed(args) {
 try {
   run(['run', '-d', '--rm', '--name', name, '-e', 'POSTGRES_PASSWORD', 'postgres:18-alpine']);
   started = true;
+  // The image initialization server exposes only a Unix socket and restarts.
+  // Wait for TCP so a fast runner cannot mistake that temporary server for readiness.
   let ready = false;
   for (let attempt = 0; attempt < 60; attempt++) {
-    try { run(['exec', name, 'pg_isready', '-U', 'postgres']); ready = true; break; }
+    try { run(['exec', name, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres']); ready = true; break; }
     catch { await new Promise(resolve => setTimeout(resolve, 500)); }
   }
   assert.ok(ready, 'Disposable restore database did not become ready.');
