@@ -1,16 +1,16 @@
-import { RoomChatUI } from './chat-ui.mjs?v=20261113-audio-continuity1';
+import { RoomChatUI } from './chat-ui.mjs?v=20261120-prod1';
 let roomChatUI = null;
-import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261113-audio-continuity1';
-import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261113-audio-continuity1';
-import { createGuestId, createSafeStorage } from './guest-id.js?v=20261113-audio-continuity1';
-import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261113-audio-continuity1';
+import { AudioDiagnostics } from './audio-diagnostics.mjs?v=20261120-prod1';
+import { upperHealth, bufferHealth, RecentCounter } from './stream-health.mjs?v=20261120-prod1';
+import { createGuestId, createSafeStorage } from './guest-id.js?v=20261120-prod1';
+import { RelayPcmPacketizer, RelayPlaybackPlanner } from './relay-pcm.js?v=20261120-prod1';
 import {
   displayAudioCaptureConstraints,
   displayAudioCaptureGuidance,
   liveAudioTracks,
   mobileAudioCaptureGuidance,
   prepareDisplayAudioStream,
-} from './capture-tracks.js?v=20261113-audio-continuity1';
+} from './capture-tracks.js?v=20261120-prod1';
 import {
   decodeOpusFrame,
   decodePcm16Frame,
@@ -21,8 +21,9 @@ import {
   MEDIA_RELAY_VERSION_OPUS,
   RelaySequenceTracker,
   relayFrameVersion,
-} from './media-relay.mjs?v=20261113-audio-continuity1';
-import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261113-audio-continuity1';
+  relayBacklogLimit,
+} from './media-relay.mjs?v=20261120-prod1';
+import { detectOpusSupport, OpusRelayDecoder, OpusRelayEncoder } from './relay-opus.mjs?v=20261120-prod1';
 import {
   DEFAULT_REWARDED_ACCESS_CONFIG,
   clearRewardedAccess,
@@ -34,8 +35,8 @@ import {
   normalizeRewardedAccessConfig,
   readRewardedAccessExpiry,
   runRewardedAccess,
-} from './ads.mjs?v=20261113-audio-continuity1';
-import { roomPalette } from './room-palette.js?v=20261113-audio-continuity1';
+} from './ads.mjs?v=20261120-prod1';
+import { roomPalette } from './room-palette.js?v=20261120-prod1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -280,6 +281,10 @@ async function loadClientConfig() {
     const wasMediaRelayEnabled = isMediaRelayEnabled();
     state.mediaRelay = normalizeMediaRelayConfig(j.mediaRelay);
     state.chatMutations = j.chatFeatures?.messageMutations === true;
+    state.memberReports = j.chatFeatures?.memberReports === true;
+    state.chatSlowModeSupported = j.chatFeatures?.slowMode === true;
+    state.capacity = j.capacity || null;
+    state.roomRecovery = j.recovery?.enabled === true;
     const voiceMaxBytes = j.chatFeatures?.maxVoiceBytes;
     if (Number.isInteger(voiceMaxBytes) && voiceMaxBytes > 0) state.voiceMaxBytes = Math.min(voiceMaxBytes, 512 * 1024);
     if (Array.isArray(j.chatReactions)) {
@@ -832,7 +837,8 @@ function canSendRelayFrame(sourceEpoch) {
 
 function sendRelayFrameOnSocket(frame, sourceEpoch) {
   if (!state.socketJoined || state.ws?.readyState !== WebSocket.OPEN) return false;
-  if ((Number(state.ws.bufferedAmount) || 0) + frame.byteLength > MEDIA_RELAY_MAX_BACKLOG_BYTES) return false;
+  if ((Number(state.ws.bufferedAmount) || 0) + frame.byteLength > relayBacklogLimit(
+    relayFrameVersion(frame) === MEDIA_RELAY_VERSION_OPUS ? 'opus' : 'pcm16', state.mediaRelay.opusBitrate)) return false;
   try {
     state.ws.send(frame);
     state.relaySentFrames += 1;
@@ -970,7 +976,7 @@ async function ensureRelayPublisher() {
     const current = () => state.relayPublisherGeneration === generation && state.captureStream === stream && isMediaRelayEnabled();
     if (context.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
       try {
-        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261113-audio-continuity1');
+        await context.audioWorklet.addModule('/relay-capture-worklet.js?v=20261120-prod1');
         if (!current()) return false;
         processor = new AudioWorkletNode(context, 'roomsound-relay-capture', {
           numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
@@ -1048,7 +1054,7 @@ async function ensureRelayPublisher() {
 
 function setupRelayPlaybackWorklet(context, gain) {
   if (!context?.audioWorklet || typeof AudioWorkletNode === 'undefined' || state.relayPlaybackWorkletLoading) return;
-  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261113-audio-continuity1')
+  state.relayPlaybackWorkletLoading = context.audioWorklet.addModule('/relay-playout-worklet.js?v=20261120-prod1')
     .then(() => {
       if (state.relayPlaybackContext !== context || state.relayPlaybackGain !== gain) return;
       const worklet = new AudioWorkletNode(context, 'roomsound-relay-playout', {
@@ -1715,6 +1721,7 @@ function connectAnd(action, isReconnect = false) {
 }
 
 function handleServerMessage(message) {
+  if (message.type === 'report-submitted') { toast('Report sent privately to the owner for review.', 'success'); return; }
   if (message.type === 'joined' && /^[A-Za-z0-9_-]{32,80}$/.test(message.reconnectSecret || '')) {
     reconnectSecret = message.reconnectSecret;
     try { browserStorage.setItem(reconnectSecretStorageKey, reconnectSecret); } catch {}
@@ -1746,6 +1753,7 @@ function handleServerMessage(message) {
     try { applyRoomState(message.state); } finally { state.loadingChatHistory = false; }
     window.history.replaceState(window.history.state, '', roomUrlForCode(message.state.room.code));
     showRoom();
+    if (state.room.recovered && state.room.sourceStatus === 'NONE') toast('Room restored after a restart. The host can start sharing audio again.', 'success');
     announceRelayCodecs();
     // A reconnect gets a fresh socket that is listening; keep a pause in force.
     if (isListeningSuspended()) send({ type: 'set-listening', listening: false });
@@ -2039,6 +2047,10 @@ function canManageMember(id) {
     id !== state.room.hostId && state.members.some(member => member.id === id));
 }
 
+function canOpenMemberMenu(id) {
+  return canManageMember(id) || Boolean(state.memberReports && id && id !== state.self?.id && state.members.some(member => member.id === id));
+}
+
 function memberCommands(member) {
   const commands = [];
   if (member.id === state.room.activeSourceId && state.room.sourceStatus !== 'NONE') {
@@ -2054,12 +2066,14 @@ function memberCommands(member) {
 }
 
 function openMemberMenu(id) {
-  if (!canManageMember(id)) return;
+  if (!canOpenMemberMenu(id)) return;
   const target = state.members.find(member => member.id === id);
   const dialog = $('#member-menu');
   if (dialog.open) dialog.close();
   $('#member-menu-title').textContent = target.name;
-  $('#member-menu-actions').replaceChildren(...memberCommands(target).map(([action, label]) => {
+  const commands = canManageMember(id) ? memberCommands(target) : [];
+  if (state.memberReports) commands.push(['report', 'Report to owner']);
+  $('#member-menu-actions').replaceChildren(...commands.map(([action, label]) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = action === 'ban' ? 'tiny-button danger-tiny' : 'tiny-button';
@@ -2069,6 +2083,19 @@ function openMemberMenu(id) {
     return button;
   }));
   dialog.showModal();
+}
+
+function openParticipantReport(memberId) {
+  const modal = document.createElement('div'); modal.className = 'modal-backdrop';
+  modal.innerHTML = '<form class="source-modal" role="dialog" aria-modal="true" aria-labelledby="report-title"><h2 id="report-title">Report a participant</h2><p>Your report is shared privately with the owner for review. Include only information needed to explain the issue.</p><label>Reason<select name="category"><option value="ABUSE">Abuse</option><option value="HARASSMENT">Harassment</option><option value="IMPERSONATION">Impersonation</option><option value="SPAM">Spam</option><option value="OTHER">Other</option></select></label><label>What happened?<textarea name="description" maxlength="2000" rows="4" required></textarea></label><div class="confirmation-actions"><button type="button" data-dismiss>Cancel</button><button type="submit">Send report</button></div></form>';
+  $('#modal-root').append(modal); containModalFocus(modal);
+  modal.querySelector('[data-dismiss]').addEventListener('click', () => modal.remove());
+  modal.addEventListener('keydown', event => { if (event.key === 'Escape') modal.remove(); });
+  modal.querySelector('form').addEventListener('submit', event => {
+    event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget));
+    if (send({ type: 'report-member', memberId, category: data.category, description: data.description }) !== false) modal.remove();
+  });
+  modal.querySelector('select').focus();
 }
 
 function renderMembers() {
@@ -2082,7 +2109,7 @@ function renderMembers() {
     const baseRole = isHost ? 'Host' : isCohost ? 'Co-host' : isSource ? 'Sharing now' : 'Listener';
     const role = !member.online ? `${baseRole} · Offline` : member.paused ? `${baseRole} · Paused` : baseRole;
     const roleClass = !member.online ? '' : (isHost || isSource ? 'green-role' : isCohost ? 'orange-role' : '');
-    const actions = canManageMember(member.id)
+    const actions = canOpenMemberMenu(member.id)
       ? `<button type="button" class="member-more" data-member-menu="${escapeHtml(member.id)}" aria-label="Actions for ${escapeHtml(member.name)}" aria-haspopup="dialog">⋯</button>`
       : '';
     return `<div class="member-item ${member.online ? '' : 'member-offline'}"><div class="member-avatar">${escapeHtml(initials(member.name))}</div><div class="member-info"><div class="member-name-row"><span class="member-name">${escapeHtml(member.name)}</span>${member.id === state.self?.id ? '<span class="member-you">YOU</span>' : ''}</div><div class="member-role"><span class="role-badge ${roleClass}">${role}</span></div></div><span class="member-state ${member.online ? 'online' : ''} ${isSource ? 'source' : ''}" title="${member.online ? 'Online' : 'Offline'}"></span>${actions}</div>`;
@@ -3047,7 +3074,7 @@ function containModalFocus(modal) {
   }
   modal.addEventListener('keydown', (event) => {
     if (event.key !== 'Tab') return;
-    const controls = [...modal.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]')]
+    const controls = [...modal.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')]
       .filter((element) => element.getClientRects().length);
     if (!controls.length) { event.preventDefault(); return; }
     const first = controls[0];
@@ -3115,9 +3142,25 @@ function openRoomSettings() {
   closeRoomMenu();
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
-  modal.innerHTML = `<div class="source-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="room-settings-title"><div class="modal-eyebrow">ROOM SETTINGS</div><h2 id="room-settings-title">${escapeHtml(state.room.name)}</h2><p>Private room · up to 10 people · audio is not recorded. Share, leave, and end actions are in the Room menu.</p><div class="settings-summary"><div><span>Room code</span><strong>${escapeHtml(state.room.code)}</strong></div><div><span>Current source</span><strong>${escapeHtml(state.room.activeSourceId ? sourceLabel(state.room.activeSourceType) : 'None')}</strong></div></div>${roomAccessSettingsMarkup()}${notificationSettingsMarkup()}<button class="modal-close" type="button">Close</button></div>`;
+  modal.innerHTML = `<div class="source-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="room-settings-title"><div class="modal-eyebrow">ROOM SETTINGS</div><h2 id="room-settings-title">${escapeHtml(state.room.name)}</h2><p>Private online room. Live sessions are not stored as recordings. Optional voice notes are temporarily shared. Share, leave, and end actions are in the Room menu.</p><div class="settings-summary"><div><span>Room code</span><strong>${escapeHtml(state.room.code)}</strong></div><div><span>Current source</span><strong>${escapeHtml(state.room.activeSourceId ? sourceLabel(state.room.activeSourceType) : 'None')}</strong></div></div>${roomAccessSettingsMarkup()}${notificationSettingsMarkup()}<button class="modal-close" type="button">Close</button></div>`;
   $('#modal-root').append(modal);
   containModalFocus(modal);
+  if (state.capacity) {
+    const note = document.createElement('p'); note.className = 'settings-note';
+    note.textContent = `Service capacity: ${state.capacity.totalConnections} total connections; ${state.capacity.connectionsPerAddress} from one network. Extra tabs count as connections.`;
+    modal.querySelector('.settings-summary').after(note);
+  }
+  if (isModerator() && state.chatSlowModeSupported) {
+    const label = document.createElement('label'); label.textContent = 'Chat slow mode ';
+    const select = document.createElement('select'); select.setAttribute('aria-label', 'Chat slow mode');
+    for (const value of [0, 2, 5, 10]) {
+      const option = document.createElement('option'); option.value = String(value); option.textContent = value ? `${value} seconds between messages` : 'Off'; select.append(option);
+    }
+    select.value = String(state.room.chatSlowModeSeconds || 0);
+    select.addEventListener('change', () => send({ type: 'set-chat-slow-mode', seconds: Number(select.value) }));
+    label.append(select); modal.querySelector('.modal-close').before(label);
+  }
+
   const dismiss = () => {
     document.removeEventListener('keydown', onKeyDown);
     modal.remove();
@@ -3342,6 +3385,9 @@ function wireEvents() {
     if (!button) return;
     const memberId = button.dataset.memberId;
     const target = state.members.find((member) => member.id === memberId);
+    if (button.dataset.action === 'report' && target && canOpenMemberMenu(memberId) && state.memberReports) {
+      $('#member-menu').close(); openParticipantReport(memberId); return;
+    }
     if (!target || !canManageMember(memberId) || !memberCommands(target).some(([action]) => action === button.dataset.action)) {
       $('#member-menu').close();
       return;
@@ -3377,6 +3423,33 @@ function wireEvents() {
     send({ type: button.dataset.requestAction === 'approve' ? 'approve-request' : 'reject-request', requestId: button.dataset.requestId });
   });
   $('#complete-rewarded-access')?.addEventListener('click', () => { void completeRewardedAccess(); });
+  $('#check-connection')?.addEventListener('click', async event => {
+    const button = event.currentTarget; const output = $('#connection-check-result');
+    button.disabled = true; output.textContent = 'Checking your connection.';
+    try {
+      const response = await fetch('/ready', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+      if (!response.ok) throw new Error('The server is starting or temporarily unavailable. Retry shortly.');
+      await loadClientConfig();
+      const capture = Boolean(navigator.mediaDevices?.getDisplayMedia);
+      output.textContent = `Server ready. ${capture ? 'This browser offers screen or tab sharing; enable its audio option when prompted.' : 'Use the Android app to share phone playback; you can listen here.'} ${state.roomRecovery ? 'Your room can reconnect after a brief server restart.' : ''} No sound has been captured by this check.`;
+    } catch (error) {
+      output.textContent = error.name === 'TimeoutError' ? 'The server is taking longer to respond. It may be waking up; retry shortly.' : 'Connection check failed. Check your network and retry shortly.';
+    } finally { button.disabled = false; }
+  });
+  $('#recover-audio')?.addEventListener('click', async () => {
+    if (!state.room) return;
+    if (state.voiceNoteRecording || state.voiceNotePlaying) { toast('Finish the voice note before recovering room audio.', 'error'); return; }
+    state.muted = false; setListeningPaused(false);
+    resetRelayPlaybackQueue(state.room.sourceEpoch); closeOpusDecoder();
+    await resumeRoomMediaAfterVisibility();
+    if (state.ws?.readyState === WebSocket.OPEN) send({ type: 'set-listening', listening: true });
+    else if (state.ws?.readyState !== WebSocket.CONNECTING && state.lastRoomCode) {
+      clearTimeout(state.reconnectTimer); state.reconnectTimer = null;
+      connectAnd({ type: 'join', code: state.lastRoomCode }, true);
+    }
+    renderControls();
+    toast(state.volume === 0 ? 'Your room volume is zero. Raise it to hear audio.' : 'Audio recovery requested. If the source is silent, ask the host to restart sharing.', 'success');
+  });
 }
 
 wireEvents();

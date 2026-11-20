@@ -148,6 +148,8 @@ class RoomSessionCoordinator(
     private var voiceMessages = false
     private var messageReplies = false
     private var messageMutations = false
+    private var memberReports = false
+    private var chatSlowMode = false
     private var chatReactions: List<String> = emptyList()
     private var mediaConfigured = false
     private var pendingRoomAction: ((RoomSoundWebSocketClient) -> Unit)? = null
@@ -184,6 +186,12 @@ class RoomSessionCoordinator(
     fun supportsVoiceMessages(): Boolean = voiceMessages
     fun supportsMessageReplies(): Boolean = messageReplies
     fun supportsMessageMutations(): Boolean = messageMutations
+    fun supportsParticipantReports(): Boolean = memberReports
+    fun supportsChatSlowMode(): Boolean = chatSlowMode
+    fun reportMember(memberId: String, description: String): Boolean =
+        memberReports && joinedState() != null && client?.reportMember(memberId, description) == true
+    fun setChatSlowMode(seconds: Int): Boolean =
+        chatSlowMode && joinedState() != null && client?.setChatSlowMode(seconds) == true
 
     fun editChat(messageId: String, text: String): Boolean =
         messageMutations && joinedState() != null && text.isNotBlank() &&
@@ -263,6 +271,8 @@ class RoomSessionCoordinator(
             voiceMessages = fetchedConfig.voiceMessages
             messageReplies = fetchedConfig.messageReplies
             messageMutations = fetchedConfig.messageMutations
+            memberReports = fetchedConfig.memberReports
+            chatSlowMode = fetchedConfig.chatSlowMode
             val relayEnabled = fetchedConfig.mediaRelay.enabled
             if (relayEnabled) {
                 require(fetchedConfig.mediaRelay.isPcm16Enabled) {
@@ -896,6 +906,8 @@ class RoomSessionCoordinator(
         voiceMessages = false
         messageReplies = false
         messageMutations = false
+        memberReports = false
+        chatSlowMode = false
         mediaConfigured = false
         pendingRoomAction = null
         connectPending = false

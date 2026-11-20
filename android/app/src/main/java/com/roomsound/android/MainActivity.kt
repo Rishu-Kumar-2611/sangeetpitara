@@ -600,6 +600,18 @@ class MainActivity : Activity() {
                         }.setNegativeButton("Cancel", null).show()
                     true
                 }
+                val roomState = roomSession?.currentRoomState()
+                if (roomState != null && roomSession?.supportsChatSlowMode() == true &&
+                    (roomState.self?.id == roomState.room.hostId || roomState.self?.id == roomState.room.cohostId)) {
+                    menu.add("Chat slow mode").setOnMenuItemClickListener {
+                        val intervals = intArrayOf(0, 2, 5, 10)
+                        android.app.AlertDialog.Builder(this@MainActivity).setTitle("Chat slow mode")
+                            .setSingleChoiceItems(arrayOf("Off", "2 seconds", "5 seconds", "10 seconds"), intervals.indexOf(roomState.room.chatSlowModeSeconds).coerceAtLeast(0)) { dialog, index ->
+                                roomSession?.setChatSlowMode(intervals[index]); dialog.dismiss()
+                            }.setNegativeButton("Cancel", null).show()
+                        true
+                    }
+                }
                 show()
             }
         }.apply { contentDescription = "Menu" }, LinearLayout.LayoutParams(
@@ -713,6 +725,7 @@ class MainActivity : Activity() {
             nearbyCreate.visibility = if (create) View.VISIBLE else View.GONE
             nearbyJoin.visibility = if (create) View.GONE else View.VISIBLE
         }
+        nearbyChoices.addView(labelText().apply { text = "Use trusted Wi-Fi or a hotspot. This phone accepts up to 23 guest connections; extra browser tabs also count. Browser-only local connections are not encrypted." }, marginLayout())
         nearbyChoices.addView(button("Create a room") { chooseNearby(true) }, marginLayout())
         nearbyChoices.addView(button("Join a room", ButtonTone.SECONDARY) { chooseNearby(false) }, marginLayout())
         nearbyCreate.addView(nearbyRoomName, marginLayout())
@@ -1080,6 +1093,14 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(11), dp(12), dp(11))
         }
         healthPanel.addView(healthText, matchWrap())
+        healthPanel.addView(button("Recover audio", ButtonTone.SECONDARY) {
+            val session = roomSession
+            if (session?.currentRoomState() == null) showRoomActionMessage("Join a room first.")
+            else {
+                session.setListeningPaused(true); session.setListeningPaused(false)
+                showRoomActionMessage(if (muted) "Your volume is muted. Turn it up to hear room audio." else "Audio recovery requested. If the source is silent, ask the host to restart sharing.")
+            }
+        }, matchWrap())
         healthPanel.addView(button("Save audio diagnostics", ButtonTone.SECONDARY) {
             try {
                 startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
@@ -1452,7 +1473,7 @@ class MainActivity : Activity() {
                         reactionOverrides.clear()
                     }
                     latestRoomState = event.state
-                    appendRoomEvent("Joined room ${event.state.room.code}.")
+                    appendRoomEvent(if (event.state.room.recovered) "Room restored after a restart. The host can start audio sharing again." else "Joined room ${event.state.room.code}.")
                     renderRoomState(event.state)
                     requestNotificationPermissionIfNeeded()
                 }
@@ -1508,7 +1529,7 @@ class MainActivity : Activity() {
                 is RoomSoundEvent.StaleStateIgnored -> appendRoomEvent(
                     "Ignored stale room state epoch ${event.receivedEpoch}; current epoch is ${event.currentEpoch}.",
                 )
-                is RoomSoundEvent.Unknown -> appendRoomEvent("Ignored unknown room event '${event.type}'.")
+                is RoomSoundEvent.Unknown -> if (event.type == "report-submitted") showRoomActionMessage("Report sent privately to the owner for review.") else appendRoomEvent("Ignored unknown room event '${event.type}'.")
             }
             requestTransportRender()
         } catch (t: Throwable) {
@@ -1652,7 +1673,7 @@ class MainActivity : Activity() {
                 if (!member.online) append(" · Offline")
             }), matchWrap())
             row.addView(copy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            if (canManageMember(state, member.id)) row.addView(memberMenuButton(member.id, member.name), LinearLayout.LayoutParams(dp(48), dp(48)))
+            if (canOpenMemberMenu(state, member.id)) row.addView(memberMenuButton(member.id, member.name), LinearLayout.LayoutParams(dp(48), dp(48)))
             peopleRoster.addView(row, marginLayout())
         }
         renderActivity()
@@ -1664,6 +1685,9 @@ class MainActivity : Activity() {
             id != self && id != state.room.hostId && state.members.any { it.id == id }
     }
 
+    private fun canOpenMemberMenu(state: RoomState, id: String): Boolean =
+        canManageMember(state, id) || (roomSession?.supportsParticipantReports() == true && id != state.self?.id && state.members.any { it.id == id })
+
     private fun memberMenuButton(id: String, name: String): Button =
         button("⋯", ButtonTone.SECONDARY) { showMemberMenu(id) }.apply {
             contentDescription = "Actions for $name"
@@ -1671,22 +1695,45 @@ class MainActivity : Activity() {
 
     private fun showMemberMenu(id: String) {
         val state = roomSession?.currentRoomState() ?: return
-        if (!canManageMember(state, id)) return
+        if (!canOpenMemberMenu(state, id)) return
         val member = state.members.firstOrNull { it.id == id } ?: return
         val actions = mutableListOf<Pair<String, () -> Unit>>()
-        if (member.online && id != state.room.activeSourceId) {
+        if (canManageMember(state, id) && member.online && id != state.room.activeSourceId) {
             actions.add("Allow to play" to { roomSession?.grantSource(id); Unit })
         }
-        if (member.online && state.self?.id == state.room.hostId) {
+        if (canManageMember(state, id) && member.online && state.self?.id == state.room.hostId) {
             val isCohost = id == state.room.cohostId
             actions.add((if (isCohost) "Remove co-host" else "Make co-host") to { assignCohost(if (isCohost) null else id) })
         }
-        actions.add((if (member.online) "Remove" else "Clear") to { removeMember(id) })
-        actions.add("Ban" to { confirmBan(id, member.name) })
+        if (canManageMember(state, id)) {
+            actions.add((if (member.online) "Remove" else "Clear") to { removeMember(id) })
+            actions.add("Ban" to { confirmBan(id, member.name) })
+        }
+        if (roomSession?.supportsParticipantReports() == true && id != state.self?.id) {
+            actions.add("Report to owner" to { showParticipantReport(id) })
+        }
         android.app.AlertDialog.Builder(this).setTitle(member.name)
             .setItems(actions.map { it.first }.toTypedArray()) { _, index -> actions[index].second() }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun showParticipantReport(id: String) {
+        val input = inputText("Describe what happened", null).apply {
+            setSingleLine(false); minLines = 3
+            filters = arrayOf(android.text.InputFilter.LengthFilter(2000))
+        }
+        val dialog = android.app.AlertDialog.Builder(this).setTitle("Report participant")
+            .setMessage("Your description is shared privately with the owner for review. Include only information needed to explain the issue.")
+            .setView(input).setNegativeButton("Cancel", null).setPositiveButton("Send report", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (input.text.isBlank()) input.error = "Describe the issue first"
+                else if (roomSession?.reportMember(id, input.text.toString()) == true) dialog.dismiss()
+                else input.error = "Could not send. Check your connection."
+            }
+        }
+        dialog.show()
     }
 
     private fun renderActivity() {
@@ -1706,7 +1753,7 @@ class MainActivity : Activity() {
         updateVoiceComposer()
         chatText.text = if (messages.isEmpty()) "No messages yet." else "${messages.size} recent messages"
         val fingerprint = messages.joinToString { "${it.id}:${it.text}:${it.edited}:${it.deleted}:${it.replyTo?.text}:${it.voice?.data?.length}:${reactionOverrides[it.id] ?: it.reactions}" }
-        val manageable = state.members.filter { canManageMember(state, it.id) }.map { it.id }.toSet()
+        val manageable = state.members.filter { canOpenMemberMenu(state, it.id) }.map { it.id }.toSet()
         val mutations = roomSession?.supportsMessageMutations() == true
         val chatLayoutKey = fingerprint + "|" + manageable.sorted().joinToString() + "|" + mutations
         if (chatLayoutKey != chatFingerprint) {
@@ -1724,9 +1771,9 @@ class MainActivity : Activity() {
                 message.senderId?.takeIf { it in manageable }?.let { id ->
                     messageHeader.addView(memberMenuButton(id, message.senderName ?: "participant"), LinearLayout.LayoutParams(dp(48), dp(48)))
                 }
-                if (mutations && !message.deleted && message.senderId == state.self?.id) {
+                if (mutations && !message.deleted && (message.senderId == state.self?.id || message.senderId?.let { canManageMember(state, it) } == true)) {
                     messageHeader.addView(button("⋯", ButtonTone.SECONDARY) { showOwnChatActions(message.id) }.apply {
-                        contentDescription = "Edit or delete your message"
+                        contentDescription = "Message actions"
                     }, LinearLayout.LayoutParams(dp(48), dp(48)))
                 }
                 row.addView(messageHeader, matchWrap())
@@ -1777,8 +1824,8 @@ class MainActivity : Activity() {
         val session = roomSession ?: return
         val state = session.currentRoomState() ?: return
         val message = (liveChatMessages[id] ?: state.messages.firstOrNull { it.id == id }) ?: return
-        if (!session.supportsMessageMutations() || message.deleted || message.senderId != state.self?.id) return
-        val actions = if (message.voice == null) arrayOf("Edit", "Delete") else arrayOf("Delete")
+        if (!session.supportsMessageMutations() || message.deleted || (message.senderId != state.self?.id && message.senderId?.let { canManageMember(state, it) } != true)) return
+        val actions = if (message.voice == null && message.senderId == state.self?.id) arrayOf("Edit", "Delete") else arrayOf("Delete")
         android.app.AlertDialog.Builder(this).setTitle("Your message").setItems(actions) { _, index ->
             if (actions[index] == "Edit") {
                 val input = inputText("Edit message", message.text).apply {

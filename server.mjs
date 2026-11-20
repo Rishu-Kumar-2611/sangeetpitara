@@ -1,4 +1,5 @@
 import { createUsageAnalytics } from './usage-analytics.mjs';
+import { snapshotRecovery, restoreRecovery, guestIdentityKey, reconnectDigest } from './room-recovery.mjs';
 import { createOwnerAdmin } from './owner-admin.mjs';
 import { chatContent, boundVoiceHistory, chatSnapshot, VOICE_MAX_BYTES, VOICE_MAX_DURATION_MS } from './chat-content.mjs';
 import { clientAddress } from './client-address.mjs';
@@ -12,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   AuthConflictError,
+  AuthBusyError,
   AuthValidationError,
   InvalidCredentialsError,
   clearSessionCookie,
@@ -42,6 +44,7 @@ import { DEFAULT_REWARDED_ACCESS_CONFIG, normalizeRewardedAccessConfig } from '.
 import { assertProductionConfig } from './config.mjs';
 import {
   validateRelayFrameHeader,
+  relayBacklogLimit,
   MEDIA_RELAY_CHANNELS,
   MEDIA_RELAY_MAX_BACKLOG_BYTES,
   MEDIA_RELAY_MAX_FRAME_BYTES,
@@ -68,6 +71,7 @@ const legacyPublicHosts = new Set(
     .filter(Boolean),
 );
 const rooms = new Map();
+let shuttingDown = false;
 const reservedRoomCodes = new Set();
 function positiveIntegerEnv(name, fallback) {
   const value = Number(process.env[name]);
@@ -77,7 +81,7 @@ const MAX_ACTIVE_ROOMS = positiveIntegerEnv('MAX_ACTIVE_ROOMS', 50);
 const MAX_CONNECTIONS = positiveIntegerEnv('MAX_CONNECTIONS', 200);
 // A household or small office can share one address; a single client cannot
 // hold a large share of the global connection budget.
-const MAX_CONNECTIONS_PER_IP = positiveIntegerEnv('MAX_CONNECTIONS_PER_IP', 20);
+const MAX_CONNECTIONS_PER_IP = positiveIntegerEnv('MAX_CONNECTIONS_PER_IP', 64);
 // Sockets that never enter a room are closed so they cannot squat capacity.
 const UNJOINED_SOCKET_TIMEOUT_MS = positiveIntegerEnv('UNJOINED_SOCKET_TIMEOUT_MS', 60_000);
 // Wrong or stale room codes per client address before joins pause. This makes
@@ -326,6 +330,7 @@ function checkRateLimit(ip, { isStaticAsset = false } = {}) {
   const bucket = isStaticAsset ? staticRateLimit : rateLimit;
   const max = isStaticAsset ? STATIC_RATE_LIMIT_MAX : RATE_LIMIT_MAX;
   let entry = bucket.get(ip);
+  if (!entry && bucket.size >= 10_000) return false;
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
     bucket.set(ip, entry);
@@ -337,6 +342,7 @@ function checkRateLimit(ip, { isStaticAsset = false } = {}) {
 function checkAuthRateLimit(ip) {
   const now = Date.now();
   let entry = authRateLimit.get(ip);
+  if (!entry && authRateLimit.size >= 5000) return false;
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
     authRateLimit.set(ip, entry);
@@ -465,6 +471,8 @@ function clientState(room, viewer, includeVoiceData = true) {
       resumeSourceId: room.resumeSourceId,
       relayCodec: roomRelayCodec(room),
       locked: Boolean(room.locked),
+      recovered: Boolean(room.recovered),
+      chatSlowModeSeconds: room.chatSlowModeSeconds || 0,
       createdAt: room.createdAt,
     },
     self: viewer ? publicMember(viewer, room) : null,
@@ -506,6 +514,7 @@ async function readJsonBody(req) {
 }
 
 function authErrorResponse(error) {
+  if (error instanceof AuthBusyError) return { status: 429, body: { error: error.message, code: error.code } };
   if (error instanceof AuthValidationError) {
     return { status: 400, body: { error: error.message, code: error.code, ...(error.field ? { field: error.field } : {}) } };
   }
@@ -574,8 +583,12 @@ async function handleProductApiRequest(req, res, requestPath) {
       try { event = JSON.parse(rawBody.toString('utf8')); } catch { sendJson(res, 400, { error: 'Invalid webhook JSON.' }); return true; }
       const eventId = String(event?.id || '').trim();
       if (!eventId) { sendJson(res, 400, { error: 'Webhook event id is required.' }); return true; }
-      const fresh = await repository.recordBillingEvent('stripe', eventId);
-      if (!fresh) { sendJson(res, 200, { ok: true, duplicate: true }); return true; }
+      if (!['customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'].includes(event.type)) {
+        sendJson(res, 200, { ok: true, ignored: true }); return true;
+      }
+      if (!Number.isSafeInteger(event.created) || event.created <= 0) {
+        sendJson(res, 400, { error: 'Valid provider event time is required.' }); return true;
+      }
       const object = event?.data?.object || {};
       const metadata = object.metadata || {};
       const subjectId = String(metadata.userId || metadata.subjectId || '').trim();
@@ -591,15 +604,22 @@ async function handleProductApiRequest(req, res, requestPath) {
         status,
         currentPeriodEnd: object.current_period_end,
         cancelAtPeriodEnd: object.cancel_at_period_end,
-        updatedAt: new Date(),
+        updatedAt: new Date(event.created * 1000),
       });
-      await repository.upsertEntitlement(entitlement);
+      const fresh = await repository.applyBillingEvent('stripe', eventId, entitlement);
+      if (!fresh) { sendJson(res, 200, { ok: true, duplicate: true }); return true; }
       audit.record({ type: 'custom.billing.entitlement_updated', severity: 'info', actorId: subjectId, metadata: { provider: 'stripe', eventType: event.type } });
       sendJson(res, 200, { ok: true });
       return true;
     }
 
-    const user = await requestUser(req);
+    const accountUser = await requestUser(req);
+    const needsOwner = isBans || Boolean(accountRevokeMatch) || (isReports && req.method === 'GET' && accountUser?.isAdmin);
+    const user = needsOwner ? await handleOwnerAdmin.authorize(req) : accountUser;
+    if (needsOwner && !user) {
+      sendJson(res, 403, { error: 'Owner sign-in with multi-factor authentication is required.', code: 'OWNER_MFA_REQUIRED' });
+      return true;
+    }
     if (!user) {
       sendJson(res, 401, { error: 'Authentication required.', code: 'AUTHENTICATION_REQUIRED' });
       return true;
@@ -716,6 +736,9 @@ async function handleAuthRequest(req, res, requestPath) {
   const isLogout = path === '/api/auth/logout';
   const isCurrentUser = path === '/api/auth/me' || path === '/api/auth/current-user';
   if (!isRegister && !isLogin && !isLogout && !isCurrentUser) return false;
+  if (isRegister && process.env.NODE_ENV === 'production' && process.env.PUBLIC_REGISTRATION_ENABLED !== '1') {
+    sendJson(res, 403, { error: 'Account registration is disabled. Guest rooms remain available.', code: 'REGISTRATION_DISABLED' }); return true;
+  }
 
   const method = isCurrentUser ? 'GET' : 'POST';
   if (req.method !== method) {
@@ -820,6 +843,7 @@ function persistedRoomRecord(room) {
     createdAt: new Date(room.createdAt).toISOString(),
     updatedAt: new Date(room.updatedAt || room.createdAt).toISOString(),
     endedAt: room.endedAt ? new Date(room.endedAt).toISOString() : null,
+    ...snapshotRecovery(room),
   };
 }
 
@@ -843,9 +867,9 @@ async function restorePersistedRooms() {
   if (typeof repository.listActiveRooms !== 'function') return;
   const records = await repository.listActiveRooms();
   for (const record of records) {
-    // Anonymous ownership is deliberately ephemeral. Never resurrect a room
-    // whose host capability was lost with the previous process.
-    if (!record.hostUserId) {
+    // Guest ownership is restored only from an unexpired hashed capability.
+    const recovery = restoreRecovery(record);
+    if (!recovery && !record.hostUserId) {
       await repository.endRoom(record.id);
       continue;
     }
@@ -874,6 +898,7 @@ async function restorePersistedRooms() {
       cleanupTimer: null,
       hostFailoverTimer: null,
       persistenceTail: Promise.resolve(),
+      ...(recovery || {}),
     };
     rooms.set(room.id, room);
     scheduleCleanup(room);
@@ -921,9 +946,8 @@ async function moderationBlocksEntry(ws, room = null) {
   return false;
 }
 
-function attachRoom(ws, room, member) {
-  usage.attach(ws, member, { created: member._usageCreated === true, reconnect: member.disconnectedAt != null });
-  member._usageCreated = false;
+async function attachRoom(ws, room, member) {
+  const wasReconnect = member.disconnectedAt != null;
   if (room.hostFailoverTimer && member.id === room.hostId) {
     clearTimeout(room.hostFailoverTimer);
     room.hostFailoverTimer = null;
@@ -937,6 +961,15 @@ function attachRoom(ws, room, member) {
   member.disconnectedAt = null;
   if (room.activeSourceId === member.id) { clearTimeout(room.sourceReconnectTimer); room.sourceReconnectTimer = null; }
   room.members.set(member.id, member);
+  try { await persistRoom(room); }
+  catch (error) {
+    member.ws = null; member.disconnectedAt = Date.now(); clearSocketRoom(ws);
+    logger.error('Room membership could not be saved', { error });
+    scheduleCleanup(room); return sendError(ws, 'Room recovery is temporarily unavailable. Please retry.');
+  }
+  if (room.status !== 'ACTIVE' || ws.readyState !== WebSocket.OPEN) { handleDisconnect(ws); return; }
+  usage.attach(ws, member, { created: member._usageCreated === true, reconnect: wasReconnect });
+  member._usageCreated = false;
   // This capability is delivered only to its owner, never in a public roster.
   send(ws, { type: 'joined', reconnectSecret: member.reconnectSecret, state: clientState(room, member) });
   // Avoid sending a duplicate full state payload to the member who just received 'joined'.
@@ -1001,6 +1034,7 @@ async function createRoom(ws, message) {
   });
   member._usageCreated = true;
   room.hostId = member.id;
+  room.members.set(member.id, member);
   try {
     await createPersistedRoom(room);
     rooms.set(room.id, room);
@@ -1010,7 +1044,7 @@ async function createRoom(ws, message) {
     return sendError(ws, 'The room could not be saved. Try again.');
   }
   reservedRoomCodes.delete(code);
-  attachRoom(ws, room, member);
+  await attachRoom(ws, room, member);
 }
 
 async function joinRoom(ws, message) {
@@ -1035,18 +1069,21 @@ async function joinRoom(ws, message) {
 
   const guestIdClean = safeText(message.guestId, 80);
   const reconnectSecretClean = normalizeReconnectSecret(message.reconnectSecret);
-  if (room.bannedGuestIds?.has(guestIdClean) || room.bannedReconnectSecrets?.has(reconnectSecretClean)) {
+  if (room.bannedGuestIds?.has(guestIdClean) || room.bannedReconnectSecrets?.has(reconnectSecretClean) ||
+      room.bannedGuestKeys?.has(guestIdentityKey(guestIdClean)) || room.bannedReconnectHashes?.has(reconnectDigest(reconnectSecretClean))) {
     recordJoinFailure(ws._ip);
     return sendError(ws, 'You were banned from this room.');
   }
   const existing = [...room.members.values()].find((member) => (
     (ws.authenticatedUser && member.accountId === ws.authenticatedUser.id)
-      || (!ws.authenticatedUser && member.guestId === guestIdClean)
+      || (!ws.authenticatedUser && (member.guestId === guestIdClean || member.guestKey === guestIdentityKey(guestIdClean)))
   ));
   if (existing) {
     // Prevent another room participant from spoofing a member's guestId
     // when a client-side reconnectSecret was bound to the member slot.
-    if (!reconnectSecretClean || !constantTimeEqual(reconnectSecretClean, existing.reconnectSecret)) {
+    if (!reconnectSecretClean || !(existing.reconnectSecretHash
+      ? constantTimeEqual(reconnectDigest(reconnectSecretClean), existing.reconnectSecretHash)
+      : constantTimeEqual(reconnectSecretClean, existing.reconnectSecret))) {
       if (viaRetiredCode) return unavailable();
       return sendError(ws, 'This account is already connected to the room.');
     }
@@ -1057,10 +1094,13 @@ async function joinRoom(ws, message) {
       try { staleSocket.close(1000, 'Replaced by reconnect'); } catch {}
     }
     existing.ws = ws;
+    existing.guestId = guestIdClean;
+    existing.reconnectSecret = reconnectSecretClean;
+    existing.reconnectSecretHash = reconnectDigest(reconnectSecretClean);
     existing.name = displayName;
     existing.codecs = normalizeCodecs(message.codecs);
     existing.listening = true;
-    attachRoom(ws, room, existing);
+    await attachRoom(ws, room, existing);
     return;
   }
 
@@ -1092,7 +1132,7 @@ async function joinRoom(ws, message) {
   });
   if (role === 'HOST') room.hostId = member.id;
   if (role === 'CO_HOST') room.cohostId = member.id;
-  attachRoom(ws, room, member);
+  await attachRoom(ws, room, member);
 }
 
 function trimMessages(room) {
@@ -1178,6 +1218,7 @@ function promoteCohost(room) {
 
 function handleDisconnect(ws, allowSourceRecovery = true) {
   usage.detach(ws);
+  if (shuttingDown) { clearSocketRoom(ws); return; }
   const room = ws.roomId ? rooms.get(ws.roomId) : null;
   if (!room) {
     clearSocketRoom(ws);
@@ -1265,7 +1306,7 @@ function handleBinaryFrame(ws, raw) {
     if (target.listening === false) { relayPackets.inc(1,{outcome:'paused_skip'}); continue; }
     // During a codec switch a listener that cannot decode Opus skips those frames.
     if (opus && !target.codecs?.has('opus')) { relayPackets.inc(1,{outcome:'codec_skip'}); continue; }
-    if (Number(target.ws.bufferedAmount) > MEDIA_RELAY_MAX_BACKLOG_BYTES) { usage.delivery(target.ws, header, true); relayPackets.inc(1,{outcome:'backlog_drop'}); continue; }
+    if (Number(target.ws.bufferedAmount) > relayBacklogLimit(header.codec, mediaRelay.opusBitrate)) { usage.delivery(target.ws, header, true); relayPackets.inc(1,{outcome:'backlog_drop'}); continue; }
     target.ws.send(bytes);
     usage.delivery(target.ws, header);
     relayPackets.inc(1,{outcome:'forwarded'});
@@ -1280,6 +1321,25 @@ async function handleMessage(ws, message) {
 
   const { room, member } = currentMember(ws);
   if (!room || !member) return sendError(ws, 'Join or create a room first.');
+
+  if (type === 'report-member') {
+    const target = findMember(room, message.memberId);
+    if (!target || target.id === member.id) return sendError(ws, 'Choose another participant in this room.');
+    if (member.lastReportAt && Date.now() - member.lastReportAt < 60_000) return sendError(ws, 'Please wait a minute before submitting another report.');
+    let report;
+    try { report = createReport({ roomId: room.id, reporterId: member.accountId || `guest:${guestIdentityKey(member.guestId)}`,
+      targetId: target.accountId || `guest:${guestIdentityKey(target.guestId)}`, category: message.category || 'OTHER', description: message.description }); }
+    catch (error) { return sendError(ws, error.message); }
+    await repository.createReport(report); member.lastReportAt = Date.now();
+    audit.record({ type: 'moderation.report.created', roomId: room.id, severity: 'info' });
+    send(ws, { type: 'report-submitted' }); return;
+  }
+
+  if (type === 'set-chat-slow-mode') {
+    if (!isModerator(room, member)) return sendError(ws, 'Only the host or co-host can change chat settings.');
+    if (![0, 2, 5, 10].includes(message.seconds)) return sendError(ws, 'Choose a supported slow-mode interval.');
+    room.chatSlowModeSeconds = message.seconds; await persistRoom(room); broadcastState(room); return;
+  }
 
   if (type === 'set-listening') {
     // A paused listener receives no audio, which also saves relay bandwidth.
@@ -1299,10 +1359,15 @@ async function handleMessage(ws, message) {
     const clientMessageId = typeof message.clientMessageId === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(message.clientMessageId) ? message.clientMessageId : null;
     const previous = clientMessageId && room.messages.find(m => m.senderId === member.id && m.clientMessageId === clientMessageId);
     if (previous) { ws.send(JSON.stringify({ type: 'chat', message: previous })); return; }
+    const waitMs = (room.chatSlowModeSeconds || 0) * 1000;
+    if (!isModerator(room, member) && member.lastChatAt && Date.now() - member.lastChatAt < waitMs) {
+      return sendError(ws, `Chat slow mode is on. Wait ${Math.ceil((waitMs - Date.now() + member.lastChatAt) / 1000)} seconds.`);
+    }
     let content;
     try { content = chatContent(message, room.messages); } catch (error) { return sendError(ws, error.message); }
     if (content.voice && Date.now() - (member.lastVoiceAt || 0) < 5000) return sendError(ws, 'Please wait a few seconds before sending another recording.');
     if (content.voice) member.lastVoiceAt = Date.now();
+    member.lastChatAt = Date.now();
     const chat = { id: randomId(), kind: 'chat', senderId: member.id, senderName: member.name, ...content, ...(clientMessageId ? { clientMessageId } : {}), createdAt: Date.now() };
     room.messages.push(chat);
     trimMessages(room);
@@ -1313,7 +1378,8 @@ async function handleMessage(ws, message) {
 
   if (type === 'edit-chat' || type === 'delete-chat') {
     const target = room.messages.find(item => item.kind === 'chat' && item.id === message.messageId);
-    if (!target || target.senderId !== member.id || target.deleted) {
+    const moderated = type === 'delete-chat' && isModerator(room, member);
+    if (!target || (!moderated && target.senderId !== member.id) || target.deleted) {
       return sendError(ws, 'You can only change your own messages that are still in this room.');
     }
     if (type === 'edit-chat') {
@@ -1322,7 +1388,7 @@ async function handleMessage(ws, message) {
       catch (error) { return sendError(ws, error.message); }
       target.edited = true;
     } else {
-      target.text = 'Message deleted';
+      target.text = target.senderId === member.id ? 'Message deleted' : 'Message removed by a moderator';
       target.deleted = true;
       target.voice = null;
       target.replyTo = null;
@@ -1558,7 +1624,9 @@ async function handleMessage(ws, message) {
     if (!isModerator(room, member)) return sendError(ws, 'Only the host or co-host can lock the room.');
     const locked = message.locked === true;
     if (Boolean(room.locked) === locked) return broadcastState(room);
-    room.locked = locked;
+    const previousLock = Boolean(room.locked); room.locked = locked;
+    try { await persistRoom(room); }
+    catch { room.locked = previousLock; return sendError(ws, 'The room lock could not be saved. Retry shortly.'); }
     addSystemMessage(room, locked
       ? `${member.name} locked the room. New people cannot join until it is unlocked.`
       : `${member.name} unlocked the room.`);
@@ -1814,8 +1882,10 @@ const server = http.createServer(async (req, res) => {
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...(turn ? [turn] : [])],
       mediaRelay,
       chatReactions: CHAT_REACTIONS,
-      chatFeatures: { voiceMessages: true, messageReplies: true, messageMutations: true, maxVoiceDurationMs: VOICE_MAX_DURATION_MS, maxVoiceBytes: VOICE_MAX_BYTES },
+      chatFeatures: { voiceMessages: true, messageReplies: true, messageMutations: true, memberReports: true, slowMode: true, maxVoiceDurationMs: VOICE_MAX_DURATION_MS, maxVoiceBytes: VOICE_MAX_BYTES },
       maxMembers: null, // No per-room limit.
+      capacity: { totalConnections: MAX_CONNECTIONS, connectionsPerAddress: MAX_CONNECTIONS_PER_IP, activeRooms: MAX_ACTIVE_ROOMS },
+      recovery: { enabled: repository.kind === 'postgres', reconnectWindowSeconds: 900 },
       requestTtlMs,
       authRequired: roomAuthRequired,
       rewardedAccess,
@@ -1962,7 +2032,7 @@ const wss = new WebSocketServer({
   perMessageDeflate: false,
   maxPayload: MAX_CHAT_PAYLOAD_BYTES,
   verifyClient: (info, cb) => {
-    if (databaseMaintenance) { cb(false, 503, 'Database migration in progress'); return; }
+    if (databaseMaintenance || shuttingDown) { cb(false, 503, 'Service temporarily unavailable'); return; }
     const allowed = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean) : null;
     if (allowed && allowed.length) {
       const origin = info.origin || info.req.headers.origin || '';
@@ -2155,10 +2225,24 @@ maintenance.unref();
 const sessionCleanup = setInterval(() => {
   if (databaseMaintenance) return;
   void repository.deleteExpiredSessions().catch((error) => logger.error('Session cleanup failed', { error }));
+  void repository.pruneOperationalData?.().catch(() => logger.error('Operational retention cleanup failed'));
 }, 60 * 60_000);
 sessionCleanup.unref();
 
+let checkpointRunning = false;
+const recoveryCheckpoint = setInterval(async () => {
+  if (databaseMaintenance || shuttingDown || checkpointRunning) return;
+  checkpointRunning = true;
+  try { await Promise.all([...rooms.values()].map(room => persistRoom(room))); }
+  catch { logger.error('Room recovery checkpoint failed'); }
+  finally { checkpointRunning = false; }
+}, 30_000);
+recoveryCheckpoint.unref();
+
 function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  clearInterval(recoveryCheckpoint);
   clearInterval(usageTimer);
   usage.tick();
   clearInterval(maintenance);
@@ -2166,22 +2250,26 @@ function shutdown(signal) {
   health.setReady(false);
   audit.record({ type: 'server.shutdown', severity: 'info', metadata: { signal, rooms: rooms.size } });
   logger.info('Shutting down RoomSound', { signal, rooms: rooms.size });
+  const savedRooms = Promise.allSettled([...rooms.values()].map(room => persistRoom(room)));
   for (const room of rooms.values()) {
     if (room.hostFailoverTimer) clearTimeout(room.hostFailoverTimer);
     if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
   }
-  // Live rooms are held in memory, so say plainly what a restart means before
-  // the sockets close. Both clients show server 'error' messages to the user.
+  // Persist capabilities before process exit; media itself remains ephemeral.
   for (const ws of wss.clients) {
-    if (ws.roomId) sendError(ws, 'SangeetPitara is restarting for an update. If your room has ended, create a new room and share the new code.');
+    if (ws.roomId) sendError(ws, repository.kind === 'postgres'
+      ? 'SangeetPitara is restarting. Reconnecting to your saved room; you may need to restart audio sharing.'
+      : 'SangeetPitara is restarting. This development room will end.');
     ws.close(1012, 'Service restarting');
   }
+  setTimeout(() => { for (const ws of wss.clients) ws.terminate(); }, 1500).unref();
   wss.close(() => server.close(async () => {
+    await savedRooms;
     await usage.flush().catch(() => {});
     await repository.close().catch((error) => console.error('Repository shutdown failed:', error.message));
     process.exit(0);
   }));
-  setTimeout(() => process.exit(0), 5000).unref();
+  setTimeout(() => process.exit(0), 25_000).unref();
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));

@@ -23,11 +23,13 @@ Only the configured account ID with a database admin role can use this dashboard
 - Approximate unique devices, room time, delivered listening time, created rooms, joins, reconnects, relay packet deliveries and backlog drops persist as daily aggregates in PostgreSQL.
 - Device counts are hashed guest/account identities, not verified people or installation counts. Clearing storage or changing browser creates another identity.
 - Room time is server-observed connected time. Listening time counts bounded relay audio delivered to unpaused listeners; it does not verify audible playback. Source phones, direct WebRTC and fully offline nearby rooms are excluded. The UI explains this beside the figures.
-- Daily buckets use UTC. A 7/30/90-day report and lifetime totals are available. Tracking starts with this deployment; old sessions cannot be reconstructed.
-- Updates flush every 15 seconds and on graceful shutdown. Up to an unflushed interval may be lost in a hard crash. Batch IDs make database retries idempotent after uncertain commit responses. Database outages are surfaced as unavailable statistics rather than invented zeroes.
+- Daily buckets use UTC. A 7/30/90-day report, daily CSV export and retained totals up to 365 days are available. Tracking starts with this deployment; old sessions cannot be reconstructed.
+- Updates flush every 15 seconds and on graceful shutdown. Up to an unflushed interval may be lost in a hard crash. Batch IDs make database retries idempotent after uncertain commit responses. Database outages are surfaced as unavailable or incomplete statistics rather than invented zeroes. Pending collection is bounded to 5,000 rows and a 24-hour retry horizon; duplicate receipts expire after seven days.
 - Names, IP addresses, raw guest IDs, audio and chat content are absent from usage rows. The privacy page describes these aggregates. The offline in-memory adapter exists for development and resets when the server restarts.
 
-## Verification before release
+## Historical verification before release
+
+The results below describe the earlier 18 November snapshot. Current release checks and security controls are in [PRODUCTION-1.1.27.md](PRODUCTION-1.1.27.md).
 
 On 18 November 2026, all 49 Android Kotlin sources compiled against SDK 36 using the cached Kotlin compiler, and 103 Android JVM tests passed through JUnit. Fifty-two JavaScript checks passed, including the seven new owner security/analytics tests. Syntax, offline bundle synchronization and whitespace checks passed. Local HTTP/WebSocket integration tests could not connect (`EACCES`), and Gradle could not connect to its local daemon in this execution environment. Those checks and the production PostgreSQL migration still need a normal development/CI environment.
 

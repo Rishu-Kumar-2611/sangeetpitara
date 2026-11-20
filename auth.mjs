@@ -19,6 +19,12 @@ const SCRYPT_P = 1;
 const SCRYPT_KEY_LENGTH = 64;
 const SCRYPT_SALT_BYTES = 16;
 const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
+let passwordJobs = 0;
+const MAX_PASSWORD_JOBS = 4;
+
+export class AuthBusyError extends Error {
+  constructor() { super('Sign-in is busy. Retry shortly.'); this.name = 'AuthBusyError'; this.status = 429; this.code = 'AUTH_BUSY'; }
+}
 
 export class AuthValidationError extends Error {
   constructor(message, field = undefined) {
@@ -49,11 +55,15 @@ export class AuthConflictError extends Error {
 }
 
 function scryptAsync(password, salt, keyLength = SCRYPT_KEY_LENGTH, options = {}) {
+  if (passwordJobs >= MAX_PASSWORD_JOBS) return Promise.reject(new AuthBusyError());
+  passwordJobs++;
   return new Promise((resolve, reject) => {
-    scrypt(password, salt, keyLength, options, (error, derivedKey) => {
-      if (error) reject(error);
-      else resolve(derivedKey);
-    });
+    try {
+      scrypt(password, salt, keyLength, options, (error, derivedKey) => {
+        passwordJobs--;
+        if (error) reject(error); else resolve(derivedKey);
+      });
+    } catch (error) { passwordJobs--; reject(error); }
   });
 }
 
@@ -131,7 +141,8 @@ export async function verifyPassword(password, encoded) {
       maxmem: SCRYPT_MAX_MEMORY,
     });
     return timingSafeEqual(parsed.key, derivedKey);
-  } catch {
+  } catch (error) {
+    if (error instanceof AuthBusyError) throw error;
     return false;
   }
 }
@@ -185,16 +196,18 @@ export function createAuthService({
   const ttl = configuredTtl(sessionTtlMs);
   const reserved = new Set([...reservedEmails].map((email) => normalizeEmail(email)));
 
-  async function issueSession(userId) {
+  async function issueSession(user) {
     const token = tokenFromGenerator(tokenGenerator);
     const createdAt = dateFromNow(now);
     const expiresAt = new Date(createdAt.getTime() + ttl);
-    await repository.createSession({
+    const stored = await repository.createSession({
       tokenHash: hashSessionToken(token),
-      userId,
+      userId: user.id,
+      expectedPasswordHash: user.passwordHash,
       createdAt: createdAt.toISOString(),
       expiresAt: expiresAt.toISOString(),
     });
+    if (!stored) throw new InvalidCredentialsError();
     return { token, expiresAt: expiresAt.toISOString() };
   }
 
@@ -212,7 +225,7 @@ export function createAuthService({
       }
       throw error;
     }
-    const session = await issueSession(user.id);
+    const session = await issueSession(user);
     return { user: publicUser(user), ...session };
   }
 
@@ -223,7 +236,7 @@ export function createAuthService({
       ? await passwordVerifier(password, user.passwordHash)
       : await passwordHasher(password).then(() => false);
     if (!user || !passwordMatches) throw new InvalidCredentialsError();
-    const session = await issueSession(user.id);
+    const session = await issueSession(user);
     return { user: publicUser(user), ...session };
   }
 
@@ -248,6 +261,24 @@ export function createAuthService({
     return repository.revokeUser(userId);
   }
 
+  async function verifyCurrentPassword(userId, password) {
+    if (typeof password !== 'string' || Buffer.byteLength(password, 'utf8') > PASSWORD_MAX_BYTES) return false;
+    const user = await repository.findUserById(userId);
+    return Boolean(user && !user.revokedAt && await passwordVerifier(password, user.passwordHash));
+  }
+
+  async function changePassword(userId, { currentPassword, newPassword } = {}) {
+    validatePassword(newPassword);
+    const user = await repository.findUserById(userId);
+    if (!user || user.revokedAt || !await verifyCurrentPassword(userId, currentPassword)) throw new InvalidCredentialsError();
+    if (currentPassword === newPassword) throw new AuthValidationError('Choose a different password.', 'newPassword');
+    const changed = await repository.changePasswordAndRevokeSessions({
+      userId, expectedHash: user.passwordHash, passwordHash: await passwordHasher(newPassword),
+    });
+    if (!changed) throw new InvalidCredentialsError();
+    return true;
+  }
+
   return {
     sessionTtlMs: ttl,
     register,
@@ -256,6 +287,8 @@ export function createAuthService({
     currentUser,
     getCurrentUser: currentUser,
     revokeAccount,
+    verifyCurrentPassword,
+    changePassword,
   };
 }
 

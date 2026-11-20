@@ -214,4 +214,28 @@ class NearbyRoomHostTest {
             assertTrue(guest.event("error").getString("message").contains("history"))
         } finally { clients.forEach { it.ws.cancel() }; host.close(); http.dispatcher.executorService.shutdownNow(); http.connectionPool.evictAll() }
     }
+    @Test fun localRoomAdmitsTwentyFourConnectionsAndReportsCapacityClearly() {
+        val http = OkHttpClient()
+        val host = NearbyRoomHost({ "offline".byteInputStream() }, 0)
+        val clients = mutableListOf<Client>()
+        try {
+            host.startHosting()
+            val owner = Client(host.ownerEndpoint, http).also { clients += it }
+            owner.send("""{"type":"create-room","displayName":"Host","guestId":"capacity-host"}""")
+            val code = owner.event("joined").getJSONObject("state").getJSONObject("room").getString("code")
+            for (index in 1 until NearbyRoomHost.MAX_PEERS) {
+                val guest = Client("ws://127.0.0.1:${host.listeningPort}/?invite=${host.invite}", http).also { clients += it }
+                guest.send("""{"type":"join-room","code":"$code","displayName":"Guest $index","guestId":"capacity-$index"}""")
+                assertEquals("PARTICIPANT", guest.event("joined").getJSONObject("state").getJSONObject("self").getString("role"))
+            }
+            val extra = Client("ws://127.0.0.1:${host.listeningPort}/?invite=${host.invite}", http).also { clients += it }
+            assertTrue(extra.event("error").getString("message").contains("capacity"))
+        } finally {
+            clients.forEach { it.ws.cancel() }
+            host.close()
+            http.dispatcher.executorService.shutdownNow()
+            http.connectionPool.evictAll()
+        }
+    }
+
 }

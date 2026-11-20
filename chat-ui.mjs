@@ -69,8 +69,8 @@ export class RoomChatUI {
       node.querySelector('.member-more').hidden=!this.canManageMember(message.senderId);
       const deleted=Boolean(message.deleted);
       const ownActions=node.querySelector('.chat-own-actions');
-      ownActions.hidden=deleted||!this.canMutate()||message.senderId!==this.getSelfId();
-      node.querySelector('.chat-edit-button').hidden=Boolean(message.voice);
+      ownActions.hidden=deleted||!this.canMutate()||(message.senderId!==this.getSelfId()&&!this.canManageMember(message.senderId));
+      node.querySelector('.chat-edit-button').hidden=Boolean(message.voice)||message.senderId!==this.getSelfId();
       node.querySelector('.chat-reply-button').hidden=deleted;
       const quote=node.querySelector('.chat-quote');
       if(quote){

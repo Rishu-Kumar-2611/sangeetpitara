@@ -18,6 +18,8 @@ jobs:
           node-version-file: .nvmrc
       - run: docker build -f Dockerfile.runtime -t sangeetpitara:production-check .
       - run: node checks/container-smoke.mjs
+      - name: Rehearse encrypted database restore
+        run: node checks/backup-restore.mjs
   node-checks:
     runs-on: ubuntu-22.04
     timeout-minutes: 10

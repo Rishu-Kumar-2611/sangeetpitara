@@ -19,8 +19,9 @@ try {
     await client.query('BEGIN');
     if (existing) {
       id = existing.id;
-      await client.query('UPDATE users SET password_hash=$2, is_admin=TRUE, revoked_at=NULL, admin_totp_step=-1 WHERE id=$1', [id, passwordHash]);
+      await client.query('UPDATE users SET password_hash=$2, auth_version=auth_version+1, is_admin=TRUE, revoked_at=NULL, admin_totp_step=-1 WHERE id=$1', [id, passwordHash]);
       await client.query('DELETE FROM sessions WHERE user_id=$1', [id]);
+      await client.query('DELETE FROM admin_recovery_codes WHERE user_id=$1', [id]);
     } else {
       id = randomUUID();
       await client.query('INSERT INTO users (id,email,password_hash,is_admin) VALUES ($1,$2,$3,TRUE)', [id, email, passwordHash]);

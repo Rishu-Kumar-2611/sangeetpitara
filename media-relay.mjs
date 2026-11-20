@@ -18,6 +18,13 @@ export const MEDIA_RELAY_MAX_FRAME_BYTES = MEDIA_RELAY_HEADER_BYTES + MEDIA_RELA
 // Android mirrors this bound in RoomSoundWebSocketClient.
 export const MEDIA_RELAY_MAX_BACKLOG_BYTES = 1024 * 1024; // ~10 s mono / 5 s stereo; bounded recovery of capture bursts
 
+// Keep compressed queues bounded in audio time as well as memory.
+export function relayBacklogLimit(codec = 'pcm16', bitrate = 96_000) {
+  if (codec !== 'opus') return MEDIA_RELAY_MAX_BACKLOG_BYTES;
+  const bits = Math.min(128_000, Math.max(32_000, Number(bitrate) || 96_000));
+  return Math.min(MEDIA_RELAY_MAX_BACKLOG_BYTES, Math.ceil((bits / 8 + 2000) * 10));
+}
+
 function asBytes(value) {
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);

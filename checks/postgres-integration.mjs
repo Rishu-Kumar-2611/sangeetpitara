@@ -137,12 +137,14 @@ try {
   assert.equal(analyticsResponse.headers.get('cache-control'), 'no-store');
   assert.equal((await analyticsResponse.json()).lifetime.listeningMs, 750);
   assert.equal((await post(base, '/api/admin/login', credentials, null, { Origin: 'https://app.example.test' })).status, 401, 'Consumed authenticator codes cannot be replayed');
+  assert.equal((await post(base, `/api/admin/accounts/${victim.user.id}/revoke`, {}, cookie)).status, 403,
+    'A password-only admin cookie must not authorize privileged actions');
+  assert.equal((await post(base, `/api/admin/accounts/${victim.user.id}/revoke`, {}, ownerCookie, { Origin: 'https://app.example.test' })).status, 200);
   assert.equal((await post(base, '/api/admin/logout', {}, ownerCookie, { Origin: 'https://app.example.test' })).status, 200);
   assert.equal((await fetch(base + '/api/admin/session', { headers: { Cookie: ownerCookie } })).status, 401);
   console.log('OWNER ANALYTICS PASS: database aggregation, idempotent batches, atomic TOTP replay protection, MFA login and logout.');
-  assert.equal((await post(base, `/api/admin/accounts/${victim.user.id}/revoke`, {}, cookie)).status, 200);
   assert.equal((await post(base, '/api/auth/login', { email: victim.user.email, password })).status, 401);
-  const guest = await room(base, { type: 'create-room', name: 'Ephemeral guest room', displayName: 'Guest', guestId: 'integration-guest' });
+  const guest = await room(base, { type: 'create-room', name: 'Recoverable guest room', displayName: 'Guest', guestId: 'integration-guest' });
   assert.equal(guest.type, 'joined');
   assert.match(guest.state.room.code, /^[A-HJ-NP-Z2-9]{8}$/, 'New rooms persist 8-character codes');
   const hostSocket = sockets.at(-1);
@@ -160,10 +162,33 @@ try {
   await stop();
   base = await start(databaseUrl);
   const stored = await repository.pool.query('SELECT status FROM rooms WHERE id = $1', [guest.state.room.id]);
-  assert.equal(stored.rows[0].status, 'ENDED');
-  assert.equal((await room(base, { type: 'join-room', code: guest.state.room.code, displayName: 'Returning guest', guestId: 'integration-guest', reconnectSecret: guest.reconnectSecret })).type, 'error');
+  assert.equal(stored.rows[0].status, 'ACTIVE');
+  const forged = await room(base, { type: 'join-room', code: rotatedCode, displayName: 'Impostor', guestId: 'integration-guest', reconnectSecret: 'x'.repeat(43) });
+  assert.equal(forged.type, 'error');
+  const restoredGuest = await room(base, { type: 'join-room', code: guest.state.room.code, displayName: 'Returning guest', guestId: 'integration-guest', reconnectSecret: guest.reconnectSecret });
+  assert.equal(restoredGuest.type, 'joined'); assert.equal(restoredGuest.state.self.role, 'HOST');
+  assert.equal(restoredGuest.state.self.id, guest.state.self.id); assert.equal(restoredGuest.state.room.code, rotatedCode);
+  assert.equal(restoredGuest.state.room.recovered, true);
+  const recoveryRecord = await repository.pool.query('SELECT recovery_state FROM rooms WHERE id=$1', [guest.state.room.id]);
+  assert.ok(!JSON.stringify(recoveryRecord.rows).includes(guest.reconnectSecret), 'Only capability digests may be persisted');
   assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 200,
     'Database session survives the server restart');
+  const billingRecord = { subjectId: operator.user.id, provider: 'stripe', customerId: 'cus_test', subscriptionId: 'sub_test',
+    priceId: 'price_test', plan: 'pro', status: 'active', currentPeriodEnd: null, cancelAtPeriodEnd: false, updatedAt: '2026-11-20T00:00:00Z' };
+  assert.equal(await repository.applyBillingEvent('stripe', 'evt_atomic_test', billingRecord), true);
+  assert.equal(await repository.applyBillingEvent('stripe', 'evt_atomic_test', billingRecord), false);
+  await repository.applyBillingEvent('stripe', 'evt_cancel_test', { ...billingRecord, status: 'canceled', updatedAt: '2026-11-20T00:01:00Z' });
+  await repository.applyBillingEvent('stripe', 'evt_stale_test', billingRecord);
+  assert.equal((await repository.getEntitlement(operator.user.id)).status, 'canceled', 'Late events must not resurrect a canceled entitlement');
+  await assert.rejects(repository.applyBillingEvent('stripe', 'evt_rollback_test', { ...billingRecord, plan: null }));
+  assert.equal(await repository.applyBillingEvent('stripe', 'evt_rollback_test', billingRecord), true,
+    'An entitlement failure must roll back the receipt so the event can be retried');
+  const recoveryHash = 'b'.repeat(64);
+  await repository.replaceAdminRecoveryCodes(operator.user.id, [recoveryHash]);
+  assert.deepEqual((await Promise.all([repository.consumeAdminRecoveryCode(operator.user.id, recoveryHash), repository.consumeAdminRecoveryCode(operator.user.id, recoveryHash)])).sort(), [false, true]);
+  await auth.changePassword(operator.user.id, { currentPassword: password, newPassword: 'Updated synthetic owner password 2026' });
+  assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 401, 'A password reset must revoke old durable sessions');
+  console.log('RECOVERY AND BILLING PASS: restart capabilities, rejected impersonation, atomic billing retries, event order, one-time codes and password revocation.');
   if (dockerStarted) {
     execFileSync('docker', ['stop', container], {stdio:'ignore'});
     await delay(500);

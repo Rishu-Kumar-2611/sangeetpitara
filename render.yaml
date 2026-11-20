@@ -9,7 +9,7 @@ services:
     dockerfilePath: ./Dockerfile.runtime
     dockerContext: .
     healthCheckPath: /ready
-    # Live rooms are held in memory and end on every restart. Deploy manually
+    # Live audio pauses on restart; PostgreSQL checkpoints enable bounded room recovery. Deploy manually
     # (dashboard or deploy hook) at a quiet time instead of on every commit.
     autoDeployTrigger: "off"
     envVars:

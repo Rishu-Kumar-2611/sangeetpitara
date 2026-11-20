@@ -1,8 +1,6 @@
 # Operations and release handoff
 
-These changes are prepared on `codex/production-hardening`. The server and CI
-now pin Node 22.23.4 within the existing Node 22 LTS line. Public release remains
-1.1.13 until the final UI pass and release checks. No paid resources were selected.
+The current hardening release is 1.1.27. Node 22.23.4 is pinned for development, CI and the runtime image. See `docs/PRODUCTION-1.1.27.md` for the current release behavior and validation; dated drill results below are historical evidence.
 
 ## Audio incident
 
@@ -61,8 +59,7 @@ node ops/database-backup.mjs verify --file <private-file.sgb>
 
 `database-backup.yml` runs daily at 21:30 UTC (03:00 IST) and can also be started
 manually. It requires repository secrets `DATABASE_BACKUP_URL` and
-`BACKUP_ENCRYPTION_KEY`; until both exist, scheduled runs end with a warning and
-manual runs fail. It uploads only encrypted archives and checksum manifests to
+`BACKUP_ENCRYPTION_KEY`; both scheduled and manual runs fail clearly until both exist. It uploads only encrypted archives and checksum manifests to
 GitHub Actions artifacts with seven-day retention. Schedules run only from the
 default branch, and GitHub pauses them after 60 days without repository activity.
 Copy archives somewhere offsite if seven days of history is not enough. Losing the encryption key makes
@@ -94,7 +91,7 @@ accepts an external load-test URL or reads `.env`. Current measurements are in
 `ops/capacity-results.json`. They cover relay delivery and reconnects on this
 computer, not WAN audio, Android output, free-host quotas or a long soak.
 
-The default ceilings are 200 connections, 20 per IP and 50 rooms. They can be
+The default ceilings are 200 connections, 64 per IP and 50 rooms. They can be
 tuned with `MAX_CONNECTIONS`, `MAX_CONNECTIONS_PER_IP` and `MAX_ACTIVE_ROOMS`; test
 before raising them. Sockets that do not join a room within 60 seconds are closed
 (`UNJOINED_SOCKET_TIMEOUT_MS`). Each client address may submit 20 wrong or stale
@@ -130,11 +127,10 @@ identities together, sign with the existing release key, verify APK certificate,
 and build all download assets. Publish artifacts before switching the website.
 Verify `/ready`, version, module hashes and redirects after rollout.
 
-Every restart ends all live rooms, because room membership and audio live in
-process memory. `render.yaml` therefore sets `autoDeployTrigger: "off"`. Deploy
+Live audio and chat remain in process memory. PostgreSQL recovery checkpoints preserve hashed reconnect capabilities and room controls for up to 15 minutes. `render.yaml` therefore sets `autoDeployTrigger: "off"`. Deploy
 from the Render dashboard or a deploy hook at a quiet time, after checking that
 `/health` reports few or no `rooms`. On shutdown the server tells connected members
-that it is restarting and that they may need to create a new room.
+that it is restarting. Clients reconnect using their device secret; hosts may need to restart sharing. Recovery is bounded and does not restore chat or audio.
 
 Rollback website source/config to a verified commit if needed. APK rollback needs
 a new higher versionCode signed with the same key; old version codes cannot be

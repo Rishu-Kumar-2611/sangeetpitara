@@ -16,6 +16,7 @@ import com.roomsound.android.room.Pcm16RelayPacketCodec
 
 /** One ephemeral local room. No database, account service, STUN or cloud requests. */
 class NearbyRoomHost(private val page: () -> InputStream, private val port: Int = 8765, private val tlsFactory: javax.net.ssl.SSLServerSocketFactory? = null, private val certificatePem: String? = null) : NearbyWSD(port), Closeable {
+    companion object { const val MAX_PEERS = 24; const val MAX_GUESTS = MAX_PEERS - 1 }
     val invite = UUID.randomUUID().toString()
     private val ownerKey = UUID.randomUUID().toString()
     val ownerEndpoint get() = "ws://127.0.0.1:$listeningPort/?owner=$ownerKey"
@@ -46,7 +47,7 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
         object Ping : Out()
     }
     private val requests = java.util.concurrent.ConcurrentHashMap.newKeySet<NanoHTTPD.ClientHandler>()
-    private val readers = java.util.concurrent.ThreadPoolExecutor(0, 24, 30, TimeUnit.SECONDS,
+    private val readers = java.util.concurrent.ThreadPoolExecutor(0, 40, 30, TimeUnit.SECONDS,
         java.util.concurrent.SynchronousQueue<Runnable>(), { task -> Thread(task,"Nearby-Vibe-reader").apply { isDaemon = true } })
     init {
         setAsyncRunner(object : NanoHTTPD.AsyncRunner {
@@ -89,7 +90,7 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
     override fun serveHttp(session: IHTTPSession): Response {
         if (session.method != Method.GET) return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, "text/plain", "GET only")
         if (session.uri == "/nearby-certificate" && certificatePem != null) return newFixedLengthResponse(Response.Status.OK,"application/x-pem-file",certificatePem).also { it.addHeader("Cache-Control","no-store") }
-        if (session.uri == "/config") return newFixedLengthResponse("{\"iceServers\":[],\"mediaRelay\":{\"enabled\":true,\"mode\":\"pcm16\",\"sampleRate\":48000,\"channels\":1},\"chatFeatures\":{\"voiceMessages\":true,\"messageReplies\":true},\"nearby\":true}")
+        if (session.uri == "/config") return newFixedLengthResponse("{\"iceServers\":[],\"mediaRelay\":{\"enabled\":true,\"mode\":\"pcm16\",\"sampleRate\":48000,\"channels\":1},\"chatFeatures\":{\"voiceMessages\":true,\"messageReplies\":true},\"capacity\":{\"totalConnections\":24,\"nearbyGuests\":23},\"nearby\":true}")
         if (session.uri != "/" && session.uri != "/index.html") return newFixedLengthResponse(Response.Status.NOT_FOUND,"text/plain","Not found")
         val authority = session.headers["host"].orEmpty().takeIf { it.matches(Regex("[0-9.]+:[0-9]+")) }
         return newChunkedResponse(Response.Status.OK,"text/html; charset=utf-8",page()).also {
@@ -224,7 +225,7 @@ class NearbyRoomHost(private val page: () -> InputStream, private val port: Int 
         private var count=0;private var window=0L
         private val audioBudget = NearbyAudioBudget()
         override fun onOpen() {
-            synchronized(lock){if(!admitted || peers.size>=12){disconnect();return};peers.add(this)}
+            synchronized(lock){if(!admitted){disconnect();return};if(peers.size>=MAX_PEERS){runCatching{send(JSONObject().put("type","error").put("message","This nearby room has reached its connection capacity. Close extra tabs and retry.").toString())};disconnect();return};peers.add(this)}
             writer=Thread({try {while(running){val out=controls.poll() ?: audio.poll(100,TimeUnit.MILLISECONDS) ?: continue;when(out){is Out.Text->send(out.value);is Out.Audio->send(out.value);Out.Ping->ping(byteArrayOf(1))}}}catch(_:Exception){disconnect()}},"Nearby-Vibe-writer").apply{isDaemon=true;start()}
         }
         fun text(json:JSONObject){if(!controls.offer(Out.Text(json.toString())))disconnect()}

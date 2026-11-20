@@ -8,6 +8,7 @@ const files = [
   'server.mjs',
   'owner-admin.mjs',
   'usage-analytics.mjs',
+  'room-recovery.mjs',
   'admin.js',
   'client-address.mjs',
   'auth.mjs',
@@ -37,7 +38,7 @@ const files = [
 ];
 
 // The production-only image excludes desktop tools and Android assets.
-const developmentFiles = ['desktop/nearby-desktop.mjs', 'desktop/package-desktop.mjs', 'desktop/sync-nearby-theme.mjs', 'ops/backup-crypto.mjs', 'ops/database-backup.mjs', 'checks/capacity.mjs', 'checks/recovery-drill.mjs', 'checks/repository-safety.mjs'];
+const developmentFiles = ['desktop/nearby-desktop.mjs', 'desktop/package-desktop.mjs', 'desktop/sync-nearby-theme.mjs', 'ops/backup-crypto.mjs', 'ops/database-backup.mjs', 'checks/capacity.mjs', 'checks/recovery-drill.mjs', 'checks/repository-safety.mjs', 'checks/backup-restore.mjs'];
 for (const file of [...files, ...developmentFiles.filter(file => existsSync(resolve(root,file)))]) {
   const result = spawnSync(process.execPath, ['--check', resolve(root, file)], {
     cwd: root,
