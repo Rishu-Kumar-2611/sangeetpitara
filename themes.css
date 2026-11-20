@@ -637,7 +637,7 @@ html[data-theme] .source-cover[data-visual=radio] { transform: none !important; 
 /* Room tabs scroll with the content on phones, including Android WebView. */
 @media (max-width: 760px) {
   html[data-theme] .room-tabs,
-  html[data-theme] .motion-studio .room-tabs { position: static; top: auto; }
+  html[data-theme] .motion-studio .room-tabs { position: static; top: auto; z-index: auto; }
 }
 
 /* Allow header controls to wrap instead of pushing 320px rooms sideways. */
