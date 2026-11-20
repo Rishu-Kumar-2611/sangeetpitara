@@ -28,6 +28,8 @@ async function useTheme(page, theme) {
 // One room for both appearances: the server limits how many rooms one
 // address may create, and later specs need their share of that budget.
 test('main screens pass WCAG 2.1 AA checks in all five appearances', async ({ page }) => {
+  // This flow audits 35 screen/theme combinations with axe, rather than one page.
+  test.setTimeout(60_000);
   await page.goto('/');
   for (const theme of ['dark', 'light', 'forest', 'brass', 'rose']) {
     await useTheme(page, theme);
