@@ -28,6 +28,8 @@ data class RoomSummary(
     val locked: Boolean = false,
     /** "opus" only when every member can decode it; older servers omit it (PCM16). */
     val relayCodec: String = "pcm16",
+    val recovered: Boolean = false,
+    val chatSlowModeSeconds: Int = 0,
 )
 
 data class RoomMember(
@@ -135,6 +137,8 @@ data class RoomServerConfig(
     val voiceMessages: Boolean = false,
     val messageReplies: Boolean = false,
     val messageMutations: Boolean = false,
+    val memberReports: Boolean = false,
+    val chatSlowMode: Boolean = false,
 ) {
     companion object {
         val DEFAULT = RoomServerConfig()
@@ -229,6 +233,8 @@ internal fun parseRoomSummary(json: JSONObject): RoomSummary = RoomSummary(
     createdAt = json.optLong("createdAt", 0L),
     locked = json.optBoolean("locked", false),
     relayCodec = json.stringOrNull("relayCodec") ?: "pcm16",
+    recovered = json.optBoolean("recovered", false),
+    chatSlowModeSeconds = json.optInt("chatSlowModeSeconds", 0),
 )
 
 internal fun parseRoomMember(json: JSONObject): RoomMember = RoomMember(
@@ -354,6 +360,8 @@ internal fun parseRoomServerConfig(json: JSONObject): RoomServerConfig = RoomSer
     voiceMessages = json.optJSONObject("chatFeatures")?.optBoolean("voiceMessages", false) == true,
     messageReplies = json.optJSONObject("chatFeatures")?.optBoolean("messageReplies", false) == true,
     messageMutations = json.optJSONObject("chatFeatures")?.optBoolean("messageMutations", false) == true,
+    memberReports = json.optJSONObject("chatFeatures")?.optBoolean("memberReports", false) == true,
+    chatSlowMode = json.optJSONObject("chatFeatures")?.optBoolean("slowMode", false) == true,
     chatReactions = buildList {
         val reactions = json.arrayOrEmpty("chatReactions")
         for (index in 0 until minOf(reactions.length(), 12)) {

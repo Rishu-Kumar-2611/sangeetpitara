@@ -17,6 +17,13 @@ export function productionConfigErrors(env = process.env, { appVersion = env.APP
   }
 
   const errors = [];
+  if (env.WEB_CONCURRENCY && String(env.WEB_CONCURRENCY) !== '1') errors.push('WEB_CONCURRENCY must be 1; live media requires one process per service.');
+  if (env.ADMIN_OWNER_ID || env.ADMIN_TOTP_SECRET) {
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(env.ADMIN_OWNER_ID || '')) ||
+        !/^[A-Z2-7]{32,128}$/.test(String(env.ADMIN_TOTP_SECRET || '').trim().toUpperCase())) {
+      errors.push('Owner dashboard requires both a valid ADMIN_OWNER_ID and ADMIN_TOTP_SECRET.');
+    }
+  }
   if (env.TRUST_PROXY_HOPS && (!/^[1-8]$/.test(String(env.TRUST_PROXY_HOPS)))) errors.push('TRUST_PROXY_HOPS must be an integer from 1 to 8.');
   if (!nonEmpty(env.DATABASE_URL)) errors.push('DATABASE_URL must be configured in production.');
 

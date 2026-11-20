@@ -20,15 +20,26 @@ export function summarizeUsage(rows, since) {
 }
 
 /** Server-observed room time and relay delivery; never accepts client counters. */
-export function createUsageAnalytics({ repository, now = Date.now, onError = () => {} }) {
+export function createUsageAnalytics({ repository, now = Date.now, onError = () => {}, maxPendingRows = 5000, maxRetryAgeMs = 86_400_000 }) {
   const active = new Map();
+  const rowLimit = Math.max(1, Math.min(10000, Math.trunc(maxPendingRows) || 5000));
+  const retryLimit = Math.max(1000, Math.min(86_400_000, Number(maxRetryAgeMs) || 86_400_000));
   let pending = new Map();
   let retry = null;
   let flight = null;
+  let discardedRows = 0;
+  let lastPersistedAt = null;
+  const discarded = { onlineMs: 0, listeningMs: 0, sessions: 0, roomsCreated: 0, reconnects: 0, forwarded: 0, dropped: 0 };
   function row(session, time = now()) {
     const day = new Date(time).toISOString().slice(0, 10);
     const key = `${day}:${session.visitor}:${session.platform}`;
-    if (!pending.has(key)) pending.set(key, { day, visitor: session.visitor, platform: session.platform, onlineMs: 0, listeningMs: 0, sessions: 0, roomsCreated: 0, reconnects: 0, forwarded: 0, dropped: 0 });
+    if (!pending.has(key)) {
+      if (pending.size >= rowLimit) {
+        discardedRows = Math.min(1e12, discardedRows + 1);
+        return discarded;
+      }
+      pending.set(key, { day, visitor: session.visitor, platform: session.platform, onlineMs: 0, listeningMs: 0, sessions: 0, roomsCreated: 0, reconnects: 0, forwarded: 0, dropped: 0 });
+    }
     return pending.get(key);
   }
   function tickSession(session, time) {
@@ -75,12 +86,19 @@ export function createUsageAnalytics({ repository, now = Date.now, onError = () 
     async flush() {
       if (flight) { await flight; return this.flush(); }
       this.tick();
+      if (retry && now() - retry.createdAt > retryLimit) {
+        discardedRows = Math.min(1e12, discardedRows + retry.rows.length);
+        retry = null;
+        onError(new Error('Analytics retry horizon expired; bounded pending statistics were discarded.'));
+      }
       if (!retry && !pending.size) return;
-      if (!retry) { retry = { id: randomUUID(), rows: [...pending.values()] }; pending = new Map(); }
-      flight = repository.writeUsageBatch(retry).then(() => { retry = null; }).catch(error => { onError(error); throw error; }).finally(() => { flight = null; });
+      if (!retry) { retry = { id: randomUUID(), createdAt: now(), rows: [...pending.values()] }; pending = new Map(); }
+      flight = repository.writeUsageBatch(retry).then(() => { retry = null; lastPersistedAt = now(); }).catch(error => { onError(error); throw error; }).finally(() => { flight = null; });
       return flight;
     },
     get onlineUsers() { return new Set([...active.values()].map(value => value.visitor)).size; },
     get onlineSessions() { return active.size; },
+    get status() { return { pendingRows: pending.size + (retry?.rows.length || 0), retrying: Boolean(retry),
+      discardedRows, lastPersistedAt: lastPersistedAt === null ? null : new Date(lastPersistedAt).toISOString() }; },
   };
 }

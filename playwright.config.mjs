@@ -9,7 +9,7 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:4187',
     browserName: 'chromium',
-    channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined),
+    channel: process.env.PLAYWRIGHT_CHANNEL === 'chromium' ? undefined : process.env.PLAYWRIGHT_CHANNEL,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },

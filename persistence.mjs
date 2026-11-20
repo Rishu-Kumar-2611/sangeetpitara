@@ -76,6 +76,8 @@ function mapRoom(row) {
     sourceStatus: row.sourceStatus ?? row.source_status ?? 'NONE',
     sourceType: row.sourceType ?? row.source_type ?? null,
     sourceEpoch: Number(row.sourceEpoch ?? row.source_epoch ?? 0),
+    recoveryState: row.recoveryState ?? row.recovery_state ?? null,
+    recoveryExpiresAt: (row.recoveryExpiresAt ?? row.recovery_expires_at) ? isoDate(row.recoveryExpiresAt ?? row.recovery_expires_at) : null,
     createdAt: isoDate(row.createdAt ?? row.created_at),
     updatedAt: isoDate(row.updatedAt ?? row.updated_at),
     endedAt: (row.endedAt ?? row.ended_at) ? isoDate(row.endedAt ?? row.ended_at) : null,
@@ -170,6 +172,7 @@ export class InMemoryRepository {
     this.usageRows = new Map();
     this.usageBatches = new Set();
     this.adminTotpSteps = new Map();
+    this.adminRecoveryCodes = new Map();
   }
 
   async migrate() {
@@ -205,11 +208,14 @@ export class InMemoryRepository {
     return clone(this.usersById.get(id));
   }
 
-  async createSession({ tokenHash, userId, expiresAt, createdAt, lastSeenAt } = {}) {
+  async createSession({ tokenHash, userId, expiresAt, createdAt, lastSeenAt, expectedPasswordHash } = {}) {
     if (!this.usersById.has(userId)) throw new RepositoryError('Cannot create a session for an unknown user.');
+    const user = this.usersById.get(userId);
+    if (user.revokedAt || (expectedPasswordHash && user.passwordHash !== expectedPasswordHash)) return null;
     const session = {
       tokenHash,
       userId,
+      authVersion: user.authVersion || 0,
       expiresAt: isoDate(expiresAt),
       createdAt: isoDate(createdAt, this.clock()),
       lastSeenAt: lastSeenAt ? isoDate(lastSeenAt) : null,
@@ -226,7 +232,7 @@ export class InMemoryRepository {
       return null;
     }
     const user = this.usersById.get(session.userId);
-    if (!user || user.revokedAt) {
+    if (!user || user.revokedAt || (session.authVersion || 0) !== (user.authVersion || 0)) {
       this.sessionsByTokenHash.delete(tokenHash);
       return null;
     }
@@ -279,6 +285,26 @@ export class InMemoryRepository {
     return clone(record);
   }
 
+  async changePasswordAndRevokeSessions({ userId, expectedHash, passwordHash }) {
+    const user = this.usersById.get(userId);
+    if (!user || user.revokedAt || user.passwordHash !== expectedHash) return false;
+    user.passwordHash = passwordHash;
+    user.authVersion = (user.authVersion || 0) + 1;
+    await this.deleteSessionsForUser(userId);
+    this.adminRecoveryCodes.delete(userId);
+    return true;
+  }
+
+  async replaceAdminRecoveryCodes(userId, hashes) {
+    this.adminRecoveryCodes.set(userId, new Set(hashes));
+  }
+
+  async consumeAdminRecoveryCode(userId, hash) {
+    return this.adminRecoveryCodes.get(userId)?.delete(hash) || false;
+  }
+
+  async countAdminRecoveryCodes(userId) { return this.adminRecoveryCodes.get(userId)?.size || 0; }
+
   async updateRoom(room) {
     if (!room?.id || !this.roomsById.has(room.id)) return null;
     this.roomsById.set(room.id, clone(room));
@@ -316,6 +342,12 @@ export class InMemoryRepository {
   async updateReport(record) {
     this.reportsById.set(record.id, clone(record));
     return clone(record);
+  }
+
+  async resolveReport(id, status) {
+    const record = this.reportsById.get(id);
+    if (!record || !['OPEN', 'IN_REVIEW'].includes(record.status)) return false;
+    record.status = status; record.updatedAt = isoDate(this.clock()); return true;
   }
 
   async createBlock(record) {
@@ -368,6 +400,18 @@ export class InMemoryRepository {
     return true;
   }
 
+  async applyBillingEvent(provider, eventId, entitlement) {
+    const key = `${provider}:${eventId}`;
+    if (this.billingEvents.has(key)) return false;
+    const previous = this.entitlementsBySubject.get(entitlement.subjectId);
+    if (!previous || Date.parse(previous.updatedAt) < Date.parse(entitlement.updatedAt) ||
+        (previous.updatedAt === entitlement.updatedAt && entitlement.status === 'canceled')) {
+      this.entitlementsBySubject.set(entitlement.subjectId, clone(entitlement));
+    }
+    this.billingEvents.add(key);
+    return true;
+  }
+
   async consumeAdminTotp(userId, step) {
     if (step <= (this.adminTotpSteps.get(userId) ?? -1)) return false;
     this.adminTotpSteps.set(userId, step); return true;
@@ -387,6 +431,14 @@ export class InMemoryRepository {
   async usageSummary(since) {
     const rows = [...this.usageRows.values()];
     return { ...summarizeUsage(rows, since), lifetime: summarizeUsage(rows, '0000').totals };
+  }
+
+  async pruneOperationalData({ days = 365 } = {}) {
+    const cutoff = new Date(new Date(this.clock()).getTime() - days * 86_400_000).toISOString().slice(0, 10);
+    for (const [key, row] of this.usageRows) if (row.day < cutoff) this.usageRows.delete(key);
+    for (const room of this.roomsById.values()) if (Date.parse(room.recoveryExpiresAt) < new Date(this.clock()).getTime()) {
+      room.recoveryState = null; room.recoveryExpiresAt = null;
+    }
   }
 
   async close() {}
@@ -453,12 +505,13 @@ export class PostgresRepository {
     return mapUser(result.rows[0]);
   }
 
-  async createSession({ tokenHash, userId, expiresAt, createdAt, lastSeenAt } = {}) {
+  async createSession({ tokenHash, userId, expiresAt, createdAt, lastSeenAt, expectedPasswordHash } = {}) {
     const result = await this.pool.query(
-      `INSERT INTO sessions (token_hash, user_id, expires_at, created_at, last_seen_at)
-       VALUES ($1, $2, $3::timestamptz, COALESCE($4::timestamptz, CURRENT_TIMESTAMP), $5::timestamptz)
+      `INSERT INTO sessions (token_hash, user_id, expires_at, created_at, last_seen_at, auth_version)
+       SELECT $1, id, $3::timestamptz, COALESCE($4::timestamptz, CURRENT_TIMESTAMP), $5::timestamptz, auth_version FROM users
+       WHERE id=$2 AND revoked_at IS NULL AND ($6::text IS NULL OR password_hash=$6)
        RETURNING token_hash, user_id, expires_at, created_at, last_seen_at`,
-      [tokenHash, userId, isoDate(expiresAt), createdAt ? isoDate(createdAt) : null, lastSeenAt ? isoDate(lastSeenAt) : null],
+      [tokenHash, userId, isoDate(expiresAt), createdAt ? isoDate(createdAt) : null, lastSeenAt ? isoDate(lastSeenAt) : null, expectedPasswordHash || null],
     );
     return mapSession(result.rows[0]);
   }
@@ -471,6 +524,7 @@ export class PostgresRepository {
        JOIN users ON users.id = sessions.user_id
        WHERE token_hash = $1
          AND users.revoked_at IS NULL
+         AND sessions.auth_version = users.auth_version
          AND expires_at > CURRENT_TIMESTAMP
        LIMIT 1`,
       [tokenHash],
@@ -524,10 +578,10 @@ export class PostgresRepository {
     const result = await this.pool.query(
       `INSERT INTO rooms (
          id, code, name, status, host_user_id, cohost_user_id,
-         source_status, source_type, source_epoch, created_at, updated_at, ended_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, $11::timestamptz, $12::timestamptz)
+         source_status, source_type, source_epoch, created_at, updated_at, ended_at, recovery_state, recovery_expires_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, $11::timestamptz, $12::timestamptz, $13::jsonb, $14::timestamptz)
        RETURNING id, code, name, status, host_user_id, cohost_user_id,
-         source_status, source_type, source_epoch, created_at, updated_at, ended_at`,
+         source_status, source_type, source_epoch, created_at, updated_at, ended_at, recovery_state, recovery_expires_at`,
       [
         room.id,
         room.code,
@@ -541,6 +595,8 @@ export class PostgresRepository {
         room.createdAt ? isoDate(room.createdAt) : null,
         room.updatedAt ? isoDate(room.updatedAt) : null,
         room.endedAt ? isoDate(room.endedAt) : null,
+        room.recoveryState ? JSON.stringify(room.recoveryState) : null,
+        room.recoveryExpiresAt || null,
       ],
     );
     return mapRoom(result.rows[0]);
@@ -553,10 +609,10 @@ export class PostgresRepository {
            source_status = $6, source_type = $7, source_epoch = $8,
            updated_at = COALESCE($9::timestamptz, CURRENT_TIMESTAMP),
            ended_at = $10::timestamptz,
-           code = COALESCE($11, code)
+           code = COALESCE($11, code), recovery_state = $12::jsonb, recovery_expires_at = $13::timestamptz
        WHERE id = $1
        RETURNING id, code, name, status, host_user_id, cohost_user_id,
-         source_status, source_type, source_epoch, created_at, updated_at, ended_at`,
+         source_status, source_type, source_epoch, created_at, updated_at, ended_at, recovery_state, recovery_expires_at`,
       [
         room.id,
         room.name,
@@ -569,6 +625,8 @@ export class PostgresRepository {
         room.updatedAt ? isoDate(room.updatedAt) : null,
         room.endedAt ? isoDate(room.endedAt) : null,
         room.code || null,
+        room.recoveryState ? JSON.stringify(room.recoveryState) : null,
+        room.recoveryExpiresAt || null,
       ],
     );
     return mapRoom(result.rows[0]);
@@ -577,7 +635,7 @@ export class PostgresRepository {
   async listActiveRooms() {
     const result = await this.pool.query(
       `SELECT id, code, name, status, host_user_id, cohost_user_id,
-         source_status, source_type, source_epoch, created_at, updated_at, ended_at
+         source_status, source_type, source_epoch, created_at, updated_at, ended_at, recovery_state, recovery_expires_at
        FROM rooms
        WHERE status = 'ACTIVE'
        ORDER BY created_at ASC`,
@@ -588,7 +646,8 @@ export class PostgresRepository {
   async endRoom(roomId, endedAt = new Date()) {
     const result = await this.pool.query(
       `UPDATE rooms
-       SET status = 'ENDED', ended_at = $2::timestamptz, updated_at = $2::timestamptz
+       SET status = 'ENDED', ended_at = $2::timestamptz, updated_at = $2::timestamptz,
+           recovery_state = NULL, recovery_expires_at = NULL
        WHERE id = $1`,
       [roomId, isoDate(endedAt)],
     );
@@ -715,6 +774,74 @@ export class PostgresRepository {
   async consumeAdminTotp(userId, step) {
     const result = await this.pool.query('UPDATE users SET admin_totp_step = $2 WHERE id = $1 AND is_admin = TRUE AND revoked_at IS NULL AND admin_totp_step < $2 RETURNING id', [userId, step]);
     return result.rowCount === 1;
+  }
+
+  async resolveReport(id, status) {
+    const result = await this.pool.query(`UPDATE moderation_reports SET status=$2, updated_at=CURRENT_TIMESTAMP
+      WHERE id=$1 AND status IN ('OPEN','IN_REVIEW')`, [id, status]);
+    return result.rowCount === 1;
+  }
+
+  async changePasswordAndRevokeSessions({ userId, expectedHash, passwordHash }) {
+    const result = await this.pool.query(`WITH changed AS (
+      UPDATE users SET password_hash = $3, auth_version = auth_version + 1
+      WHERE id = $1 AND password_hash = $2 AND revoked_at IS NULL RETURNING id
+    ), sessions_removed AS (DELETE FROM sessions WHERE user_id IN (SELECT id FROM changed)),
+    codes_removed AS (DELETE FROM admin_recovery_codes WHERE user_id IN (SELECT id FROM changed))
+    SELECT id FROM changed`, [userId, expectedHash, passwordHash]);
+    return result.rowCount === 1;
+  }
+
+  async replaceAdminRecoveryCodes(userId, hashes) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [userId]);
+      await client.query('DELETE FROM admin_recovery_codes WHERE user_id=$1', [userId]);
+      await client.query('INSERT INTO admin_recovery_codes (user_id, code_hash) SELECT $1, unnest($2::text[])', [userId, hashes]);
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
+  }
+
+  async consumeAdminRecoveryCode(userId, hash) {
+    const result = await this.pool.query(`DELETE FROM admin_recovery_codes WHERE user_id=$1 AND code_hash=$2
+      AND EXISTS (SELECT 1 FROM users WHERE id=$1 AND is_admin=TRUE AND revoked_at IS NULL) RETURNING code_hash`, [userId, hash]);
+    return result.rowCount === 1;
+  }
+
+  async countAdminRecoveryCodes(userId) {
+    const result = await this.pool.query('SELECT COUNT(*)::int AS count FROM admin_recovery_codes WHERE user_id=$1', [userId]);
+    return result.rows[0].count;
+  }
+
+  async applyBillingEvent(provider, eventId, record) {
+    // Receipt and entitlement are one atomic statement. Failed writes remain retryable.
+    const result = await this.pool.query(`WITH fresh AS (
+      INSERT INTO billing_events (provider, provider_event_id) VALUES ($1, $2)
+      ON CONFLICT DO NOTHING RETURNING provider_event_id
+    ), applied AS (
+      INSERT INTO entitlements (subject_id, provider, customer_id, subscription_id, price_id, plan, status,
+        current_period_end, cancel_at_period_end, updated_at)
+      SELECT $3, $1, $4, $5, $6, $7, $8, $9::timestamptz, $10, $11::timestamptz FROM fresh
+      ON CONFLICT (subject_id) DO UPDATE SET provider=EXCLUDED.provider, customer_id=EXCLUDED.customer_id,
+        subscription_id=EXCLUDED.subscription_id, price_id=EXCLUDED.price_id, plan=EXCLUDED.plan,
+        status=EXCLUDED.status, current_period_end=EXCLUDED.current_period_end,
+        cancel_at_period_end=EXCLUDED.cancel_at_period_end, updated_at=EXCLUDED.updated_at
+      WHERE entitlements.updated_at < EXCLUDED.updated_at OR
+        (entitlements.updated_at = EXCLUDED.updated_at AND EXCLUDED.status = 'canceled')
+      RETURNING subject_id
+    ) SELECT provider_event_id FROM fresh`, [provider, eventId, record.subjectId, record.customerId,
+      record.subscriptionId, record.priceId, record.plan, record.status, record.currentPeriodEnd,
+      Boolean(record.cancelAtPeriodEnd), record.updatedAt]);
+    return result.rowCount === 1;
+  }
+
+  async pruneOperationalData({ days = 365, batchDays = 7 } = {}) {
+    await this.pool.query(`WITH expired_usage AS (DELETE FROM usage_daily WHERE day < CURRENT_DATE - $1::int),
+      expired_batches AS (DELETE FROM usage_batches WHERE created_at < CURRENT_TIMESTAMP - $2::int * INTERVAL '1 day')
+      UPDATE rooms SET recovery_state=NULL, recovery_expires_at=NULL
+      WHERE recovery_expires_at < CURRENT_TIMESTAMP`, [days, batchDays]);
   }
 
   async writeUsageBatch({ id, rows }) {

@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light" data-theme-reset>
   <head>
     <meta charset="UTF-8" />
-    <meta name="app-version" content="1.1.26" />
+    <meta name="app-version" content="1.1.27" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="SangeetPitara — private live audio rooms for listening together. Share sound live with friends in sync from phone to laptop." />
     <meta name="google-site-verification" content="google4e6792fe7b47be54" />
@@ -27,22 +27,23 @@
     <meta name="roomsound-media-relay" content="server-configured-pcm16" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://pagead2.googlesyndication.com https://www.googletagservices.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; media-src 'self' blob: data:; connect-src 'self' ws: wss:; frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; frame-ancestors 'none'" />
     <title>SangeetPitara — listen together</title>
-    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261113-audio-continuity1" />
+    <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261120-prod1" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=20261113-audio-continuity1" />
-    <link rel="stylesheet" href="/themes.css?v=20261118-nearby-admin1" />
-    <link rel="stylesheet" href="/chat.css?v=20261113-audio-continuity1" />
-    <script src="/themes.js?v=20261112-topbar1"></script>
+    <link rel="stylesheet" href="/styles.css?v=20261120-prod1" />
+    <link rel="stylesheet" href="/themes.css?v=20261120-prod1" />
+    <link rel="stylesheet" href="/chat.css?v=20261120-prod1" />
+    <script src="/themes.js?v=20261120-prod1"></script>
+
   </head>
   <body>
     <div class="aura" id="aura" aria-hidden="true"><span class="aura-blob aura-blob-one"></span><span class="aura-blob aura-blob-two"></span><span class="aura-blob aura-blob-three"></span></div>
     <main id="app" class="shell">
       <section id="landing-view" class="landing-view" data-entry-screen="home">
         <div class="landing-copy">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261113-audio-continuity1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261120-prod1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="eyebrow"><span class="eyebrow-dot" aria-hidden="true">●</span> Live audio rooms · Android + Web</div>
           <h1><span class="hero-line">Share your phone's sound.</span><span class="hero-sub">Live, with everyone you invite.</span></h1>
-          <p class="landing-hint">Start a room, send the code, press play. Everyone hears the same thing at the same time. No accounts, no recording.</p>
+          <p class="landing-hint">Start a room, send the code, press play. Invite friends to listen together. No accounts needed; live broadcasts are not recorded.</p>
           <div class="hero-deck" aria-hidden="true">
             <div class="cassette cassette-hero">
               <span class="cassette-label"><span class="cassette-side">A</span><span class="cassette-title">Side A · Live</span><span class="cassette-rule"></span></span>
@@ -50,6 +51,7 @@
               <span class="cassette-foot"></span>
             </div>
             <div class="hero-eq"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+
           </div>
           <a class="apk-download-card" href="/downloads/SangeetPitara.apk" target="_blank" rel="noopener">
             <span class="apk-download-icon" aria-hidden="true">↓</span>
@@ -100,7 +102,8 @@
             <span id="rewarded-access-progress-label" class="rewarded-access-progress-label" aria-live="polite"></span>
             <small class="rewarded-access-note">Demo/local provider · offline development only · no real ad network is loaded.</small>
           </section>
-          <div id="entry-error" class="inline-error hidden" role="alert"></div>
+          <details class="connection-check"><summary>Check before joining</summary><button id="check-connection" type="button" class="secondary-button">Check connection</button><p id="connection-check-result" role="status">Check the server and sharing support before your listening session.</p></details>
+              <div id="entry-error" class="inline-error hidden" role="alert"></div>
           <div id="landing-ad-slot" class="ad-slot" data-ad-slot="" data-ad-placement="landing" hidden aria-hidden="true"></div>
           <div id="ad-consent-banner" class="ad-consent" hidden role="dialog" aria-labelledby="ad-consent-title" aria-describedby="ad-consent-copy">
             <strong id="ad-consent-title">Support SangeetPitara</strong>
@@ -131,7 +134,7 @@
             </div>
 
         <header class="topbar">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261113-audio-continuity1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
+          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261120-prod1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
           <div class="room-crumb"><span class="crumb-room-name" id="top-room-name">Listening room</span><span class="crumb-separator">/</span><span class="room-code-small" id="top-room-code">------</span></div>
           <div class="topbar-actions">
             <span class="connection-chip" id="connection-chip"><span class="connection-dot"></span><span id="connection-label">Connecting</span></span>
@@ -170,7 +173,7 @@
             <section class="now-playing" id="listening-surface" role="tabpanel" aria-labelledby="room-tab-listen">
             <div class="source-card" id="source-card" data-playback="idle">
               <div class="cover-visual">
-                <div class="source-orb source-cover cassette" id="source-orb" aria-hidden="true"><span class="cassette-label"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261113-audio-continuity1" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span><span class="cassette-rule"></span></span><span class="cassette-window"><span class="reel"></span><span class="tape-run"></span><span class="reel"></span></span><span class="cassette-foot"></span><canvas class="cover-visual-canvas" id="cover-visual-canvas" width="640" height="405" hidden></canvas></div>
+                <div class="source-orb source-cover cassette" id="source-orb" aria-hidden="true"><span class="cassette-label"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261120-prod1" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span><span class="cassette-rule"></span></span><span class="cassette-window"><span class="reel"></span><span class="tape-run"></span><span class="reel"></span></span><span class="cassette-foot"></span><canvas class="cover-visual-canvas" id="cover-visual-canvas" width="640" height="405" hidden></canvas></div>
                 <button class="cover-visual-toggle" id="cover-visual-toggle" type="button" aria-controls="cover-visual-picker" aria-expanded="false" aria-label="Change playback visual"><span>Change visual ▾</span></button>
                   <div class="cover-visual-picker" id="cover-visual-picker" role="group" aria-label="Playback visual" hidden>
                     <button type="button" data-visual="cassette">Cassette</button>
@@ -218,8 +221,8 @@
               <button id="local-mute" class="mute-button" type="button"><span id="mute-icon">◒</span><span id="mute-label">Mute</span></button>
               <input id="local-volume" class="volume-slider" type="range" min="0" max="1" step="0.01" value="0.9" aria-label="Your room volume" />
               <span id="volume-label" class="volume-label">90%</span>
-              <label class="sync-offset-control" for="sync-offset" title="Adjust buffer cushion for Bluetooth earbuds or wireless speakers">
-                <span class="sync-prefix">Sync</span>
+              <label class="sync-offset-control" for="sync-offset" title="More cushion can reduce interruptions but adds delay. This does not synchronize different speakers.">
+                <span class="sync-prefix">Cushion</span>
                 <input id="sync-offset" class="sync-slider" type="range" min="20" max="1000" step="20" value="40" aria-label="Audio buffer cushion in milliseconds" />
                 <span id="sync-offset-label" class="sync-label">40ms</span>
               </label>
@@ -263,6 +266,7 @@
                 <span class="telemetry-state pending" id="telemetry-state">Waiting</span>
               </div>
               <p class="telemetry-summary" id="telemetry-summary">No active source · diagnostics will appear when audio starts.</p>
+              <button id="recover-audio" class="secondary-button" type="button">Recover audio</button><p class="telemetry-help">Recovery resumes this device and clears delayed audio. A healthy connection does not measure speaker synchronization.</p>
               <div id="telemetry-list" class="telemetry-list"><div class="telemetry-empty">Start playback sharing to inspect the current source and listeners.</div></div>
             </section>
 
@@ -273,7 +277,7 @@
       </section>
     </main>
 
-    <footer class="site-footer"><a href="/guide.html" target="_blank" rel="noopener">User Guide</a><a href="/privacy.html" target="_blank" rel="noopener">Privacy</a><a href="/terms.html" target="_blank" rel="noopener">Terms</a><a href="#" id="footer-cookie-prefs">Cookie preferences</a></footer>
+    <footer class="site-footer"><a href="/guide.html" target="_blank" rel="noopener">User Guide</a><a href="/privacy.html" target="_blank" rel="noopener">Privacy</a><a href="/terms.html" target="_blank" rel="noopener">Terms</a><a href="https://github.com/Rishu-Kumar-2611/sangeetpitara/issues/new" target="_blank" rel="noopener">Support</a><a href="#" id="footer-cookie-prefs">Cookie preferences</a></footer>
     <div id="cookie-banner" class="cookie-banner" hidden role="dialog" aria-labelledby="cookie-banner-title" aria-describedby="cookie-banner-copy">
       <div class="cookie-banner-copy">
         <strong id="cookie-banner-title">Cookies &amp; ads</strong>
@@ -293,6 +297,6 @@
       </form>
       <div class="member-menu-actions" id="member-menu-actions"></div>
     </dialog>
-    <script type="module" src="/app.js?v=20261113-audio-continuity1"></script>
+    <script type="module" src="/app.js?v=20261120-prod1"></script>
   </body>
 </html>

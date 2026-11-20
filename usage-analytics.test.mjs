@@ -56,3 +56,19 @@ test('burst packet claims cannot manufacture hours of listening time', async () 
   const summary = await repository.usageSummary('2026-11-18');
   assert.ok(summary.totals.listeningMs <= 1000);
 });
+
+test('a prolonged database outage cannot grow pending analytics without a bound', async () => {
+  let time = Date.UTC(2026, 10, 20);
+  const repository = new InMemoryRepository();
+  const write = repository.writeUsageBatch.bind(repository);
+  repository.writeUsageBatch = async () => { throw new Error('database offline'); };
+  const usage = createUsageAnalytics({ repository, now: () => time, maxPendingRows: 3, maxRetryAgeMs: 1000 });
+  for (let id = 0; id < 20; id++) { const socket = {}; usage.attach(socket, { guestId: String(id) }); usage.detach(socket); }
+  assert.ok(usage.status.pendingRows <= 3); assert.ok(usage.status.discardedRows > 0);
+  await assert.rejects(usage.flush());
+  for (let id = 20; id < 40; id++) { const socket = {}; usage.attach(socket, { guestId: String(id) }); usage.detach(socket); }
+  assert.ok(usage.status.pendingRows <= 6);
+  time += 1001; repository.writeUsageBatch = write; await usage.flush();
+  assert.ok(usage.status.discardedRows >= 3); assert.equal(usage.status.retrying, false);
+  assert.ok(usage.status.lastPersistedAt);
+});

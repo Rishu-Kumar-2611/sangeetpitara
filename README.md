@@ -12,7 +12,7 @@ sessions remain compatible. It includes:
   `/downloads/SangeetPitara.apk`, which redirects to the latest GitHub Release
   (see "Android releases" below)
 - Device-local guest identity
-- No limit on how many people join a room (server-wide connection caps still apply)
+- Configurable connection limits: 200 total, 64 per address and 50 active rooms by default; test real networks before increasing them
 - Host, co-host, participant, and active-source state
 - Binary PCM16 WebSocket media relay for browser audio, enabled by default for
   cross-NAT phone-to-laptop playback
@@ -30,7 +30,11 @@ sessions remain compatible. It includes:
 - Production health (`/health`, `/ready`), bounded Prometheus metrics, structured redacted logs, and abuse-report APIs
 - Privacy-gated, opt-in advertising boundary with a Google AdSense adapter that is disabled until deployment configuration and consent exist
 - Free, unrestricted room access: the rewarded-access gate is currently disabled (code remains for future opt-in use)
-- No audio recording
+- Live audio is not recorded; optional voice messages are explicitly recorded by the sender and retained only in bounded room history
+
+## Production release 1.1.27
+
+See [production operation and release checks](docs/PRODUCTION-1.1.27.md) for restart recovery, owner password and recovery codes, retention, backup rehearsal and remaining real-device checks. The owner dashboard is at `/admin`; guest rooms do not require accounts.
 
 ## Run it
 
@@ -56,7 +60,7 @@ kept for internal/admin workflows and protected moderation/billing operations;
 the browser room surface does not display sign-in, sign-up, or account controls.
 A successful registration or login sets the `roomsound_session` HttpOnly cookie:
 
-- `POST /api/auth/register` with `{ "email": "...", "password": "..." }` returns `201`.
+- `POST /api/auth/register` with `{ "email": "...", "password": "..." }` returns `201` in development; production disables registration unless `PUBLIC_REGISTRATION_ENABLED=1`.
 - `POST /api/auth/login` with the same shape returns `200` or a generic `401` for invalid credentials.
 - `GET /api/auth/me` (also `/api/auth/current-user`) returns the current public user or `401`.
 - `POST /api/auth/logout` invalidates the server-side session and clears the cookie.
@@ -357,7 +361,7 @@ fails with a signature conflict; uninstall 1.0.1 once, then install.
   6-character codes still work), 20 wrong codes per address per 10 minutes, and
   host/co-host **Lock room** and **New room code** controls in Room settings.
   A replaced code lets existing members reconnect but admits no one new.
-- Connection caps: 200 total, 20 per address, 50 rooms (`MAX_CONNECTIONS`,
+- Connection caps: 200 total, 64 per address, 50 rooms (`MAX_CONNECTIONS`,
   `MAX_CONNECTIONS_PER_IP`, `MAX_ACTIVE_ROOMS`); sockets that do not join a room
   within 60 seconds are closed.
 - Message/history bounded: `messages >200 splice 100`; requests auto-prune after cancel/expire/approve.

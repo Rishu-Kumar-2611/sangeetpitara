@@ -13,6 +13,7 @@ const docker = (args) => execFileSync('docker', args, { encoding: 'utf8', stdio:
 let networkCreated = false;
 let databaseStarted = false;
 let appStarted = false;
+const keepAlive = setInterval(() => {}, 1000);
 try {
   assert.throws(() => docker(['run', '--rm', image]), /Command failed/,
     'Production image must refuse startup with missing required configuration');
@@ -31,9 +32,10 @@ try {
   const port = docker(['port', app, '4173/tcp']).split(':').at(-1);
   const base = `http://127.0.0.1:${port}`;
   let ready = false;
-  for (let i = 0; i < 100; i++) {
+  const readinessDeadline = Date.now() + 30_000;
+  for (let i = 0; i < 100 && Date.now() < readinessDeadline; i++) {
     try {
-      const response = await fetch(`${base}/ready`);
+      const response = await fetch(`${base}/ready`, { signal: AbortSignal.timeout(2000) });
       if (response.ok) { assert.equal((await response.json()).checks.repository.kind, 'postgres'); ready = true; break; }
     } catch {}
     await delay(100);
@@ -48,11 +50,11 @@ try {
   const registration = await fetch(`${base}/api/auth/register`, { method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'container@example.test', password: 'Container-only-test-password-2026' }) });
-  assert.equal(registration.status, 201);
-  const cookie = registration.headers.get('set-cookie').split(';')[0];
-  assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 200);
-  console.log('CONTAINER PASS: fail-closed startup, PostgreSQL readiness, protected metrics/source, assets and database-backed login.');
+  assert.equal(registration.status, 403, 'Public account registration must be disabled by default');
+  assert.equal((await fetch(`${base}/api/auth/me`)).status, 401);
+  console.log('CONTAINER PASS: fail-closed startup, PostgreSQL readiness, protected metrics/source, assets and restricted account registration.');
 } finally {
+  clearInterval(keepAlive);
   if (appStarted) docker(['rm', '-f', app]);
   if (databaseStarted) docker(['rm', '-f', database]);
   if (networkCreated) docker(['network', 'rm', id]);

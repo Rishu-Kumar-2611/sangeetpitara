@@ -33,11 +33,8 @@ jobs:
         run: |
           if [ -z "$DATABASE_URL_UNPOOLED" ] || [ -z "$BACKUP_ENCRYPTION_KEY" ]; then
             message="Configure DATABASE_BACKUP_URL and BACKUP_ENCRYPTION_KEY repository secrets first. Keep an offline copy of the key."
-            if [ "${{ github.event_name }}" = "schedule" ]; then
-              echo "::warning::Scheduled backup skipped. $message"
-              echo "created=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+            echo "::error::$message"
+            exit 1
             echo "$message"
             exit 1
           fi

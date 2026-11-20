@@ -202,6 +202,13 @@ class RoomSoundWebSocketClient(
     fun deleteChat(messageId: String): Boolean =
         sendRoomCommand(JSONObject().put("type", "delete-chat").put("messageId", messageId))
 
+    fun reportMember(memberId: String, description: String): Boolean =
+        sendRoomCommand(JSONObject().put("type", "report-member").put("memberId", memberId)
+            .put("category", "OTHER").put("description", description.trim().take(2000)))
+
+    fun setChatSlowMode(seconds: Int): Boolean =
+        sendRoomCommand(JSONObject().put("type", "set-chat-slow-mode").put("seconds", seconds))
+
     /** Toggles this member's [emoji] reaction on a chat message. */
     fun sendReaction(messageId: String, emoji: String): Boolean =
         sendRoomCommand(JSONObject().put("type", "react").put("messageId", messageId).put("emoji", emoji))
@@ -685,7 +692,7 @@ class RoomSoundWebSocketClient(
             if (permanentlyClosed || stopRequested || connectionState != RoomConnectionState.JOINED ||
                 !serverConfig.mediaRelay.isPcm16Enabled || !state.room.status.equals("ACTIVE", true) ||
                 !state.sourceAuthorization().canPublishFrames || state.room.sourceEpoch != frameEpoch ||
-                socket.queueSize() + frame.size > MAX_RELAY_QUEUED_BYTES
+                socket.queueSize() + frame.size > if (frame.size > 4 && frame[4].toInt() == 2) 180_000L else MAX_RELAY_QUEUED_BYTES
             ) return@synchronized false
             socket.send(frame)
         }

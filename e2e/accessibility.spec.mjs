@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-// WCAG 2.1 A/AA checks on every main screen, in both appearances. Third-party
+// WCAG 2.1 A/AA checks on every main screen, in all five appearances. Third-party
 // ad frames are not ours to fix, so they are left out of the scan.
 const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
@@ -27,16 +27,16 @@ async function useTheme(page, theme) {
 
 // One room for both appearances: the server limits how many rooms one
 // address may create, and later specs need their share of that budget.
-test('main screens pass WCAG 2.1 AA checks in both appearances', async ({ page }) => {
+test('main screens pass WCAG 2.1 AA checks in all five appearances', async ({ page }) => {
   await page.goto('/');
-  for (const theme of ['dark', 'light']) {
+  for (const theme of ['dark', 'light', 'forest', 'brass', 'rose']) {
     await useTheme(page, theme);
     await audit(page, `welcome (${theme})`);
   }
 
   if (await page.locator('#welcome-actions').isVisible()) await page.locator('[data-open-screen="join"]').click();
   await expect(page.getByLabel('Room code', { exact: true })).toBeVisible();
-  for (const theme of ['dark', 'light']) {
+  for (const theme of ['dark', 'light', 'forest', 'brass', 'rose']) {
     await useTheme(page, theme);
     await audit(page, `join (${theme})`);
   }
@@ -45,7 +45,7 @@ test('main screens pass WCAG 2.1 AA checks in both appearances', async ({ page }
   if (await page.locator('#welcome-actions').isVisible()) await page.locator('[data-open-screen="create"]').click();
   else await page.locator('[data-entry-tab="create"]').click();
   await expect(page.getByLabel('Room name', { exact: true })).toBeVisible();
-  for (const theme of ['dark', 'light']) {
+  for (const theme of ['dark', 'light', 'forest', 'brass', 'rose']) {
     await useTheme(page, theme);
     await audit(page, `create (${theme})`);
   }
@@ -58,7 +58,7 @@ test('main screens pass WCAG 2.1 AA checks in both appearances', async ({ page }
     const button = page.locator(`#room-tab-${tab}`);
     if (!(await button.count()) || !(await button.isVisible())) continue;
     await button.click();
-    for (const theme of ['dark', 'light']) {
+    for (const theme of ['dark', 'light', 'forest', 'brass', 'rose']) {
       await useTheme(page, theme);
       await audit(page, `room ${tab} (${theme})`);
     }

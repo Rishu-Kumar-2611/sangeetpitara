@@ -69,7 +69,7 @@ test('MFA cookie is HttpOnly, strict, scoped; replay, revocation, expiry and log
   assert.equal(signed.status, 200);
   const cookie = signed.headers['Set-Cookie'].split(';')[0];
   assert.match(signed.headers['Set-Cookie'], /HttpOnly; SameSite=Strict; Secure/);
-  assert.match(signed.headers['Set-Cookie'], /Path=\/api\/admin/);
+  assert.match(signed.headers['Set-Cookie'], /Path=\/api;/);
   assert.doesNotMatch(JSON.stringify(signed.body), /token|secret|password/);
   assert.equal((await f.request('/api/admin/login', { method: 'POST', body })).status, 401);
   const summary = await f.request('/api/admin/analytics?days=7', { cookie });

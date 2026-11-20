@@ -1196,3 +1196,5 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
 .room-view[data-room-tab="chat"] .now-playing { display:none; }
 
 
+
+.connection-check{margin:18px 0;font-size:13px;line-height:1.6}.connection-check summary{cursor:pointer;margin-bottom:12px}.telemetry-help{font-size:12px;line-height:1.6;color:var(--muted)}.source-modal form,.source-modal label{display:grid;gap:10px}.source-modal textarea,.source-modal select{width:100%;font:inherit;padding:12px;border-radius:10px;background:var(--surface);color:var(--text);border:1px solid var(--line)}

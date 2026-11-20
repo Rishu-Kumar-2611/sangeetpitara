@@ -33,3 +33,8 @@ test('local and explicit test environments remain usable without production secr
   assert.deepEqual(productionConfigErrors({ NODE_ENV: 'production', ROOMSOUND_TEST_MODE: '1', HOST: '127.0.0.1' }), []);
   assert.match(productionConfigErrors({ NODE_ENV: 'production', ROOMSOUND_TEST_MODE: '1', HOST: '0.0.0.0' }).join('\n'), /loopback/);
 });
+
+test('production refuses partial owner configuration and unsupported multi-process media', () => {
+  assert.match(productionConfigErrors({ ...safeProductionEnv, ADMIN_OWNER_ID: 'owner' }, { appVersion: '1.1.27' }).join('\n'), /ADMIN_TOTP_SECRET/);
+  assert.match(productionConfigErrors({ ...safeProductionEnv, WEB_CONCURRENCY: '2' }, { appVersion: '1.1.27' }).join('\n'), /WEB_CONCURRENCY/);
+});

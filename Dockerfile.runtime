@@ -16,7 +16,7 @@ COPY --chown=node:node branding/sangeetpitara/05-diya-eighth-note.svg ./branding
 COPY --chown=node:node branding/sangeetpitara/1?-visual-*.svg ./branding/sangeetpitara/
 COPY --chown=node:node guide ./guide
 COPY --chown=node:node fonts ./fonts
-COPY --chown=node:node admin.html admin.js admin.css owner-admin.mjs usage-analytics.mjs ./
+COPY --chown=node:node admin.html admin.js admin.css owner-admin.mjs usage-analytics.mjs room-recovery.mjs ./
 COPY --chown=node:node server.mjs client-address.mjs auth.mjs persistence.mjs migrate.mjs security.mjs moderation.mjs observability.mjs audit.mjs billing.mjs config.mjs smoke.mjs release.properties ./
 COPY --chown=node:node migrations ./migrations
 COPY --chown=node:node checks ./checks
@@ -30,4 +30,4 @@ EXPOSE 4173
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node --input-type=module --eval "const port = process.env.PORT || 4173; const response = await fetch('http://127.0.0.1:' + port + '/health'); if (!response.ok) process.exit(1); const body = await response.json(); if (body.ok !== true) process.exit(1);"
 
-CMD ["npm", "start"]
+CMD ["node", "--env-file-if-exists=.env", "server.mjs"]
