@@ -4,9 +4,11 @@ for (const [name, policy] of [
   ['autoplay allowed', 'no-user-gesture-required'],
   ['first visit requires a tap', 'document-user-activation-required'],
 ]) {
-  test.describe(name, () => {
-    test.use({ launchOptions: { args: ['--autoplay-policy=' + policy] } });
-    test('plays the opening cue and seven landing sounds @intro-sound', async ({ page }) => {
+  test(name + ' plays the lid and seven landings @intro-sound', async ({ playwright, baseURL }, testInfo) => {
+    const browser = await playwright.chromium.launch({ args: ['--autoplay-policy=' + policy] });
+    try {
+      const { viewport, hasTouch, isMobile } = testInfo.project.use;
+      const page = await browser.newPage({ baseURL, viewport, hasTouch, isMobile });
       await page.addInitScript(() => {
         // Meter the browser's decoded media output while the real animation runs.
         window.introLevels = Array(8).fill(0);
@@ -43,9 +45,11 @@ for (const [name, policy] of [
         await box.click();
       }
       await expect(page.locator('.box-scene')).toHaveClass(/open/);
-      await expect.poll(() => page.evaluate(() => window.introLevels.every(peak => peak > .025)),
-        { timeout: 10000 }).toBe(true);
-    });
+      await expect.poll(() => page.evaluate(() => window.introLevels.map(peak => peak > .025)),
+        { timeout: 10000 }).toEqual(Array(8).fill(true));
+    } finally {
+      await browser.close();
+    }
   });
 }
 
