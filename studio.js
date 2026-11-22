@@ -245,13 +245,13 @@
     }
     return burst;
   }
-  const audioButton = document.querySelector('#intro-audio');
-  const boxButton = document.querySelector('#open-box-sound');
   const track = document.querySelector('#intro-track');
 
+  let introAudioEvents;
+
   function finish() {
+    introAudioEvents?.abort();
     track.pause();
-    boxButton.hidden = true;
     generation++;
     timers.forEach(clearTimeout); timers.clear();
     for (const [part,flight] of flights) {
@@ -303,62 +303,44 @@
     return !paused && !reduced.matches && !document.hidden && Element.prototype.animate &&
       landing.dataset.entryScreen === 'home' && !landing.classList.contains('hidden');
   }
-  function openIntro(fromTap = false) {
+  function openIntro() {
     finish();
-    if (document.hidden || landing.dataset.entryScreen !== 'home' || landing.classList.contains('hidden')) return;
-    const animate = canPlayIntro();
-    audioButton.hidden = false;
-    audioButton.textContent = 'Hear the intro';
-    if (!animate && !fromTap) return;
-
-    const run = generation;
-    let started = false;
-    if (animate) {
-      root.classList.add('pitara-pending');
-      window.scrollTo({top:0,behavior:'instant'});
-      scene.hidden = false;
-      skip.hidden = false;
-      boxButton.textContent = fromTap ? 'Loading sound…' : 'Open with sound';
-      boxButton.hidden = false;
-    }
-
-    function begin(withSound, failed = false) {
-      if (run !== generation || started) return;
-      started = true;
-      if (!withSound) track.pause();
-      audioButton.textContent = failed ? 'Retry intro sound' : 'Hear the intro';
-      audioButton.hidden = animate || withSound;
-      boxButton.textContent = failed ? 'Retry intro sound' : 'Open with sound';
-      boxButton.hidden = withSound || !animate;
-      if (animate) animateIntro(run, withSound);
-    }
-
-    // play() must run on the tap's own call stack on a first visit.
-    // Its promise resolves once the native media element actually starts.
-    try {
-      if (track.error) track.load();
-      track.currentTime = 0;
-      track.play().then(() => begin(true)).catch(error => {
-        if (run !== generation || started) return;
-        if (error.name === 'NotAllowedError' && animate && !fromTap) {
-          // Keep the lid closed briefly for a tap, then let the silent intro proceed.
-          later(() => begin(false), 1800);
-        } else {
-          begin(false, true);
-        }
-      });
-    } catch { begin(false, true); }
-    // A slow media request must still let the visitor reach the room controls.
-    later(() => begin(false, true), fromTap ? 10000 : 4000);
+    if (!canPlayIntro()) return;
+    root.classList.add('pitara-pending');
+    window.scrollTo({top:0,behavior:'instant'});
+    scene.hidden = false;
+    skip.hidden = false;
+    animateIntro(generation);
   }
 
-  boxButton.addEventListener('click', () => openIntro(true));
-  audioButton.addEventListener('click', () => openIntro(true));
-  track.addEventListener('ended', () => {
-    if (scene.hidden) audioButton.hidden = false;
-  });
+  function playOpeningTrack(start) {
+    const events = new AbortController();
+    introAudioEvents = events;
+    const options = {signal:events.signal};
+    function play() {
+      track.play().catch(error => {
+        if (error.name !== 'NotAllowedError') events.abort();
+      });
+    }
+    function retry(event) {
+      if (!event.isTrusted || !track.paused || skip.contains(event.target) ||
+          event.key === 'Tab' || event.key === 'Escape') return;
+      play();
+    }
+    // Keep late permission or buffering aligned to the still-visible landings.
+    track.addEventListener('playing', () => {
+      events.abort();
+      const offset = Math.max(0, (performance.now() - start) / 1000);
+      if (offset >= track.duration) track.pause();
+      else if (Math.abs(track.currentTime - offset) > .08) track.currentTime = offset;
+    }, options);
+    document.addEventListener('click', retry, options);
+    document.addEventListener('keydown', retry, options);
+    track.currentTime = 0;
+    play();
+  }
 
-  async function animateIntro(run, withSound) {
+  async function animateIntro(run) {
     root.classList.add('pitara-running');
     // Each target is a real piece of the page. The nav's painted backing is
     // separate so its moving children have a stable coordinate system.
@@ -385,10 +367,10 @@
       {opacity:1,offset:0}, {opacity:.56,offset:.18},
       {opacity:.21,offset:.40}, {opacity:.06,offset:.72}, {opacity:0,offset:1}
     ], {delay:releaseTime-100,duration:3150,fill:'both',easing:'linear'});
-    const start = (document.timeline.currentTime ?? performance.now()) - (withSound ? track.currentTime * 1000 : 0);
+    const start = document.timeline.currentTime ?? performance.now();
     for (const motion of [chestFade,...opening,...flights.values(),...dustMotions]) motion.startTime=start;
     root.classList.remove('pitara-pending');
-    audioButton.hidden = withSound;
+    playOpeningTrack(start);
     await Promise.allSettled([...flights.values(),...dustMotions].map(a=>a.finished));
     if (run !== generation) return;
     scene.classList.add('leaving');
@@ -408,9 +390,9 @@
   document.addEventListener('keydown', e => {
     if (scene.hidden) return;
     if (e.key === 'Escape') finish();
-    if (e.key === 'Tab' && document.activeElement !== boxButton && document.activeElement !== skip) {
+    if (e.key === 'Tab' && document.activeElement !== skip) {
       e.preventDefault();
-      (boxButton.hidden ? skip : boxButton).focus();
+      skip.focus();
     } else if (e.key === 'Tab' && (e.shiftKey || document.activeElement === skip)) {
       finish();
     }

@@ -14,7 +14,8 @@ for (const [name, policy] of [
         window.introLevels = Array(8).fill(0);
         document.addEventListener('playing', async event => {
           const media = event.target;
-          if (media.id !== 'intro-track') return;
+          if (media.id !== 'intro-track' || window.introMeterAttached) return;
+          window.introMeterAttached = true;
           const audio = new AudioContext();
           const meter = audio.createAnalyser();
           meter.fftSize = 1024;
@@ -38,13 +39,13 @@ for (const [name, policy] of [
         }, true);
       });
       await page.goto('/', { waitUntil: 'domcontentloaded' });
-      if (policy === 'document-user-activation-required') {
-        const box = page.getByRole('button', { name: 'Open with sound', exact: true });
-        await expect(box).toBeVisible();
-        await expect(page.locator('#intro-track')).toHaveJSProperty('paused', true);
-        await box.click();
-      }
       await expect(page.locator('.box-scene')).toHaveClass(/open/);
+      await expect(page.locator('#intro-audio, #open-box-sound')).toHaveCount(0);
+      if (policy === 'document-user-activation-required') {
+        await expect(page.locator('#intro-track')).toHaveJSProperty('paused', true);
+        if (hasTouch) await page.touchscreen.tap(8, 8);
+        else await page.mouse.click(8, 8);
+      }
       await expect.poll(() => page.evaluate(() => window.introLevels.map(peak => peak > .025)),
         { timeout: 10000 }).toEqual(Array(8).fill(true));
     } finally {

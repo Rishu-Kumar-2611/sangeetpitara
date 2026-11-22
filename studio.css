@@ -436,19 +436,3 @@ html[data-theme] #room-view .source-card {display:block;text-align:left;}
   html[data-theme] #room-view .room-tab {font-size:.875rem;padding:0 2px;}
 }
 @media(prefers-reduced-motion:reduce){.room-bars i {animation:none}}
-
-#intro-audio[hidden], #open-box-sound[hidden],
-body:has(#landing-view:not([data-entry-screen="home"])) #intro-audio,
-body:has(#landing-view.hidden) #intro-audio {display:none!important}
-#open-box-sound {
-  position:fixed; z-index:20; left:50%; transform:translateX(-50%);
-  top:min(calc(53% + clamp(82px,12vw,140px)),calc(100% - 112px));
-  border:1px solid #e8b76f; border-radius:99px; padding:10px 19px; min-height:44px;
-  background:#241b16; color:#ffe6ba; font:600 .94rem var(--font-body); cursor:pointer;
-}
-/* Give the painted chest the same click target as its keyboard-accessible label. */
-#open-box-sound::before {
-  content:""; position:absolute; bottom:100%; left:50%; transform:translateX(-50%);
-  width:clamp(220px,43vw,435px); height:clamp(125px,22vw,220px);
-}
-#open-box-sound:focus-visible {outline:3px solid #ffd18a;outline-offset:4px}
