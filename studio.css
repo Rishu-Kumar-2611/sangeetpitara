@@ -436,3 +436,9 @@ html[data-theme] #room-view .source-card {display:block;text-align:left;}
   html[data-theme] #room-view .room-tab {font-size:.875rem;padding:0 2px;}
 }
 @media(prefers-reduced-motion:reduce){.room-bars i {animation:none}}
+
+#intro-audio[hidden],
+html.motion-paused #intro-audio,
+body:has(#landing-view:not([data-entry-screen="home"])) #intro-audio,
+body:has(#landing-view.hidden) #intro-audio { display:none!important; }
+@media (prefers-reduced-motion:reduce) { #intro-audio {display:none!important;} }

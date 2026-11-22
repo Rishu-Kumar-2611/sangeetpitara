@@ -245,15 +245,53 @@
     }
     return burst;
   }
+  const audioButton = document.querySelector('#intro-audio');
+  const AudioEngine = window.AudioContext || window.webkitAudioContext;
   let stopIntroSound;
-  function startIntroSound(start) {
-    const Context = window.AudioContext || window.webkitAudioContext;
-    if (!Context) return;
-    const context = new Context();
+  let trackPromise;
+
+  function introTrack(context) {
+    if (!trackPromise) {
+      trackPromise = fetch('/branding/sangeetpitara/intro-sound.mp3')
+        .then(response => {
+          if (!response.ok) throw new Error('Opening audio unavailable');
+          return response.arrayBuffer();
+        })
+        .then(bytes => context.decodeAudioData(bytes))
+        .then(track => {
+          // The seven impacts are already aligned to the flights. Shape a quiet
+          // swell from the seventh impact in the silent lead-in for the lid.
+          const rate = track.sampleRate;
+          const lastHit = (releaseTime + 6 * 370 + flightDuration * contactOffset) / 1000;
+          const from = Math.round(lastHit * rate);
+          const lidStart = Math.round(.51 * rate);
+          const length = Math.min(Math.floor(.31 * rate), track.length - from);
+          for (let ch = 0; ch < track.numberOfChannels; ch++) {
+            const pcm = track.getChannelData(ch);
+            for (let i = 0; i < length; i++) {
+              const t = i / length;
+              const envelope = Math.min(1, t * 24, (1 - t) * 42);
+              pcm[lidStart + i] += .56 * envelope * pcm[from + length - 1 - i];
+              pcm[lidStart + length + i] += .62 * envelope * pcm[from + i];
+            }
+          }
+          return track;
+        })
+        .catch(error => { trackPromise = undefined; throw error; });
+    }
+    return trackPromise;
+  }
+
+  function startIntroSound(start, prepared) {
+    if (!AudioEngine) return;
+    const context = prepared?.context || new AudioEngine();
     const events = new AbortController();
-    let buffer, playing = false;
-    function sync() {
-      if (playing || !buffer || context.state !== 'running' || events.signal.aborted) return;
+    const options = {signal: events.signal};
+    let buffer = prepared?.buffer;
+    let playedFromOpening = false;
+    let playing = false;
+    const sync = () => {
+      if (events.signal.aborted || playing || !buffer || context.state !== 'running') return;
       const elapsed = Math.max(0, (performance.now() - start) / 1000);
       if (elapsed >= buffer.duration) return;
       const source = context.createBufferSource();
@@ -261,26 +299,42 @@
       source.connect(context.destination);
       source.start(0, elapsed);
       playing = true;
-    }
-    const resume = () => { if (context.state === 'suspended') context.resume().then(sync).catch(() => {}); };
-    const options = { signal: events.signal };
+      playedFromOpening = elapsed <= .51;
+    };
+    const resume = () => {
+      if (context.state !== 'running') context.resume().then(sync).catch(() => {});
+    };
+    stopIntroSound = () => {
+      events.abort();
+      audioButton.hidden = playedFromOpening;
+      context.close().catch(() => {});
+    };
     context.addEventListener('statechange', sync, options);
     document.addEventListener('pointerup', resume, options);
     document.addEventListener('keydown', resume, options);
-    stopIntroSound = () => {
-      events.abort();
-      context.close().catch(() => {});
-    };
+    if (buffer) sync();
+    else introTrack(context).then(track => { buffer = track; sync(); }).catch(() => {});
     resume();
-    fetch('/branding/sangeetpitara/intro-sound.mp3', options)
-      .then(response => {
-        if (!response.ok) throw new Error('Opening audio unavailable');
-        return response.arrayBuffer();
-      })
-      .then(bytes => context.decodeAudioData(bytes))
-      .then(decoded => { buffer = decoded; sync(); })
-      .catch(() => {}); // The opening animation also works silently.
   }
+
+  audioButton.addEventListener('click', async () => {
+    if (audioButton.disabled || !AudioEngine) return;
+    const run = generation;
+    let context;
+    audioButton.disabled = true;
+    try {
+      context = new AudioEngine();
+      // Resume directly in the trusted click before fetching or awaiting fonts.
+      const [, buffer] = await Promise.all([context.resume(), introTrack(context)]);
+      if (run === generation && canPlayIntro()) {
+        await play({context, buffer});
+      }
+    } catch { /* Leave the button available for another attempt. */ }
+    finally {
+      if (context && context.state !== 'closed') await context.close().catch(() => {});
+      audioButton.disabled = false;
+    }
+  });
   function finish() {
     stopIntroSound?.();
     stopIntroSound = undefined;
@@ -331,10 +385,14 @@
       rect.width*overview*compression.x,delay+flightDuration*contactOffset);
     return {part,end,burst};
   }
-  async function play() {
+  function canPlayIntro() {
+    return !paused && !reduced.matches && !document.hidden && Element.prototype.animate &&
+      landing.dataset.entryScreen === 'home' && !landing.classList.contains('hidden');
+  }
+  async function play(prepared) {
     finish();
-    if (paused || reduced.matches || document.hidden || !Element.prototype.animate ||
-        landing.dataset.entryScreen !== 'home' || landing.classList.contains('hidden')) return;
+    if (!canPlayIntro()) return;
+    audioButton.hidden = true;
     const run = generation;
     root.classList.add('pitara-pending');
     window.scrollTo({top:0,behavior:'instant'});
@@ -370,7 +428,7 @@
     const start = document.timeline.currentTime ?? performance.now();
     for (const motion of [chestFade,...opening,...flights.values(),...dustMotions]) motion.startTime=start;
     root.classList.remove('pitara-pending');
-    try { startIntroSound(start); } catch { /* Audio hardware is optional. */ }
+    try { startIntroSound(start, prepared); } catch { audioButton.hidden = !AudioEngine; }
     await Promise.allSettled([...flights.values(),...dustMotions].map(a=>a.finished));
     if (run !== generation) return;
     scene.classList.add('leaving');
