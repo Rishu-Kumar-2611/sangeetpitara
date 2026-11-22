@@ -246,98 +246,12 @@
     return burst;
   }
   const audioButton = document.querySelector('#intro-audio');
-  const AudioEngine = window.AudioContext || window.webkitAudioContext;
-  let stopIntroSound;
-  let trackPromise;
+  const boxButton = document.querySelector('#open-box-sound');
+  const track = document.querySelector('#intro-track');
 
-  function introTrack(context) {
-    if (!trackPromise) {
-      trackPromise = fetch('/branding/sangeetpitara/intro-sound.mp3')
-        .then(response => {
-          if (!response.ok) throw new Error('Opening audio unavailable');
-          return response.arrayBuffer();
-        })
-        .then(bytes => context.decodeAudioData(bytes))
-        .then(track => {
-          // The seven impacts are already aligned to the flights. Shape a quiet
-          // swell from the seventh impact in the silent lead-in for the lid.
-          const rate = track.sampleRate;
-          const lastHit = (releaseTime + 6 * 370 + flightDuration * contactOffset) / 1000;
-          const from = Math.round(lastHit * rate);
-          const lidStart = Math.round(.51 * rate);
-          const length = Math.min(Math.floor(.31 * rate), track.length - from);
-          for (let ch = 0; ch < track.numberOfChannels; ch++) {
-            const pcm = track.getChannelData(ch);
-            for (let i = 0; i < length; i++) {
-              const t = i / length;
-              const envelope = Math.min(1, t * 24, (1 - t) * 42);
-              pcm[lidStart + i] += .56 * envelope * pcm[from + length - 1 - i];
-              pcm[lidStart + length + i] += .62 * envelope * pcm[from + i];
-            }
-          }
-          return track;
-        })
-        .catch(error => { trackPromise = undefined; throw error; });
-    }
-    return trackPromise;
-  }
-
-  function startIntroSound(start, prepared) {
-    if (!AudioEngine) return;
-    const context = prepared?.context || new AudioEngine();
-    const events = new AbortController();
-    const options = {signal: events.signal};
-    let buffer = prepared?.buffer;
-    let playedFromOpening = false;
-    let playing = false;
-    const sync = () => {
-      if (events.signal.aborted || playing || !buffer || context.state !== 'running') return;
-      const elapsed = Math.max(0, (performance.now() - start) / 1000);
-      if (elapsed >= buffer.duration) return;
-      const source = context.createBufferSource();
-      source.buffer = buffer;
-      source.connect(context.destination);
-      source.start(0, elapsed);
-      playing = true;
-      playedFromOpening = elapsed <= .51;
-    };
-    const resume = () => {
-      if (context.state !== 'running') context.resume().then(sync).catch(() => {});
-    };
-    stopIntroSound = () => {
-      events.abort();
-      audioButton.hidden = playedFromOpening;
-      context.close().catch(() => {});
-    };
-    context.addEventListener('statechange', sync, options);
-    document.addEventListener('pointerup', resume, options);
-    document.addEventListener('keydown', resume, options);
-    if (buffer) sync();
-    else introTrack(context).then(track => { buffer = track; sync(); }).catch(() => {});
-    resume();
-  }
-
-  audioButton.addEventListener('click', async () => {
-    if (audioButton.disabled || !AudioEngine) return;
-    const run = generation;
-    let context;
-    audioButton.disabled = true;
-    try {
-      context = new AudioEngine();
-      // Resume directly in the trusted click before fetching or awaiting fonts.
-      const [, buffer] = await Promise.all([context.resume(), introTrack(context)]);
-      if (run === generation && canPlayIntro()) {
-        await play({context, buffer});
-      }
-    } catch { /* Leave the button available for another attempt. */ }
-    finally {
-      if (context && context.state !== 'closed') await context.close().catch(() => {});
-      audioButton.disabled = false;
-    }
-  });
   function finish() {
-    stopIntroSound?.();
-    stopIntroSound = undefined;
+    track.pause();
+    boxButton.hidden = true;
     generation++;
     timers.forEach(clearTimeout); timers.clear();
     for (const [part,flight] of flights) {
@@ -389,16 +303,62 @@
     return !paused && !reduced.matches && !document.hidden && Element.prototype.animate &&
       landing.dataset.entryScreen === 'home' && !landing.classList.contains('hidden');
   }
-  async function play(prepared) {
+  function openIntro(fromTap = false) {
     finish();
-    if (!canPlayIntro()) return;
-    audioButton.hidden = true;
+    if (document.hidden || landing.dataset.entryScreen !== 'home' || landing.classList.contains('hidden')) return;
+    const animate = canPlayIntro();
+    audioButton.hidden = false;
+    audioButton.textContent = 'Hear the intro';
+    if (!animate && !fromTap) return;
+
     const run = generation;
-    root.classList.add('pitara-pending');
-    window.scrollTo({top:0,behavior:'instant'});
-    if (document.fonts) await Promise.race([document.fonts.ready,new Promise(resolve=>setTimeout(resolve,320))]);
-    if (run !== generation) return;
-    scene.hidden = false; skip.hidden = false;
+    let started = false;
+    if (animate) {
+      root.classList.add('pitara-pending');
+      window.scrollTo({top:0,behavior:'instant'});
+      scene.hidden = false;
+      skip.hidden = false;
+      boxButton.textContent = fromTap ? 'Loading sound…' : 'Open with sound';
+      boxButton.hidden = false;
+    }
+
+    function begin(withSound, failed = false) {
+      if (run !== generation || started) return;
+      started = true;
+      if (!withSound) track.pause();
+      audioButton.textContent = failed ? 'Retry intro sound' : 'Hear the intro';
+      audioButton.hidden = animate || withSound;
+      boxButton.textContent = failed ? 'Retry intro sound' : 'Open with sound';
+      boxButton.hidden = withSound || !animate;
+      if (animate) animateIntro(run, withSound);
+    }
+
+    // play() must run on the tap's own call stack on a first visit.
+    // Its promise resolves once the native media element actually starts.
+    try {
+      if (track.error) track.load();
+      track.currentTime = 0;
+      track.play().then(() => begin(true)).catch(error => {
+        if (run !== generation || started) return;
+        if (error.name === 'NotAllowedError' && animate && !fromTap) {
+          // Keep the lid closed briefly for a tap, then let the silent intro proceed.
+          later(() => begin(false), 1800);
+        } else {
+          begin(false, true);
+        }
+      });
+    } catch { begin(false, true); }
+    // A slow media request must still let the visitor reach the room controls.
+    later(() => begin(false, true), fromTap ? 10000 : 4000);
+  }
+
+  boxButton.addEventListener('click', () => openIntro(true));
+  audioButton.addEventListener('click', () => openIntro(true));
+  track.addEventListener('ended', () => {
+    if (scene.hidden) audioButton.hidden = false;
+  });
+
+  async function animateIntro(run, withSound) {
     root.classList.add('pitara-running');
     // Each target is a real piece of the page. The nav's painted backing is
     // separate so its moving children have a stable coordinate system.
@@ -425,10 +385,10 @@
       {opacity:1,offset:0}, {opacity:.56,offset:.18},
       {opacity:.21,offset:.40}, {opacity:.06,offset:.72}, {opacity:0,offset:1}
     ], {delay:releaseTime-100,duration:3150,fill:'both',easing:'linear'});
-    const start = document.timeline.currentTime ?? performance.now();
+    const start = (document.timeline.currentTime ?? performance.now()) - (withSound ? track.currentTime * 1000 : 0);
     for (const motion of [chestFade,...opening,...flights.values(),...dustMotions]) motion.startTime=start;
     root.classList.remove('pitara-pending');
-    try { startIntroSound(start, prepared); } catch { audioButton.hidden = !AudioEngine; }
+    audioButton.hidden = withSound;
     await Promise.allSettled([...flights.values(),...dustMotions].map(a=>a.finished));
     if (run !== generation) return;
     scene.classList.add('leaving');
@@ -445,8 +405,17 @@
     try {localStorage.setItem('studio-motion',paused?'paused':'on');} catch {}
   });
   skip.addEventListener('click',()=>{finish(); landing.querySelector('[data-open-screen="create"]').focus({preventScroll:true});});
-  document.addEventListener('keydown',e=>{if (!scene.hidden && (e.key==='Escape'||e.key==='Tab')) finish();});
-  window.addEventListener('resize',()=>{if(!scene.hidden) finish();resizeCanvas();});
+  document.addEventListener('keydown', e => {
+    if (scene.hidden) return;
+    if (e.key === 'Escape') finish();
+    if (e.key === 'Tab' && document.activeElement !== boxButton && document.activeElement !== skip) {
+      e.preventDefault();
+      (boxButton.hidden ? skip : boxButton).focus();
+    } else if (e.key === 'Tab' && (e.shiftKey || document.activeElement === skip)) {
+      finish();
+    }
+  });
+  window.addEventListener('resize',()=>{if(!scene.hidden && width !== root.clientWidth) finish();resizeCanvas();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden) finish();syncBackground();});
   window.addEventListener('pagehide',finish);
   new MutationObserver(()=>{if(landing.dataset.entryScreen!=='home'||landing.classList.contains('hidden')) finish();draw();})
@@ -456,7 +425,7 @@
   function ready() {
     resizeCanvas(); syncMotion();
     if (location.hash || new URLSearchParams(location.search).has('room')) finish();
-    else play();
+    else openIntro();
   }
   if (document.readyState==='loading') document.addEventListener('DOMContentLoaded',ready,{once:true});
   else ready();

@@ -49,8 +49,10 @@ jobs:
         run: node checks/latency-benchmark.mjs --check --current-only
       - name: Install Chromium for browser regressions
         run: npx playwright install --with-deps chromium
-      - name: Run desktop and phone browser flows
-        run: npx playwright test
+      - name: Check opening audio on desktop and phone
+        run: npx playwright test --grep @intro-sound
+      - name: Run remaining desktop and phone browser flows
+        run: npx playwright test --grep-invert @intro-sound
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

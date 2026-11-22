@@ -2013,7 +2013,7 @@ const server = http.createServer(async (req, res) => {
     }
     // Stream large files instead of buffering them in RAM with readFile(),
     // preventing container OOM crashes.
-    if (fileStats.size >= STREAMING_STATIC_THRESHOLD_BYTES) {
+    if (ext === '.mp3' || fileStats.size >= STREAMING_STATIC_THRESHOLD_BYTES) {
       streamStaticFile(req, res, filePath, fileStats.size, headers);
       return;
     }
