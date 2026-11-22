@@ -49,7 +49,7 @@ test('browser-facing messages use SangeetPitara while retaining existing room in
   assert.match(ads, /roomsound-ad-consent/);
   assert.ok(app.includes(`from './ads.mjs?v=${assetVersion}'`));
   assert.ok(app.includes(`from './capture-tracks.js?v=${assetVersion}'`));
-  assert.ok(html.includes(`src="/app.js?v=${assetVersion}"`));
+  assert.ok(html.includes('src="/app.js?v=20261122-music-box"'));
 });
 
 test('browser module graph uses one release cache version, including the capture worklet', async () => {
@@ -80,7 +80,7 @@ test('release download points at GitHub Releases and runtime packages audio modu
     readFile(new URL('checks/syntax.mjs', root), 'utf8'),
   ]);
   // The server redirects this path to the latest GitHub Release asset.
-  assert.match(html, /class="apk-download-card" href="\/downloads\/SangeetPitara\.apk"/);
+  assert.match(html, /class="studio-apk" href="\/downloads\/SangeetPitara\.apk"/);
   assert.match(html, /Get SangeetPitara for Android/);
   const copies = dockerfile.split(/\r?\n/).filter((line) => /^COPY --chown=node:node /.test(line))
     .map((line) => line.trim().split(/\s+/).slice(2));
@@ -197,17 +197,15 @@ test('browser surface is anonymous and exposes the local rewarded-access gate', 
   // Exact mono/stereo lengths are exercised by relay-capture.test.mjs.
 });
 
-test('landing page offers Android sharing and a cassette listening surface', async () => {
+test('landing page offers Android sharing and an animated room stage', async () => {
   const [html, css] = await Promise.all([
     readFile(new URL('index.html', root), 'utf8'),
     readFile(new URL('styles.css', root), 'utf8'),
   ]);
 
-  // The landing shows a decorative cassette deck instead of an information box.
-  assert.match(html, /class="hero-deck" aria-hidden="true"/);
-  assert.match(html, /Share your phone's sound\./);
-  // The room's now-playing tile is a cassette, and listeners can pause locally.
-  assert.match(html, /class="source-orb source-cover cassette"/);
+  assert.match(html, /class="box-scene"/);
+  assert.match(html, /id="welcome-title">Start <em>listening/);
+  assert.match(html, /class="room-stage"/);
   assert.match(html, /id="listen-toggle"/);
   assert.match(html, /Get SangeetPitara for Android/);
   assert.match(html, /<small>Share this code with listeners<\/small>/);
@@ -248,7 +246,7 @@ test('compact room navigation preserves source hooks and exposes dedicated secti
   for (const id of ['source-card', 'source-orb', 'source-kicker', 'source-title', 'source-detail', 'source-status', 'source-status-label', 'source-waveform', 'source-cover-initial']) {
     assert.match(html, new RegExp(`id="${id}"`), id);
   }
-  assert.match(html, /class="source-orb source-cover cassette" id="source-orb"/);
+  assert.match(html, /class="room-art" id="source-orb"/);
   assert.match(css, /\.source-waveform \{[^}]*color: var\(--room-tint-1\); caret-color: var\(--room-tint-2\)/);
 
   // Phone tabs: Chat / People / Health, wired by data attributes.

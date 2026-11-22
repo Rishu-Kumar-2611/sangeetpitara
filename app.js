@@ -1909,7 +1909,11 @@ function renderAll() {
   $('#room-title').textContent = room.name;
   $('#room-code-display').textContent = room.code;
   applyRoomPalette(room.code);
-  $('#member-count').textContent = state.members.filter((m) => m.online).length;
+  const online = state.members.filter(member => member.online);
+  $('#member-count').textContent = online.length;
+  $('#room-presence').textContent = online.length + ' in room';
+  const listeners = room.sourceStatus === 'LIVE' ? online.filter(member => !member.paused && member.id !== room.activeSourceId).length : 0;
+  $('#room-listeners').textContent = listeners + ' listening';
   $('#end-room')?.classList.toggle('hidden', state.self?.role !== 'HOST');
   renderSource();
   renderControls();
@@ -3543,7 +3547,6 @@ function showWelcomeScreen(screen, push = false) {
   $('#welcome-return-room').hidden = !state.room;
   if (state.room && selected === 'home') { $('#room-view').classList.add('hidden'); $('#landing-view').classList.remove('hidden'); }
   $('#landing-view').dataset.entryScreen = selected;
-  $('.landing-copy').hidden = selected !== 'home';
   $('#welcome-actions').hidden = selected !== 'home';
   $('.online-entry').hidden = !['create', 'join'].includes(selected);
   $('.nearby-card').hidden = selected !== 'nearby';

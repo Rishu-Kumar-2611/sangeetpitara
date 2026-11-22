@@ -247,6 +247,7 @@ const mimeTypes = {
   '.json': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.mp3': 'audio/mpeg',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -278,6 +279,12 @@ const securityHeaders = {
 // Only client assets belong to the public HTTP surface. Backend modules,
 // audit evidence, tests and future repository files are private by default.
 const publicFiles = new Set([
+  'studio.js', 'studio.css', 'studio-themes.js',
+  'branding/sangeetpitara/studio-tape.webp',
+  'branding/sangeetpitara/studio-vinyl.webp',
+  'branding/sangeetpitara/pitara-peacocks.webp',
+  'branding/sangeetpitara/landing-dust.png',
+  'branding/sangeetpitara/intro-sound.mp3',
   'chat.css', 'index.html', 'privacy.html', 'terms.html', 'guide.html', 'guide-pdf.html', 'guide.js',
   'google4e6792fe7b47be54.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'themes.css', 'themes.js',
   'chat-ui.mjs', 'app.js', 'account-client.mjs', 'ads.mjs', 'capture-tracks.js', 'guest-id.js',
@@ -1832,7 +1839,7 @@ const server = http.createServer(async (req, res) => {
 
   const reqExt = extname(requestPath);
   const isStaticAssetRequest = (req.method === 'GET' || req.method === 'HEAD')
-    && ['.css', '.js', '.mjs', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.ico', '.webmanifest', '.woff', '.woff2', '.ttf', '.otf'].includes(reqExt);
+    && ['.css', '.js', '.mjs', '.svg', '.mp3', '.png', '.jpg', '.jpeg', '.webp', '.ico', '.webmanifest', '.woff', '.woff2', '.ttf', '.otf'].includes(reqExt);
   const ip = getClientIp(req);
   if (!checkRateLimit(ip, { isStaticAsset: isStaticAssetRequest })) {
     res.writeHead(429, { 'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': '60' });
@@ -1976,7 +1983,7 @@ const server = http.createServer(async (req, res) => {
     res.end('Forbidden');
     return;
   }
-  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.xml', '.woff2', '.zip', '.md', '.pdf']);
+  const allowedExts = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg', '.mp3', '.png', '.jpg', '.jpeg', '.webp', '.wasm', '.ico', '.txt', '.xml', '.woff2', '.zip', '.md', '.pdf']);
   if (!allowedExts.has(extname(filePath))) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not found');

@@ -26,6 +26,8 @@ const files = [
   'stream-health.mjs',
   'audio-diagnostics.mjs',
   'themes.js',
+  'studio.js',
+  'studio-themes.js',
   'room-palette.js',
   'relay-pcm.js',
   'relay-opus.mjs',

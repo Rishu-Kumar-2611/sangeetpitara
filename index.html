@@ -32,36 +32,46 @@
     <link rel="stylesheet" href="/styles.css?v=20261120-prod1" />
     <link rel="stylesheet" href="/themes.css?v=20261120-prod1-menu1" />
     <link rel="stylesheet" href="/chat.css?v=20261120-prod1" />
-    <script src="/themes.js?v=20261120-prod1"></script>
+    <link rel="stylesheet" href="/studio.css?v=1" />
+    <script src="/studio-themes.js?v=1"></script>
+    <script defer src="/studio.js?v=1"></script>
 
   </head>
   <body>
+    <header class="studio-header">
+      <div class="studio-brand"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261120-prod1" alt="SangeetPitara logo" width="40" height="40" /> SangeetPitara</div>
+      <button id="welcome-return-room" class="ghost-button" type="button" hidden>Return to your room</button>
+      <a class="studio-apk" href="/downloads/SangeetPitara.apk" target="_blank" rel="noopener"><span aria-hidden="true">↓</span> Get SangeetPitara for Android</a>
+    </header>
+    <div class="welcome-wallpaper" aria-hidden="true"></div>
+    <canvas class="sound-garden" aria-hidden="true"></canvas>
+    <div class="box-scene" aria-hidden="true" hidden>
+      <div class="chest-halo"></div>
+      <div class="chest-stage">
+        <div class="chest-shadow"></div>
+        <div class="chest-model">
+          <div class="chest-mouth"><i class="mouth-origin"></i></div>
+          <div class="chest-hinge">
+            <div class="lid-vault"></div><i class="vault-cap vault-right"></i><i class="vault-cap vault-left"></i><div class="lid-lining"><i></i></div>
+            <div class="lid-edge"></div><div class="lid-cheek"></div>
+          </div>
+          <div class="chest-front"><i class="brass-clasp"><b class="ruby"></b></i><i class="front-stone left"></i><i class="front-stone right"></i></div>
+          <div class="chest-side"><i class="side-handle"></i></div>
+        </div>
+      </div>
+    </div>
+    <button id="skip-intro" type="button" hidden>Skip intro</button>
     <div class="aura" id="aura" aria-hidden="true"><span class="aura-blob aura-blob-one"></span><span class="aura-blob aura-blob-two"></span><span class="aura-blob aura-blob-three"></span></div>
     <main id="app" class="shell">
       <section id="landing-view" class="landing-view" data-entry-screen="home">
-        <div class="landing-copy">
-          <div class="brand-mark"><img class="brand-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261120-prod1" alt="SangeetPitara logo" width="40" height="40" /> <span>SangeetPitara</span></div>
-          <div class="eyebrow"><span class="eyebrow-dot" aria-hidden="true">●</span> Live audio rooms · Android + Web</div>
-          <h1><span class="hero-line">Share your phone's sound.</span><span class="hero-sub">Live, with everyone you invite.</span></h1>
-          <p class="landing-hint">Start a room, send the code, press play. Invite friends to listen together. No accounts needed; live broadcasts are not recorded.</p>
-          <div class="hero-deck" aria-hidden="true">
-            <div class="cassette cassette-hero">
-              <span class="cassette-label"><span class="cassette-side">A</span><span class="cassette-title">Side A · Live</span><span class="cassette-rule"></span></span>
-              <span class="cassette-window"><span class="reel"></span><span class="tape-run"></span><span class="reel"></span></span>
-              <span class="cassette-foot"></span>
-            </div>
-            <div class="hero-eq"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
-
-          </div>
-          <a class="apk-download-card" href="/downloads/SangeetPitara.apk" target="_blank" rel="noopener">
-            <span class="apk-download-icon" aria-hidden="true">↓</span>
-            <span class="apk-download-copy"><strong>Get SangeetPitara for Android</strong><small>Free download · Android 10 or newer</small></span>
-            <span class="apk-download-arrow" aria-hidden="true">→</span>
-          </a>
-        </div>
-
         <nav id="welcome-actions" class="welcome-actions" aria-label="Choose your listening experience">
-          <button id="welcome-return-room" class="welcome-choice" type="button" hidden><strong>Return to your room</strong><span>Your listening session is still active</span></button>
+          <div class="action-backdrop" aria-hidden="true">
+            <canvas class="welcome-art" width="640" height="405"></canvas>
+          </div>
+          <div class="welcome-intro">
+            <h1 id="welcome-title">Start <em>listening.</em></h1>
+            <p>Share audio from your phone or computer in a private room. Invite friends with a code, or listen nearby over Wi-Fi with Play Close.</p>
+          </div>
           <button class="welcome-choice" data-open-screen="create" type="button"><strong>Create a room</strong><span>Host and listen together online</span><b aria-hidden="true">→</b></button>
           <button class="welcome-choice" data-open-screen="join" type="button"><strong>Join a room</strong><span>Enter an online room code</span><b aria-hidden="true">→</b></button>
           <button class="welcome-choice" data-open-screen="nearby" type="button"><strong>Play Close</strong><span>Offline rooms over Wi-Fi or hotspot</span><b aria-hidden="true">→</b></button>
@@ -126,6 +136,31 @@
 
       <section id="room-view" class="room-view hidden" data-room-tab="listen">
 
+        <section class="room-stage" aria-labelledby="room-title" data-art="vinyl">
+          <div class="room-art" id="source-orb" aria-hidden="true">
+            <span id="source-cover-initial" hidden></span>
+            <canvas id="cover-visual-canvas" width="640" height="405"></canvas>
+          </div>
+          <div class="room-stage-copy">
+            <div class="room-stage-type">Private room</div>
+            <h1 id="room-title">Listening room</h1>
+            <div class="room-attendance" aria-live="polite" aria-atomic="true">
+              <span class="room-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              <span id="room-presence">1 in room</span><span class="stat-divider" aria-hidden="true">·</span><span id="room-listeners">0 listening</span>
+            </div>
+            <div class="room-code-display"><span>Room code</span><strong id="room-code-display">------</strong><small>Share this code with listeners</small></div>
+          </div>
+          <div class="room-art-control">
+                <button class="cover-visual-toggle" id="cover-visual-toggle" type="button" aria-controls="cover-visual-picker" aria-expanded="false" aria-label="Change room visual"><span>Change visual</span></button>
+                  <div class="cover-visual-picker" id="cover-visual-picker" role="group" aria-label="Room visual" hidden>
+                    <button type="button" data-visual="vinyl">Amber vinyl</button>
+                    <button type="button" data-visual="aurora">Aurora waves</button>
+                    <button type="button" data-visual="spectrum">Prism spectrum</button>
+                    <button type="button" data-visual="radio">Vintage radio</button>
+                    </div>
+          </div>
+        </section>
+
             <div class="room-tabs" id="room-tabs" role="tablist" aria-label="Room sections">
               <button id="room-tab-listen" class="room-tab active" data-room-tab="listen" role="tab" aria-selected="true" aria-controls="listening-surface" type="button">Room</button>
               <button id="room-tab-chat" class="room-tab" data-room-tab="chat" role="tab" aria-selected="false" aria-controls="chat-panel" type="button" tabindex="-1">Chat <span class="room-tab-badge unread-badge" id="chat-unread-badge" aria-hidden="true" hidden>0</span></button>
@@ -162,26 +197,8 @@
         </button>
         <div class="room-layout">
           <section class="room-main" id="listening-panel">
-            <div class="room-heading-row">
-              <div>
-                <div class="eyebrow">PRIVATE ROOM</div>
-                <h1 id="room-title">Late-night listening</h1>
-              </div>
-              <div class="room-code-display"><span>ROOM CODE</span><strong id="room-code-display">------</strong><small>Share this code with listeners</small></div>
-            </div>
-
             <section class="now-playing" id="listening-surface" role="tabpanel" aria-labelledby="room-tab-listen">
             <div class="source-card" id="source-card" data-playback="idle">
-              <div class="cover-visual">
-                <div class="source-orb source-cover cassette" id="source-orb" aria-hidden="true"><span class="cassette-label"><img class="cover-logo" src="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261120-prod1" alt="" width="96" height="96" /><span class="cover-initial" id="source-cover-initial"></span><span class="cassette-rule"></span></span><span class="cassette-window"><span class="reel"></span><span class="tape-run"></span><span class="reel"></span></span><span class="cassette-foot"></span><canvas class="cover-visual-canvas" id="cover-visual-canvas" width="640" height="405" hidden></canvas></div>
-                <button class="cover-visual-toggle" id="cover-visual-toggle" type="button" aria-controls="cover-visual-picker" aria-expanded="false" aria-label="Change playback visual"><span>Change visual ▾</span></button>
-                  <div class="cover-visual-picker" id="cover-visual-picker" role="group" aria-label="Playback visual" hidden>
-                    <button type="button" data-visual="cassette">Cassette</button>
-                    <button type="button" data-visual="bike">Bicycle</button>
-                    <button type="button" data-visual="car">Neon sports car</button>
-                    <button type="button" data-visual="radio">Vintage radio</button>
-                    </div>
-              </div>
               <div class="source-card-copy">
                 <div class="source-status" id="source-status" role="status"><span class="status-pulse" aria-hidden="true"></span><span id="source-status-label">Not playing</span></div>
                 <div class="source-kicker" id="source-kicker">Nothing playing</div>
@@ -277,7 +294,7 @@
       </section>
     </main>
 
-    <footer class="site-footer"><a href="/guide.html" target="_blank" rel="noopener">User Guide</a><a href="/privacy.html" target="_blank" rel="noopener">Privacy</a><a href="/terms.html" target="_blank" rel="noopener">Terms</a><a href="https://github.com/Rishu-Kumar-2611/sangeetpitara/issues/new" target="_blank" rel="noopener">Support</a><a href="#" id="footer-cookie-prefs">Cookie preferences</a></footer>
+    <footer class="site-footer"><a href="/guide.html" target="_blank" rel="noopener">User Guide</a><a href="/privacy.html" target="_blank" rel="noopener">Privacy</a><a href="/terms.html" target="_blank" rel="noopener">Terms</a><a href="https://github.com/Rishu-Kumar-2611/sangeetpitara/issues/new" target="_blank" rel="noopener">Support</a><a href="#" id="footer-cookie-prefs">Cookie preferences</a><button id="footer-motion" type="button">Pause motion</button></footer>
     <div id="cookie-banner" class="cookie-banner" hidden role="dialog" aria-labelledby="cookie-banner-title" aria-describedby="cookie-banner-copy">
       <div class="cookie-banner-copy">
         <strong id="cookie-banner-title">Cookies &amp; ads</strong>
@@ -297,6 +314,6 @@
       </form>
       <div class="member-menu-actions" id="member-menu-actions"></div>
     </dialog>
-    <script type="module" src="/app.js?v=20261120-prod1"></script>
+    <script type="module" src="/app.js?v=20261122-music-box"></script>
   </body>
 </html>
