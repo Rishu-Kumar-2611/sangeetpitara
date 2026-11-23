@@ -313,7 +313,7 @@
     animateIntro(generation);
   }
 
-  function playOpeningTrack(start) {
+  function playOpeningTrack(start, motions) {
     const events = new AbortController();
     introAudioEvents = events;
     const options = {signal:events.signal};
@@ -322,17 +322,34 @@
         if (error.name !== 'NotAllowedError') events.abort();
       });
     }
+    let heard = false;
+    let catchingUp = false;
     function retry(event) {
-      if (!event.isTrusted || !track.paused || skip.contains(event.target) ||
+      if (heard || !event.isTrusted || !track.paused || skip.contains(event.target) ||
           event.key === 'Tab' || event.key === 'Escape') return;
       play();
     }
-    // Keep late permission or buffering aligned to the still-visible landings.
+    // The media clock starts when decoded sound can actually play. Align the
+    // lid, flights and dust to it together, including after a buffering pause.
     track.addEventListener('playing', () => {
-      events.abort();
-      const offset = Math.max(0, (performance.now() - start) / 1000);
-      if (offset >= track.duration) track.pause();
-      else if (Math.abs(track.currentTime - offset) > .08) track.currentTime = offset;
+      heard = true;
+      const now = document.timeline.currentTime ?? performance.now();
+      const elapsed = (now - start) / 1000;
+      if (elapsed >= track.duration) {
+        track.pause();
+        return;
+      }
+      if (!catchingUp && elapsed - track.currentTime > .12) {
+        // A late tap joins the current scene without replaying earlier landings.
+        catchingUp = true;
+        track.currentTime = elapsed;
+        return;
+      }
+      catchingUp = false;
+      start = now - track.currentTime * 1000;
+      for (const motion of motions) {
+        if (motion.playState === 'running') motion.startTime = start;
+      }
     }, options);
     document.addEventListener('click', retry, options);
     document.addEventListener('keydown', retry, options);
@@ -368,9 +385,10 @@
       {opacity:.21,offset:.40}, {opacity:.06,offset:.72}, {opacity:0,offset:1}
     ], {delay:releaseTime-100,duration:3150,fill:'both',easing:'linear'});
     const start = document.timeline.currentTime ?? performance.now();
-    for (const motion of [chestFade,...opening,...flights.values(),...dustMotions]) motion.startTime=start;
+    const motions = [...new Set([chestFade,...opening,...flights.values(),...dustMotions])];
+    for (const motion of motions) motion.startTime=start;
     root.classList.remove('pitara-pending');
-    playOpeningTrack(start);
+    playOpeningTrack(start, motions);
     await Promise.allSettled([...flights.values(),...dustMotions].map(a=>a.finished));
     if (run !== generation) return;
     scene.classList.add('leaving');
