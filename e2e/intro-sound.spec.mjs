@@ -52,13 +52,12 @@ for (const [name, policy] of [
         }, true);
       });
       await page.goto('/', { waitUntil: 'domcontentloaded' });
-      await expect(page.locator('.box-scene')).toHaveClass(/open/);
-      await expect(page.locator('#intro-audio, #open-box-sound')).toHaveCount(0);
-      if (policy === 'document-user-activation-required') {
-        await expect(page.locator('#intro-track')).toHaveJSProperty('paused', true);
-        if (hasTouch) await page.touchscreen.tap(8, 8);
-        else await page.mouse.click(8, 8);
-      }
+      const chest = page.getByRole('button', { name: 'Open the music box' });
+      await expect(page.locator('.box-scene')).toHaveClass(/rattling/);
+      await expect(page.locator('#intro-track')).toHaveJSProperty('paused', true);
+      if (hasTouch) await chest.tap();
+      else await chest.click();
+      await expect(page.locator('.box-scene')).toHaveClass(/sounded/);
       await expect.poll(() => page.evaluate(() => window.introLevels.map(peak => peak > .025)),
         { timeout: 10000 }).toEqual(Array(8).fill(true));
       const errors = await page.evaluate(() => window.landingErrors);
@@ -68,6 +67,30 @@ for (const [name, policy] of [
     }
   });
 }
+
+test('opens silently after three seconds without a tap on the box @intro-sound', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.introPlayEvents = 0;
+    document.addEventListener('play', event => {
+      if (event.target.id === 'intro-track') window.introPlayEvents++;
+    }, true);
+    new MutationObserver(() => {
+      const classes = document.querySelector('.box-scene')?.classList;
+      if (classes?.contains('rattling')) window.rattleStart ??= performance.now();
+      if (classes?.contains('open')) window.revealStart ??= performance.now();
+    }).observe(document, {subtree:true, attributes:true, attributeFilter:['class']});
+  });
+  await page.goto('/', {waitUntil:'domcontentloaded'});
+  await expect(page.locator('.box-scene')).toHaveClass(/rattling/);
+  await page.mouse.click(5, 5);
+  await expect(page.locator('.box-scene')).toHaveClass(/open/);
+  await page.mouse.click(5, 5);
+  await expect(page.locator('.box-scene')).toBeHidden({ timeout: 10000 });
+  const [elapsed, plays] = await page.evaluate(() => [window.revealStart - window.rattleStart, window.introPlayEvents]);
+  expect(elapsed).toBeGreaterThanOrEqual(2950);
+  expect(elapsed).toBeLessThan(3500);
+  expect(plays).toBe(0);
+});
 
 test('supplies the opening audio byte range for phone media players @intro-sound', async ({ request }) => {
   const response = await request.get('/branding/sangeetpitara/intro-sound.mp3?v=5', {

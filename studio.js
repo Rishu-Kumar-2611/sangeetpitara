@@ -247,6 +247,10 @@
   }
   const track = document.querySelector('#intro-track');
 
+  const chestTrigger = document.querySelector('#chest-trigger');
+  const rattleDuration = 3000;
+  const openingCueSeconds = .510;
+  let tapDeadline = 0;
   let introAudioEvents;
 
   function finish() {
@@ -261,8 +265,8 @@
     flights.clear();
     dustLayer?.remove(); dustLayer=undefined;
     chestFade?.cancel(); chestFade=undefined;
-    scene.hidden = true; skip.hidden = true;
-    scene.classList.remove('open','leaving');
+    scene.hidden = true; skip.hidden = true; chestTrigger.hidden = true;
+    scene.classList.remove('open','leaving','rattling','sounded');
     root.classList.remove('pitara-running','pitara-pending');
   }
   function pose(x,y,scale,angle=0) {
@@ -310,29 +314,30 @@
     window.scrollTo({top:0,behavior:'instant'});
     scene.hidden = false;
     skip.hidden = false;
-    animateIntro(generation);
+    track.preload = 'auto';
+    scene.classList.add('rattling');
+    chestTrigger.hidden = false;
+    tapDeadline = performance.now() + rattleDuration;
+    later(() => revealBox(false), rattleDuration);
+  }
+
+  function revealBox(tapped) {
+    if (!scene.classList.contains('rattling')) return;
+    const withSound = tapped && performance.now() < tapDeadline;
+    scene.classList.remove('rattling');
+    scene.classList.toggle('sounded', withSound);
+    chestTrigger.hidden = true;
+    animateIntro(generation, withSound);
   }
 
   function playOpeningTrack(start, motions) {
     const events = new AbortController();
     introAudioEvents = events;
     const options = {signal:events.signal};
-    function play() {
-      track.play().catch(error => {
-        if (error.name !== 'NotAllowedError') events.abort();
-      });
-    }
-    let heard = false;
     let catchingUp = false;
-    function retry(event) {
-      if (heard || !event.isTrusted || !track.paused || skip.contains(event.target) ||
-          event.key === 'Tab' || event.key === 'Escape') return;
-      play();
-    }
     // The media clock starts when decoded sound can actually play. Align the
     // lid, flights and dust to it together, including after a buffering pause.
     track.addEventListener('playing', () => {
-      heard = true;
       const now = document.timeline.currentTime ?? performance.now();
       const elapsed = (now - start) / 1000;
       if (elapsed >= track.duration) {
@@ -340,7 +345,7 @@
         return;
       }
       if (!catchingUp && elapsed - track.currentTime > .12) {
-        // A late tap joins the current scene without replaying earlier landings.
+        // A slow decoder or a buffering pause can join the current scene.
         catchingUp = true;
         track.currentTime = elapsed;
         return;
@@ -351,13 +356,11 @@
         if (motion.playState === 'running') motion.startTime = start;
       }
     }, options);
-    document.addEventListener('click', retry, options);
-    document.addEventListener('keydown', retry, options);
-    track.currentTime = 0;
-    play();
+    track.currentTime = openingCueSeconds;
+    track.play().catch(() => events.abort());
   }
 
-  async function animateIntro(run) {
+  async function animateIntro(run, withSound) {
     root.classList.add('pitara-running');
     // Each target is a real piece of the page. The nav's painted backing is
     // separate so its moving children have a stable coordinate system.
@@ -384,11 +387,11 @@
       {opacity:1,offset:0}, {opacity:.56,offset:.18},
       {opacity:.21,offset:.40}, {opacity:.06,offset:.72}, {opacity:0,offset:1}
     ], {delay:releaseTime-100,duration:3150,fill:'both',easing:'linear'});
-    const start = document.timeline.currentTime ?? performance.now();
+    const start = (document.timeline.currentTime ?? performance.now()) - openingCueSeconds * 1000;
     const motions = [...new Set([chestFade,...opening,...flights.values(),...dustMotions])];
     for (const motion of motions) motion.startTime=start;
     root.classList.remove('pitara-pending');
-    playOpeningTrack(start, motions);
+    if (withSound) playOpeningTrack(start, motions);
     await Promise.allSettled([...flights.values(),...dustMotions].map(a=>a.finished));
     if (run !== generation) return;
     scene.classList.add('leaving');
@@ -404,14 +407,17 @@
     finish(); paused = !paused; syncMotion();
     try {localStorage.setItem('studio-motion',paused?'paused':'on');} catch {}
   });
+  chestTrigger.addEventListener('click', () => revealBox(true));
   skip.addEventListener('click',()=>{finish(); landing.querySelector('[data-open-screen="create"]').focus({preventScroll:true});});
   document.addEventListener('keydown', e => {
     if (scene.hidden) return;
     if (e.key === 'Escape') finish();
-    if (e.key === 'Tab' && document.activeElement !== skip) {
+    if (e.key !== 'Tab') return;
+    const active = document.activeElement;
+    if (active !== skip && active !== chestTrigger) {
       e.preventDefault();
-      skip.focus();
-    } else if (e.key === 'Tab' && (e.shiftKey || document.activeElement === skip)) {
+      (chestTrigger.hidden ? skip : chestTrigger).focus();
+    } else if ((active === skip && !e.shiftKey) || (e.shiftKey && (active === chestTrigger || chestTrigger.hidden))) {
       finish();
     }
   });

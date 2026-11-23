@@ -104,6 +104,34 @@ body:has(.sound-garden) { isolation:isolate; }
   position:absolute; left:50%; top:53%; width:var(--w); height:var(--h);
   transform:translate(-50%,-50%); transform-style:preserve-3d;
 }
+/* A stable target over the moving chest also accepts keyboard activation. */
+#chest-trigger {
+  position:fixed; z-index:15; left:50%; top:53%; transform:translate(-50%,-55%);
+  width:clamp(238px,46vw,470px); height:clamp(148px,26vw,262px);
+  border:0; border-radius:32%; padding:0; background:transparent; cursor:pointer;
+}
+#chest-trigger[hidden] {display:none!important}
+#chest-trigger:focus-visible {outline:3px solid #ffd68c;outline-offset:6px}
+@media (prefers-reduced-motion:no-preference) {
+  .box-scene.rattling .chest-stage {
+    transform-origin:50% 90%; animation:pitara-restless 1s ease-in-out 3;
+  }
+  .box-scene.sounded.open .chest-stage {animation:pitara-last-shudder .30s .51s both;}
+  .box-scene.sounded.open .chest-hinge {animation-delay:.79s}
+}
+@keyframes pitara-restless {
+  0%,10%,68%,100% {rotate:0deg;translate:0 0}
+  21% {rotate:-1.8deg;translate:-3px -1px}
+  31% {rotate:2.6deg;translate:4px -3px}
+  40% {rotate:-1.3deg;translate:-2px 0}
+  51% {rotate:1deg;translate:1px -1px}
+}
+@keyframes pitara-last-shudder {
+  0%,100% {rotate:0deg}
+  22% {rotate:-2.3deg}
+  49% {rotate:2.7deg}
+  74% {rotate:-1deg}
+}
 .chest-model {
   position:absolute; inset:0; transform-style:preserve-3d;
   transform:rotateX(-18deg) rotateY(-18deg);
@@ -231,7 +259,8 @@ html[data-theme=light] .pitara-dust {--dust-rgb:116,85,58;--grain:#73513e;}
 #skip-intro { position:fixed; z-index:20; bottom:max(16px,env(safe-area-inset-bottom)); right:18px;
   padding:9px 17px; min-height:42px; border:1px solid #977443; border-radius:99px; background:#211a17;
   color:#f8e8c8; font:500 .88rem var(--font-body); cursor:pointer; }
-.pitara-pending :is(.studio-header,#app,.site-footer) {visibility:hidden}
+.pitara-pending :is(.studio-header,#app,.site-footer),
+body:has(.box-scene.rattling) :is(.studio-header,#app,.site-footer) {visibility:hidden}
 html.pitara-running {overflow-x:clip}
 html[data-theme] #landing-view[data-entry-screen=home] { animation:none; }
 html.pitara-running :is(#welcome-actions,.studio-header,.site-footer) {overflow:visible}
