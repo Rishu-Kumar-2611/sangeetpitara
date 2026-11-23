@@ -434,6 +434,10 @@
     if (location.hash || new URLSearchParams(location.search).has('room')) finish();
     else openIntro();
   }
-  if (document.readyState==='loading') document.addEventListener('DOMContentLoaded',ready,{once:true});
-  else ready();
+  // The script follows the app markup. Opening the chest does not depend
+  // on downloading the room's audio, chat and networking modules.
+  ready();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.dispatchEvent(new Event('pitara-first-frame'));
+  }));
 })();

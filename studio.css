@@ -99,7 +99,7 @@ body:has(.sound-garden) { isolation:isolate; }
   transition:opacity .38s ease;
 }
 @media (max-width:600px) {
-  .box-scene {--art:url('/guide/img/pitara-peacocks-phone.webp');}
+  .box-scene {--art:url('/guide/img/pitara-peacocks-phone.webp?v=2');}
 }
 .box-scene[hidden], #skip-intro[hidden] { display:none !important; }
 .box-scene.leaving { opacity:0; }
@@ -468,3 +468,11 @@ html[data-theme] #room-view .source-card {display:block;text-align:left;}
   html[data-theme] #room-view .room-tab {font-size:.875rem;padding:0 2px;}
 }
 @media(prefers-reduced-motion:reduce){.room-bars i {animation:none}}
+
+/* Keep offstage surfaces from doing image and font work during the rattle. */
+body:has(.box-scene.rattling) :is(.studio-header, #app > section, .site-footer) {
+  content-visibility: hidden;
+}
+.pitara-pending .welcome-wallpaper, body:has(.box-scene.rattling) .welcome-wallpaper {
+  background-image: none;
+}

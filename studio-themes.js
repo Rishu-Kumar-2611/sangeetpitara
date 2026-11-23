@@ -18,17 +18,21 @@
     let enableIntro = true;
     try { enableIntro = localStorage.getItem('studio-motion') !== 'paused'; } catch {}
     if (enableIntro) {
-      if (matchMedia('(max-width: 600px)').matches) {
-        const art = document.createElement('link');
-        art.rel = 'preload';
-        art.as = 'image';
-        art.fetchPriority = 'high';
-        art.href = '/guide/img/pitara-peacocks-phone.webp';
-        document.head.append(art);
-      }
       document.documentElement.classList.add('pitara-pending');
       setTimeout(() => document.documentElement.classList.remove('pitara-pending'), 2200);
     }
+  }
+  // Room and chat styles download in parallel on phones. Apply them after
+  // the first interactive frame of the chest, or immediately for direct entry.
+  const roomStyles = document.querySelectorAll('link[data-room-style]');
+  function applyRoomStyles() {
+    for (const sheet of roomStyles) sheet.media = 'all';
+  }
+  if (document.documentElement.classList.contains('pitara-pending') && matchMedia('(max-width: 600px)').matches) {
+    document.addEventListener('pitara-first-frame', applyRoomStyles, {once:true});
+    window.setTimeout(applyRoomStyles, 2200);
+  } else {
+    applyRoomStyles();
   }
   const apply = (key) => {
     document.documentElement.dataset.theme = key;

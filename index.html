@@ -29,12 +29,22 @@
     <title>SangeetPitara | Listen together in private audio rooms</title>
     <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261120-prod1" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=20261120-prod1" />
-    <link rel="stylesheet" href="/themes.css?v=20261120-prod1-menu1" />
-    <link rel="stylesheet" href="/chat.css?v=20261120-prod1" />
-    <link rel="stylesheet" href="/studio.css?v=8" />
-    <script src="/studio-themes.js?v=3"></script>
-    <script defer src="/studio.js?v=7"></script>
+    <link rel="preload" as="image" type="image/webp" media="(max-width: 600px) and (prefers-reduced-motion: no-preference)" href="/guide/img/pitara-peacocks-phone.webp?v=2" fetchpriority="high" />
+    <style>
+      html { background: #131112; }
+      body { margin: 0; }
+      .hidden, [hidden] { display: none !important; }
+    </style>
+    <link rel="stylesheet" href="/styles.css?v=20261120-prod1" data-room-style media="(min-width: 601px), (prefers-reduced-motion: reduce)" />
+    <link rel="stylesheet" href="/themes.css?v=20261120-prod1-menu1" data-room-style media="(min-width: 601px), (prefers-reduced-motion: reduce)" />
+    <link rel="stylesheet" href="/chat.css?v=20261120-prod1" data-room-style media="(min-width: 601px), (prefers-reduced-motion: reduce)" />
+    <noscript>
+      <link rel="stylesheet" href="/styles.css?v=20261120-prod1" />
+      <link rel="stylesheet" href="/themes.css?v=20261120-prod1-menu1" />
+      <link rel="stylesheet" href="/chat.css?v=20261120-prod1" />
+    </noscript>
+    <link rel="stylesheet" href="/studio.css?v=9" />
+    <script src="/studio-themes.js?v=4"></script>
 
   </head>
   <body>
@@ -316,6 +326,7 @@
       </form>
       <div class="member-menu-actions" id="member-menu-actions"></div>
     </dialog>
-    <script type="module" src="/app.js?v=20261122-music-box"></script>
+    <script src="/studio.js?v=8"></script>
+    <script type="module" fetchpriority="low" src="/app.js?v=20261122-music-box"></script>
   </body>
 </html>
