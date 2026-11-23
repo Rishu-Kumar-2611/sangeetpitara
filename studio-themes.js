@@ -18,6 +18,14 @@
     let enableIntro = true;
     try { enableIntro = localStorage.getItem('studio-motion') !== 'paused'; } catch {}
     if (enableIntro) {
+      if (matchMedia('(max-width: 600px)').matches) {
+        const art = document.createElement('link');
+        art.rel = 'preload';
+        art.as = 'image';
+        art.fetchPriority = 'high';
+        art.href = '/guide/img/pitara-peacocks-phone.webp';
+        document.head.append(art);
+      }
       document.documentElement.classList.add('pitara-pending');
       setTimeout(() => document.documentElement.classList.remove('pitara-pending'), 2200);
     }

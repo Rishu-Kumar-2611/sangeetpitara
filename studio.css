@@ -262,8 +262,8 @@ html[data-theme=light] .pitara-dust {--dust-rgb:116,85,58;--grain:#73513e;}
 #skip-intro { position:fixed; z-index:20; bottom:max(16px,env(safe-area-inset-bottom)); right:18px;
   padding:9px 17px; min-height:42px; border:1px solid #977443; border-radius:99px; background:#211a17;
   color:#f8e8c8; font:500 .88rem var(--font-body); cursor:pointer; }
-.pitara-pending :is(.studio-header,#app,.site-footer),
-body:has(.box-scene.rattling) :is(.studio-header,#app,.site-footer) {visibility:hidden}
+.pitara-pending :is(.studio-header,#app > section,.site-footer),
+body:has(.box-scene.rattling) :is(.studio-header,#app > section,.site-footer) {visibility:hidden}
 html.pitara-running {overflow-x:clip}
 html[data-theme] #landing-view[data-entry-screen=home] { animation:none; }
 html.pitara-running :is(#welcome-actions,.studio-header,.site-footer) {overflow:visible}
