@@ -98,6 +98,9 @@ body:has(.sound-garden) { isolation:isolate; }
   position:fixed; inset:0; z-index:-1; pointer-events:none; perspective:1300px;
   transition:opacity .38s ease;
 }
+@media (max-width:600px) {
+  .box-scene {--art:url('/guide/img/pitara-peacocks-phone.webp');}
+}
 .box-scene[hidden], #skip-intro[hidden] { display:none !important; }
 .box-scene.leaving { opacity:0; }
 .chest-stage {

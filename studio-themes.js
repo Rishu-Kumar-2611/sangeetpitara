@@ -101,7 +101,25 @@
     let playhead = 0, previousFrame = null;
     const radio = new Image();
     radio.onload = sync;
-    radio.src = '/branding/sangeetpitara/13-visual-vintage-radio.svg';
+    let vinylDisc;
+
+    function makeVinylDisc() {
+      const disc = document.createElement('canvas');
+      disc.width = disc.height = 408;
+      const pen = disc.getContext('2d');
+      pen.translate(204, 204);
+      const sweep = pen.createConicGradient(0, 0, 0);
+      ['#121015','#a09583','#151218','#38323a','#111016','#aa9276','#151317','#121015'].forEach((c,i) => sweep.addColorStop(i/7,c));
+      pen.fillStyle = sweep;
+      pen.beginPath(); pen.arc(0,0,202,0,tau); pen.fill();
+      pen.lineWidth = 1;
+      pen.strokeStyle = '#03030688';
+      for (let r=68;r<201;r+=3) { pen.beginPath(); pen.arc(0,0,r,0,tau); pen.stroke(); }
+      pen.fillStyle = '#ff9c4e'; pen.beginPath(); pen.arc(0,0,62,0,tau); pen.fill();
+      pen.fillStyle = '#702a1b'; pen.fillRect(-24,-27,48,3); pen.fillRect(-16,-20,32,2);
+      pen.fillStyle = '#21151a'; pen.beginPath(); pen.arc(0,0,5,0,tau); pen.fill();
+      return disc;
+    }
 
     function renderVinyl(ctx, t) {
       const light = ctx.createLinearGradient(0, 0, 620, 405);
@@ -113,16 +131,8 @@
       ctx.save();
       ctx.translate(306, 216);
       ctx.rotate(t * .6);
-      const sweep = ctx.createConicGradient(0, 0, 0);
-      ['#121015','#a09583','#151218','#38323a','#111016','#aa9276','#151317','#121015'].forEach((c,i) => sweep.addColorStop(i/7,c));
-      ctx.fillStyle = sweep;
-      ctx.beginPath(); ctx.arc(0,0,202,0,tau); ctx.fill();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = '#03030688';
-      for (let r=68;r<201;r+=3) { ctx.beginPath(); ctx.arc(0,0,r,0,tau); ctx.stroke(); }
-      ctx.fillStyle = '#ff9c4e'; ctx.beginPath(); ctx.arc(0,0,62,0,tau); ctx.fill();
-      ctx.fillStyle = '#702a1b'; ctx.fillRect(-24,-27,48,3); ctx.fillRect(-16,-20,32,2);
-      ctx.fillStyle = '#21151a'; ctx.beginPath(); ctx.arc(0,0,5,0,tau); ctx.fill();
+      if (!vinylDisc) vinylDisc = makeVinylDisc();
+      ctx.drawImage(vinylDisc, -204, -204);
       ctx.restore();
       ctx.lineCap = 'round'; ctx.strokeStyle = '#bfab91'; ctx.lineWidth = 9;
       ctx.beginPath(); ctx.moveTo(608,26); ctx.lineTo(556,39); ctx.lineTo(475,197); ctx.lineTo(454,215); ctx.stroke();
@@ -162,6 +172,9 @@
     function paint(ctx, visual, t) {
       if (visual === 'aurora') return renderAurora(ctx, t);
       if (visual === 'spectrum') return renderSpectrum(ctx, t);
+      if (visual === 'radio' && !radio.hasAttribute('src')) {
+        radio.src = '/branding/sangeetpitara/13-visual-vintage-radio.svg';
+      }
       if (visual === 'radio' && radio.complete && radio.naturalWidth) {
         ctx.fillStyle = '#231910'; ctx.fillRect(0,0,640,405);
         ctx.drawImage(radio,49,354,398,252,0,0,640,405);

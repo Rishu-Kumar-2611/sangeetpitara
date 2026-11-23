@@ -196,7 +196,8 @@
   function resizeCanvas() {
     width = document.documentElement.clientWidth;
     height = window.innerHeight;
-    const ratio = Math.min(window.devicePixelRatio || 1,1.5);
+    // The wallpaper consists of broad glows and lines behind the UI.
+    const ratio = Math.min(window.devicePixelRatio || 1, width <= 600 ? 1 : 1.5);
     canvas.width = Math.round(width*ratio); canvas.height = Math.round(height*ratio);
     ctx?.setTransform(ratio,0,0,ratio,0,0); draw();
   }

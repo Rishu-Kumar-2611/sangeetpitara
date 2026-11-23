@@ -1,0 +1,97 @@
+name: Lighthouse
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/lighthouse.yml'
+      - 'index.html'
+      - 'studio*.js'
+      - 'studio.css'
+      - 'branding/sangeetpitara/*.webp'
+      - 'guide/img/pitara-peacocks-phone.webp'
+permissions:
+  contents: read
+concurrency:
+  group: lighthouse-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [mobile, desktop]
+    env:
+      DEVICE: ${{ matrix.device }}
+      HOST: 127.0.0.1
+      PORT: 4173
+      ADSENSE_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Prepare the previous revision and audit tools
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/previous" HEAD^
+          npm install --prefix "$RUNNER_TEMP/audit-tools" --no-audit --no-fund lighthouse@13.6.0
+      - name: Measure both revisions with the same browser
+        run: |
+          mkdir -p "$RUNNER_TEMP/reports"
+          export CHROME_PATH="$(command -v google-chrome)"
+          preset=()
+          if [[ "$DEVICE" = desktop ]]; then preset=(--preset=desktop); fi
+          child=""
+          trap 'if [[ -n "$child" ]]; then kill "$child" 2>/dev/null || true; fi' EXIT
+          for revision in previous current; do
+            if [[ "$revision" = previous ]]; then cd "$RUNNER_TEMP/previous"; else cd "$GITHUB_WORKSPACE"; fi
+            npm ci --omit=dev --no-audit --no-fund
+            node server.mjs > "$RUNNER_TEMP/$revision-server.log" 2>&1 &
+            child=$!
+            curl -fsS --retry 15 --retry-all-errors --retry-delay 1 "http://$HOST:$PORT/ready" > /dev/null
+            for run in 1 2 3; do
+              "$RUNNER_TEMP/audit-tools/node_modules/.bin/lighthouse" "http://$HOST:$PORT/" \
+                "${preset[@]}" --only-categories=performance,accessibility,best-practices,seo \
+                --chrome-flags="--headless --no-sandbox" --quiet --output=json \
+                --output-path="$RUNNER_TEMP/reports/$revision-$run.json"
+            done
+            kill "$child"
+            wait "$child" || true
+            child=""
+          done
+      - name: Summarize median scores and timings
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from statistics import median
+          reports = Path(os.environ["RUNNER_TEMP"]) / "reports"
+          lines = [f"### {os.environ['DEVICE']} · median of three local runs", "",
+                   "| Revision | Performance | Accessibility | Best practices | SEO | LCP (s) | TBT (ms) | CLS |",
+                   "|---|---:|---:|---:|---:|---:|---:|---:|"]
+          for rev in ("previous", "current"):
+              runs = [json.loads(p.read_text()) for p in sorted(reports.glob(rev + "-*.json"))]
+              if len(runs) != 3 or any(r.get("runtimeError") for r in runs):
+                  raise RuntimeError(f"Incomplete Lighthouse results for {rev}")
+              scores = [str(round(median(r["categories"][category]["score"] * 100 for r in runs))) for category in ("performance", "accessibility", "best-practices", "seo")]
+              def metric(name):
+                  return median(r["audits"][name]["numericValue"] for r in runs)
+              values = [rev, *scores, f"{metric('largest-contentful-paint') / 1000:.2f}", f"{metric('total-blocking-time'):.0f}", f"{metric('cumulative-layout-shift'):.3f}"]
+              lines.append("| " + " | ".join(values) + " |")
+          result = "\n".join(lines)
+          print(result)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              print(result, file=summary)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-${{ matrix.device }}
+          path: ${{ runner.temp }}/reports/*.json
+          retention-days: 7

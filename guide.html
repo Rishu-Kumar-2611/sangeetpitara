@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SangeetPitara — How to Use & User Guide</title>
-  <meta name="description" content="SangeetPitara User Manual: Creating Room, Joining Room, Host Room & Audio Sharing, Inviting Users, and Other Features." />
+  <title>How to create, join and share audio in SangeetPitara</title>
+  <meta name="description" content="Learn how to host a private listening room, join with a code, share tab or Android device audio, and check stream health." />
+  <link rel="canonical" href="https://sangeet-pitaraa.onrender.com/guide.html" />
   <link rel="icon" type="image/svg+xml" href="/branding/sangeetpitara/05-diya-eighth-note.svg?v=20261120-prod1" />
   <style>
     :root {
@@ -424,6 +425,8 @@
       padding: 20px;
     }
 
+    .feature-tile img {max-width:100%;height:auto;object-fit:contain;}
+
     .feature-tile h4 {
       margin: 0 0 10px;
       font-size: 1.12rem;
@@ -495,7 +498,12 @@
       .step-box, .feature-tile { overflow-wrap: anywhere; }
     }
   </style>
-  <script src="/guide.js"></script>
+  <noscript><style>
+    #topicDocView, #topicDocView .topic-panel { display:block !important; }
+    #topicDocView .doc-content { display:grid !important; }
+    .top-back-bar, .submode-switch, .bottom-nav-bar { display:none; }
+  </style></noscript>
+  <script defer src="/guide.js"></script>
 </head>
 <body>
 
@@ -519,14 +527,15 @@
   <main class="page-main">
 
     <!-- 1. THE FIVE SQUARE / RECTANGULAR BOXES (Matching GitHub Skills Cards) -->
+    <h1>SangeetPitara listening guide</h1>
     <section id="topicsGridView" class="boxes-grid-view">
       <div class="rectangles-grid" role="list">
 
         <!-- Square 1: Creating Room -->
         <a href="#creating-room" class="topic-card" data-topic="creating-room" role="listitem">
           <div>
-            <h3 class="card-title">Creating Room</h3>
-            <p class="card-desc">Start a private listening room as Host with a unique 8-character code in under a minute.</p>
+            <h2 class="card-title">How do I create a listening room?</h2>
+            <p class="card-desc">Choose Create a room, enter your display name and a room name, then share the room code with your friends.</p>
           </div>
           <span class="card-action">View Documentation &rarr;</span>
         </a>
@@ -534,8 +543,8 @@
         <!-- Square 2: Joining Room -->
         <a href="#joining-room" class="topic-card" data-topic="joining-room" role="listitem">
           <div>
-            <h3 class="card-title">Joining Room</h3>
-            <p class="card-desc">Connect using an 8-character code or direct invite link to sync to live audio.</p>
+            <h2 class="card-title">How do I join a room?</h2>
+            <p class="card-desc">Open the host’s invite link, or choose Join a room and enter the eight-character code and your display name.</p>
           </div>
           <span class="card-action">View Documentation &rarr;</span>
         </a>
@@ -543,8 +552,8 @@
         <!-- Square 3: Host Room & Audio -->
         <a href="#host-room" class="topic-card" data-topic="host-room" role="listitem">
           <div>
-            <h3 class="card-title">Host Room & Audio</h3>
-            <p class="card-desc">Broadcast music from Windows desktop, Android phone casting, or local MP3 files.</p>
+            <h2 class="card-title">How do I share audio?</h2>
+            <p class="card-desc">On desktop Chrome or Edge, share a browser tab with tab audio enabled. In the Android app, choose Share device audio and approve the capture prompt.</p>
           </div>
           <span class="card-action">View Documentation &rarr;</span>
         </a>
@@ -552,8 +561,8 @@
         <!-- Square 4: Inviting Users -->
         <a href="#inviting-users" class="topic-card" data-topic="inviting-users" role="listitem">
           <div>
-            <h3 class="card-title">Inviting Users</h3>
-            <p class="card-desc">Copy invite links, promote Co-hosts, lock rooms, and manage participant access.</p>
+            <h2 class="card-title">How do I invite friends?</h2>
+            <p class="card-desc">Copy the invite link or room code from your room and send it to the people you want to listen with.</p>
           </div>
           <span class="card-action">View Documentation &rarr;</span>
         </a>
@@ -561,8 +570,8 @@
         <!-- Square 5: Other Feature -->
         <a href="#other-feature" class="topic-card" data-topic="other-feature" role="listitem">
           <div>
-            <h3 class="card-title">Other Feature</h3>
-            <p class="card-desc">Chat section, People roster, Help & Health diagnostics, and 5 studio themes.</p>
+            <h2 class="card-title">Where are chat, people and stream health?</h2>
+            <p class="card-desc">Open Chat to message listeners, People to see who joined, or Health to check your connection.</p>
           </div>
           <span class="card-action">View Documentation &rarr;</span>
         </a>
@@ -584,14 +593,14 @@
         <article id="panel-creating-room" class="topic-panel" style="display: none;">
           <div class="doc-header">
             <div class="doc-title-group">
-              <h2>Creating Room</h2>
+              <h2 id="creating-room">Creating Room</h2>
               <p>Step-by-step procedure and real-time environment for launching a new listening session.</p>
             </div>
             <span class="doc-badge">Step-by-Step Guide</span>
           </div>
           <div class="doc-content">
             <div class="realtime-visual-card">
-              <img src="/guide/img/01-create-room.png" alt="Real Room Creation Screen with Arrows" />
+              <img loading="lazy" decoding="async" width="970" height="929" src="/guide/img/01-create-room.png" alt="Real Room Creation Screen with Arrows" />
               <div class="visual-caption">Real-time SangeetPitara Room Creation Screen showing Display Name, Room Name, and "+ Create private room".</div>
             </div>
             <div class="procedure-details">
@@ -625,14 +634,14 @@
         <article id="panel-joining-room" class="topic-panel" style="display: none;">
           <div class="doc-header">
             <div class="doc-title-group">
-              <h2>Joining Room</h2>
+              <h2 id="joining-room">Joining Room</h2>
               <p>Connect with a room code or an invite URL to listen to synchronized audio instantly.</p>
             </div>
             <span class="doc-badge">Step-by-Step Guide</span>
           </div>
           <div class="doc-content">
             <div class="realtime-visual-card">
-              <img src="/guide/img/02-join-room.png" alt="Real Room Joining Screen with Arrows" />
+              <img loading="lazy" decoding="async" width="970" height="929" src="/guide/img/02-join-room.png" alt="Real Room Joining Screen with Arrows" />
               <div class="visual-caption">Real-time SangeetPitara Join Screen showing Room Code field, Display Name, and "→ Join room" button.</div>
             </div>
             <div class="procedure-details">
@@ -666,7 +675,7 @@
         <article id="panel-host-room" class="topic-panel" style="display: none;">
           <div class="doc-header">
             <div class="doc-title-group">
-              <h2>Host Room & Audio Sharing</h2>
+              <h2 id="host-room">Host Room & Audio Sharing</h2>
               <p>Broadcast music with real-time interfaces across Windows Desktop, Android Phone casting, or local audio files.</p>
             </div>
             <span class="doc-badge">Audio Controls</span>
@@ -683,7 +692,7 @@
           <!-- Mode 1: Desktop Tab Audio -->
           <div id="host-mode-desktop" class="doc-content">
             <div class="realtime-visual-card">
-              <img src="/guide/img/03b-desktop-share-dialog.svg" alt="Windows 11 Chrome Share Dialog with Arrows" />
+              <img loading="lazy" decoding="async" width="920" height="570" src="/guide/img/03b-desktop-share-dialog.svg" alt="Windows 11 Chrome Share Dialog with Arrows" />
               <div class="visual-caption">Real Windows 11 Chrome share dialog with arrows pointing to the critical "Also share tab audio" checkbox.</div>
             </div>
             <div class="procedure-details">
@@ -711,8 +720,8 @@
           <div id="host-mode-mobile" class="doc-content" style="display: none;">
             <div class="realtime-visual-card">
               <div style="display: flex; gap: 12px; justify-content: center;">
-                <img src="/guide/img/03c-mobile-real-room.jpg" alt="Android Room with Share device audio" style="max-height: 380px; width: auto;" />
-                <img src="/guide/img/03d-mobile-real-dialog.jpg" alt="Android Casting Permission Dialog" style="max-height: 380px; width: auto;" />
+                <img loading="lazy" decoding="async" width="449" height="1024" src="/guide/img/03c-mobile-real-room.jpg" alt="Android Room with Share device audio" style="max-height: 380px; width: auto;" />
+                <img loading="lazy" decoding="async" width="449" height="1024" src="/guide/img/03d-mobile-real-dialog.jpg" alt="Android Casting Permission Dialog" style="max-height: 380px; width: auto;" />
               </div>
               <div class="visual-caption">Real Android Phone Interface: Tap "Share device audio" &rarr; Select Scope: "Entire screen" &rarr; Tap "Start".</div>
             </div>
@@ -739,7 +748,7 @@
           <!-- Mode 3: Local File Sharing -->
           <div id="host-mode-file" class="doc-content" style="display: none;">
             <div class="realtime-visual-card">
-              <img src="/guide/img/03-share-audio.png" alt="Cassette Audio Player with Arrows" />
+              <img loading="lazy" decoding="async" width="970" height="929" src="/guide/img/03-share-audio.png" alt="Cassette Audio Player with Arrows" />
               <div class="visual-caption">Built-in Cassette Audio Visualizer with "Share audio file" button.</div>
             </div>
             <div class="procedure-details">
@@ -770,14 +779,14 @@
         <article id="panel-inviting-users" class="topic-panel" style="display: none;">
           <div class="doc-header">
             <div class="doc-title-group">
-              <h2>Inviting Users</h2>
+              <h2 id="inviting-users">Inviting Users</h2>
               <p>Manage participants, copy instant invite links, promote Co-hosts, and secure your room.</p>
             </div>
             <span class="doc-badge">Room Management</span>
           </div>
           <div class="doc-content">
             <div class="realtime-visual-card">
-              <img src="/guide/img/05-people-features.png" alt="People and Invite Management Screen with Arrows" />
+              <img loading="lazy" decoding="async" width="970" height="929" src="/guide/img/05-people-features.png" alt="People and Invite Management Screen with Arrows" />
               <div class="visual-caption">Real-time SangeetPitara People Panel showing Share invite link, Room Code, and Role badges.</div>
             </div>
             <div class="procedure-details">
@@ -811,7 +820,7 @@
         <article id="panel-other-feature" class="topic-panel" style="display: none;">
           <div class="doc-header">
             <div class="doc-title-group">
-              <h2>Other Feature</h2>
+              <h2 id="other-feature">Other Feature</h2>
               <p>Explore real-time features for Chat, People roster, Help & Health diagnostics, and Studio Themes.</p>
             </div>
             <span class="doc-badge">Features</span>
@@ -822,7 +831,7 @@
             <div class="feature-tile">
               <h4>💬 Chat Section</h4>
               <div class="realtime-visual-card" style="margin: 10px 0;">
-                <img src="/guide/img/04-chat-features.png" alt="Real Chat Interface" style="max-height: 180px;" />
+                <img loading="lazy" decoding="async" width="970" height="929" src="/guide/img/04-chat-features.png" alt="Real Chat Interface" style="max-height: 180px;" />
               </div>
               <p>• <strong>Floating Reactions:</strong> Tap ❤️, 🔥, 👏, 🎧 for animated real-time emojis.<br/>• <strong>Voice Notes:</strong> Hold the microphone button to record and send voice clips.<br/>• <strong>Text Messages:</strong> Chat without interrupting live playback.</p>
             </div>
@@ -831,7 +840,7 @@
             <div class="feature-tile">
               <h4>👥 People Section</h4>
               <div class="realtime-visual-card" style="margin: 10px 0;">
-                <img src="/guide/img/05-people-features.png" alt="People Roster" style="max-height: 180px;" />
+                <img loading="lazy" decoding="async" width="970" height="929" src="/guide/img/05-people-features.png" alt="People Roster" style="max-height: 180px;" />
               </div>
               <p>• <strong>Active Roster:</strong> See all connected listeners.<br/>• <strong>Role Badges:</strong> Distinguish Host, Co-hosts, and Listeners.<br/>• <strong>Moderation:</strong> Remove disruptive listeners in one click.</p>
             </div>
@@ -840,7 +849,7 @@
             <div class="feature-tile">
               <h4>🩺 Help & Health Section</h4>
               <div class="realtime-visual-card" style="margin: 10px 0;">
-                <img src="/guide/img/06-health-diagnostics.png" alt="Health Diagnostics" style="max-height: 180px;" />
+                <img loading="lazy" decoding="async" width="970" height="929" src="/guide/img/06-health-diagnostics.png" alt="Health Diagnostics" style="max-height: 180px;" />
               </div>
               <p>• <strong>LIVE Status:</strong> Green badge confirms synchronized playback.<br/>• <strong>Stream Health:</strong> Jitter buffer delay and packet loss telemetry.<br/>• <strong>Save Diagnostics:</strong> Export anonymous debug logs.</p>
             </div>
@@ -849,7 +858,7 @@
             <div class="feature-tile">
               <h4>🎨 Studio Themes</h4>
               <div class="realtime-visual-card" style="margin: 10px 0;">
-                <img src="/guide/img/07-theme-selection.png" alt="Theme Selector" style="max-height: 180px;" />
+                <img loading="lazy" decoding="async" width="970" height="929" src="/guide/img/07-theme-selection.png" alt="Theme Selector" style="max-height: 180px;" />
               </div>
               <p>• <strong>5 Themes:</strong> Dark, Light, Forest, Brass, and Rose.<br/>• <strong>Topbar Switcher:</strong> Change theme instantly.<br/>• <strong>Black Header:</strong> High contrast on all 5 themes.</p>
             </div>
