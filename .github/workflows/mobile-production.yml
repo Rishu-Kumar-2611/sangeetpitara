@@ -1,0 +1,70 @@
+name: Live mobile performance
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/mobile-production.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      SITE: https://sangeet-pitaraa.onrender.com/
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install the same Lighthouse version as the revision benchmark
+        run: npm install --prefix "$RUNNER_TEMP/audit" --no-audit --no-fund lighthouse@13.6.0
+      - name: Audit three fresh mobile visits to the production homepage
+        run: |
+          set -euo pipefail
+          export CHROME_PATH="$(command -v google-chrome)"
+          mkdir reports
+          for run in 1 2 3; do
+            report="reports/visit-$run.json"
+            for attempt in 1 2 3; do
+              if "$RUNNER_TEMP/audit/node_modules/.bin/lighthouse" "$SITE" \
+                --only-categories=performance,accessibility,best-practices,seo \
+                --chrome-flags="--headless --no-sandbox" --quiet --output=json --output-path="$report"; then
+                break
+              fi
+              # Retry a missing Chrome navigation trace. Keep every valid score.
+              [[ "$attempt" -lt 3 ]] && jq -e '.runtimeError.code == "NO_NAVSTART"' "$report" >/dev/null || exit 1
+            done
+          done
+      - name: Report scores and check the mobile target
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from statistics import median
+          reports = [json.loads(path.read_text()) for path in sorted(Path("reports").glob("visit-*.json"))]
+          if len(reports) != 3 or any(r.get("runtimeError") or r["finalDisplayedUrl"] != os.environ["SITE"] or r["audits"]["http-status-code"]["score"] != 1 for r in reports):
+              raise SystemExit("Three successful homepage navigations are required")
+          summary = ["| Visit | Performance | Accessibility | Best practices | SEO | LCP |", "|---|---:|---:|---:|---:|---:|"]
+          scores = []
+          for i, report in enumerate(reports, 1):
+              row = [round(report["categories"][k]["score"] * 100) for k in ("performance", "accessibility", "best-practices", "seo")]
+              scores.append(row[0])
+              lcp = report["audits"]["largest-contentful-paint"]["numericValue"] / 1000
+              summary.append("| " + " | ".join(map(str, [i, *row, f"{lcp:.2f} s"])) + " |")
+          result = median(scores)
+          summary += ["", f"Median mobile performance: **{result}/100**. Target: 96 or higher."]
+          print("\n".join(summary))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as output:
+              print("\n".join(summary), file=output)
+          if result < 96:
+              raise SystemExit("The live mobile median fell below 96")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-mobile-lighthouse
+          path: reports/*.json
+          retention-days: 7
