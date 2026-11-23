@@ -22,7 +22,8 @@ for (const [name, policy] of [
           audio.createMediaElementSource(media).connect(meter).connect(audio.destination);
           await audio.resume();
           const waveform = new Float32Array(meter.fftSize);
-          const cues = [.51, 2.569, 2.939, 3.309, 3.679, 4.049, 4.419, 4.789];
+          // Measure the sustained lid resonance after the old short impact would have faded.
+          const cues = [1.45, 2.569, 2.939, 3.309, 3.679, 4.049, 4.419, 4.789];
           const timer = setInterval(() => {
             meter.getFloatTimeDomainData(waveform);
             const peak = waveform.reduce((value, sample) => Math.max(value, Math.abs(sample)), 0);
@@ -55,7 +56,7 @@ for (const [name, policy] of [
 }
 
 test('supplies the opening audio byte range for phone media players @intro-sound', async ({ request }) => {
-  const response = await request.get('/branding/sangeetpitara/intro-sound.mp3?v=3', {
+  const response = await request.get('/branding/sangeetpitara/intro-sound.mp3?v=4', {
     headers: { Range: 'bytes=0-1' },
   });
   expect(response.status()).toBe(206);
