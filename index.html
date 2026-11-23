@@ -35,16 +35,18 @@
       body { margin: 0; }
       .hidden, [hidden] { display: none !important; }
     </style>
-    <link rel="stylesheet" href="/styles.css?v=20261120-prod1" data-room-style media="(min-width: 601px), (prefers-reduced-motion: reduce)" />
-    <link rel="stylesheet" href="/themes.css?v=20261120-prod1-menu1" data-room-style media="(min-width: 601px), (prefers-reduced-motion: reduce)" />
-    <link rel="stylesheet" href="/chat.css?v=20261120-prod1" data-room-style media="(min-width: 601px), (prefers-reduced-motion: reduce)" />
+    <template id="room-styles">
+      <link rel="stylesheet" href="/styles.css?v=20261120-prod1" />
+      <link rel="stylesheet" href="/themes.css?v=20261120-prod1-menu1" />
+      <link rel="stylesheet" href="/chat.css?v=20261120-prod1" />
+    </template>
     <noscript>
       <link rel="stylesheet" href="/styles.css?v=20261120-prod1" />
       <link rel="stylesheet" href="/themes.css?v=20261120-prod1-menu1" />
       <link rel="stylesheet" href="/chat.css?v=20261120-prod1" />
     </noscript>
     <link rel="stylesheet" href="/studio.css?v=9" />
-    <script src="/studio-themes.js?v=4"></script>
+    <script src="/studio-themes.js?v=5"></script>
 
   </head>
   <body>
@@ -326,7 +328,7 @@
       </form>
       <div class="member-menu-actions" id="member-menu-actions"></div>
     </dialog>
-    <script src="/studio.js?v=8"></script>
-    <script type="module" fetchpriority="low" src="/app.js?v=20261122-music-box"></script>
+    <template id="room-engine"><script type="module" src="/app.js?v=20261122-music-box"></script></template>
+    <script src="/studio.js?v=9"></script>
   </body>
 </html>

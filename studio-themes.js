@@ -22,18 +22,55 @@
       setTimeout(() => document.documentElement.classList.remove('pitara-pending'), 2200);
     }
   }
-  // Room and chat styles download in parallel on phones. Apply them after
-  // the first interactive frame of the chest, or immediately for direct entry.
-  const roomStyles = document.querySelectorAll('link[data-room-style]');
-  function applyRoomStyles() {
-    for (const sheet of roomStyles) sheet.media = 'all';
+  // Keep room dependencies out of the first round trip for the mobile box.
+  // Invite links, reduced motion and desktop start loading them immediately.
+  const phoneIntro = document.documentElement.classList.contains('pitara-pending') &&
+    matchMedia('(max-width: 600px)').matches;
+  let stylesheetReady;
+  function startRoomStyles() {
+    if (stylesheetReady) return stylesheetReady;
+    const template = document.getElementById('room-styles');
+    const sheets = document.importNode(template.content, true);
+    stylesheetReady = Promise.all([...sheets.querySelectorAll('link')].map(link =>
+      new Promise(resolve => {
+        link.addEventListener('load', resolve, {once:true});
+        link.addEventListener('error', resolve, {once:true});
+        if (!phoneIntro) link.setAttribute('blocking', 'render');
+      })
+    ));
+    template.before(sheets);
+    return stylesheetReady;
   }
-  if (document.documentElement.classList.contains('pitara-pending') && matchMedia('(max-width: 600px)').matches) {
-    document.addEventListener('pitara-first-frame', applyRoomStyles, {once:true});
-    window.setTimeout(applyRoomStyles, 2200);
-  } else {
-    applyRoomStyles();
+  let appLoading = false;
+  function startRoom() {
+    startRoomStyles();
+    const entry = document.querySelector('#room-engine');
+    if (!entry || appLoading) return;
+    appLoading = true;
+    const module = document.createElement('script');
+    module.type = 'module';
+    module.src = entry.content.querySelector('script').src;
+    // A fast Skip followed by a room choice is honoured on slow connections.
+    let choice;
+    const rememberChoice = event => {
+      const button = event.target.closest?.('#welcome-actions [data-open-screen]');
+      if (button) choice = button;
+    };
+    document.addEventListener('click', rememberChoice, true);
+    const release = () => document.removeEventListener('click', rememberChoice, true);
+    module.addEventListener('load', () => {
+      release();
+      if (choice && document.querySelector('#landing-view')?.dataset.entryScreen === 'home') choice.click();
+    }, {once:true});
+    module.addEventListener('error', release, {once:true});
+    entry.after(module);
   }
+  if (!phoneIntro) startRoomStyles();
+  document.addEventListener('pitara-first-frame', startRoom, {once:true});
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!phoneIntro || document.hidden) startRoom();
+    else window.setTimeout(startRoom, 1800);
+  }, {once:true});
   const apply = (key) => {
     document.documentElement.dataset.theme = key;
     const meta = document.querySelector('meta[name="theme-color"]');

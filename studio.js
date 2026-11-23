@@ -315,7 +315,9 @@
     window.scrollTo({top:0,behavior:'instant'});
     scene.hidden = false;
     skip.hidden = false;
-    track.preload = 'auto';
+    // Warm the audio once the chest has painted. A gesture can play it earlier.
+    const warmAudio = () => { if (scene.classList.contains('rattling')) track.preload = 'auto'; };
+    document.addEventListener('pitara-first-frame', warmAudio, {once:true});
     scene.classList.add('rattling');
     chestTrigger.hidden = false;
     tapDeadline = performance.now() + rattleDuration;
@@ -437,7 +439,19 @@
   // The script follows the app markup. Opening the chest does not depend
   // on downloading the room's audio, chat and networking modules.
   ready();
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    document.dispatchEvent(new Event('pitara-first-frame'));
-  }));
+  const startRoom = () => document.dispatchEvent(new Event('pitara-first-frame'));
+  if (scene.hidden || !matchMedia('(max-width:600px)').matches) {
+    startRoom();
+  } else {
+    // Decode the same file used by the chest material, then yield a paint
+    // before room scripts, fonts and the opening audio compete for bandwidth.
+    const material = new Image();
+    material.src = '/guide/img/pitara-peacocks-phone.webp?v=2';
+    material.decode().catch(() => {}).then(() => {
+      requestAnimationFrame(() => requestAnimationFrame(startRoom));
+    });
+    for (const control of [skip, chestTrigger]) {
+      control.addEventListener('click', startRoom, {once:true, capture:true});
+    }
+  }
 })();
